@@ -35,6 +35,7 @@ export const getGameAchievementData = async (
     `/games/${shop}/${objectId}/achievements`,
     { language },
     {
+      needsAuth: false,
       ifNoneMatch:
         cachedAchievements?.language === language
           ? cachedAchievements.catalogueValidator

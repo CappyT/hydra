@@ -3,6 +3,7 @@ import HydraIcon from "@renderer/assets/icons/hydra.svg?react";
 import { UserAchievement } from "@types";
 import { useSubscription } from "@renderer/hooks/use-subscription";
 import { useUserDetails } from "@renderer/hooks";
+import { ACCOUNTLESS } from "@shared";
 import "./achievement-panel.scss";
 
 export interface AchievementPanelProps {
@@ -25,7 +26,9 @@ export function AchievementPanel({ achievements }: AchievementPanelProps) {
     0
   );
 
-  if (!hasActiveSubscription) {
+  // Achievement points come through anonymously in accountless mode, so show
+  // the real earned/total values instead of the subscription-gated placeholder.
+  if (!hasActiveSubscription && !ACCOUNTLESS) {
     return (
       <div className="achievement-panel">
         <div className="achievement-panel__content">
