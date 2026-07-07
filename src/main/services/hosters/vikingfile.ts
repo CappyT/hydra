@@ -8,8 +8,15 @@ interface UnlockResponse {
 
 export class VikingFileApi {
   public static async getDownloadUrl(uri: string): Promise<string> {
+    const nimbusApiUrl = import.meta.env.MAIN_VITE_NIMBUS_API_URL;
+    if (!nimbusApiUrl) {
+      throw new Error(
+        "VikingFile unlock is unavailable: MAIN_VITE_NIMBUS_API_URL is not configured"
+      );
+    }
+
     const unlockResponse = await axios.post<UnlockResponse>(
-      `${import.meta.env.MAIN_VITE_NIMBUS_API_URL}/hosters/unlock`,
+      `${nimbusApiUrl}/hosters/unlock`,
       { url: uri }
     );
 
