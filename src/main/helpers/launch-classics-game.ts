@@ -1,8 +1,10 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { db, gamesSublevel, levelKeys } from "@main/level";
 import { emulators, logger } from "@main/services";
+import { wrapWithSandbox } from "./sandbox-launch";
 import type {
   EmulatorBinary,
   EmulatorConfig,
@@ -157,6 +159,28 @@ const resolveEmulatorWrappers = (
   ];
 };
 
+const resolveEmulatorDataDirs = (binary: EmulatorBinary): string[] => {
+  const home = os.homedir();
+  const configDir = path.join(home, ".config");
+  const shareDir = path.join(home, ".local", "share");
+
+  switch (binary) {
+    case "duckstation":
+      return [
+        path.join(configDir, "duckstation"),
+        path.join(shareDir, "duckstation"),
+      ];
+    case "pcsx2":
+      return [
+        path.join(configDir, "PCSX2"),
+        path.join(shareDir, "PCSX2"),
+        path.join(shareDir, "pcsx2"),
+      ];
+    case "rpcs3":
+      return [path.join(configDir, "rpcs3"), path.join(shareDir, "rpcs3")];
+  }
+};
+
 export const launchClassicsGame = async (
   options: LaunchClassicsGameOptions
 ): Promise<void> => {
@@ -213,14 +237,29 @@ export const launchClassicsGame = async (
 
   const baseArgs = buildEmulatorArgs(config.binary, bootTarget);
 
-  const resolvedLaunchCommand = resolveLaunchCommand({
-    baseCommand: executableTarget,
-    baseArgs,
-    launchOptions: null,
-    wrapperCommands,
-  });
-
   const workingDirectory = path.dirname(executableTarget);
+
+  const emulatorAdditionalBinds = [
+    ...resolveEmulatorDataDirs(config.binary),
+    path.dirname(bootTarget),
+    path.dirname(discPath),
+    ...(config.biosPath ? [config.biosPath] : []),
+  ];
+
+  const resolvedLaunchCommand = wrapWithSandbox(
+    resolveLaunchCommand({
+      baseCommand: executableTarget,
+      baseArgs,
+      launchOptions: null,
+      wrapperCommands,
+    }),
+    {
+      userPreferences,
+      game,
+      gameDir: workingDirectory,
+      additionalBinds: emulatorAdditionalBinds,
+    }
+  );
 
   try {
     const processRef = spawn(

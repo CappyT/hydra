@@ -5,16 +5,40 @@ import { spawn } from "node:child_process";
 
 import { getDownloadsPath } from "../helpers/get-downloads-path";
 import { registerEvent } from "../register-event";
-import { downloadsSublevel, gamesSublevel, levelKeys } from "@main/level";
-import { GameShop } from "@types";
+import { db, downloadsSublevel, gamesSublevel, levelKeys } from "@main/level";
+import { GameShop, type Game, type UserPreferences } from "@types";
 import { logger, Umu, Wine } from "@main/services";
+import { wrapWithSandbox } from "@main/helpers/sandbox-launch";
 
-const launchInstallerWithWine = async (filePath: string): Promise<boolean> => {
+interface InstallerSandboxContext {
+  userPreferences?: UserPreferences | null;
+  game?: Game | null;
+  winePrefixPath?: string | null;
+}
+
+const launchInstallerWithWine = async (
+  filePath: string,
+  sandbox?: InstallerSandboxContext
+): Promise<boolean> => {
+  const resolved = wrapWithSandbox(
+    { command: "wine", args: [filePath], env: {} },
+    {
+      userPreferences: sandbox?.userPreferences,
+      game: sandbox?.game,
+      gameDir: path.dirname(filePath),
+      winePrefix: sandbox?.winePrefixPath,
+    }
+  );
+
   return await new Promise<boolean>((resolve) => {
-    const child = spawn("wine", [filePath], {
+    const child = spawn(resolved.command, resolved.args, {
       detached: true,
       stdio: "ignore",
       shell: false,
+      env: {
+        ...process.env,
+        ...resolved.env,
+      },
     });
 
     child.once("spawn", () => {
@@ -60,6 +84,8 @@ const executeGameInstaller = async (
     gameId?: string;
     winePrefixPath?: string | null;
     protonPath?: string | null;
+    userPreferences?: UserPreferences | null;
+    game?: Game | null;
   }
 ) => {
   if (process.platform === "win32") {
@@ -77,12 +103,18 @@ const executeGameInstaller = async (
         gameId: options?.gameId,
         winePrefixPath: options?.winePrefixPath,
         protonPath: options?.protonPath,
+        userPreferences: options?.userPreferences,
+        sandboxGame: options?.game,
       });
       return true;
     } catch (error) {
       logger.error("Failed to execute game installer with umu-run", error);
 
-      const launchedWithWine = await launchInstallerWithWine(filePath);
+      const launchedWithWine = await launchInstallerWithWine(filePath, {
+        userPreferences: options?.userPreferences,
+        game: options?.game,
+        winePrefixPath: options?.winePrefixPath,
+      });
       if (launchedWithWine) {
         return true;
       }
@@ -102,6 +134,11 @@ const openGameInstaller = async (
   const downloadKey = levelKeys.game(shop, objectId);
   const download = await downloadsSublevel.get(downloadKey);
   const game = await gamesSublevel.get(downloadKey).catch(() => null);
+  const userPreferences = await db
+    .get<string, UserPreferences | null>(levelKeys.userPreferences, {
+      valueEncoding: "json",
+    })
+    .catch(() => null);
   const effectiveWinePrefixPath = Wine.getEffectivePrefixPath(
     game?.winePrefixPath,
     objectId
@@ -134,6 +171,8 @@ const openGameInstaller = async (
       gameId: objectId,
       winePrefixPath: effectiveWinePrefixPath,
       protonPath: game?.protonPath,
+      userPreferences,
+      game,
     });
   }
 
@@ -149,6 +188,8 @@ const openGameInstaller = async (
         gameId: objectId,
         winePrefixPath: effectiveWinePrefixPath,
         protonPath: game?.protonPath,
+        userPreferences,
+        game,
       }
     );
   }

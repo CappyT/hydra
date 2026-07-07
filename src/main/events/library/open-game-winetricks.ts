@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
 import { registerEvent } from "../register-event";
-import { gamesSublevel, levelKeys } from "@main/level";
+import { db, gamesSublevel, levelKeys } from "@main/level";
 import { logger, Wine } from "@main/services";
-import type { GameShop } from "@types";
+import type { GameShop, UserPreferences } from "@types";
+import { wrapWithSandbox } from "@main/helpers/sandbox-launch";
 
 const openGameWinetricks = async (
   _event: Electron.IpcMainInvokeEvent,
@@ -27,15 +28,31 @@ const openGameWinetricks = async (
     return false;
   }
 
+  const userPreferences = await db
+    .get<string, UserPreferences | null>(levelKeys.userPreferences, {
+      valueEncoding: "json",
+    })
+    .catch(() => null);
+
+  const resolved = wrapWithSandbox(
+    { command: "winetricks", args: [], env: { WINEPREFIX: winePrefixPath } },
+    {
+      userPreferences,
+      game,
+      gameDir: winePrefixPath,
+      winePrefix: winePrefixPath,
+    }
+  );
+
   try {
     await new Promise<void>((resolve, reject) => {
-      const child = spawn("winetricks", {
+      const child = spawn(resolved.command, resolved.args, {
         detached: true,
         stdio: "ignore",
         shell: false,
         env: {
           ...process.env,
-          WINEPREFIX: winePrefixPath,
+          ...resolved.env,
         },
       });
 

@@ -6,8 +6,10 @@ import { is } from "@electron-toolkit/utils";
 import { SystemPath } from "./system-path";
 import { logsPath } from "@main/constants";
 import { logger } from "./logger";
-import type { ProtonVersion } from "@types";
+import type { Game, ProtonVersion, UserPreferences } from "@types";
 import { resolveLaunchCommand } from "@main/helpers/resolve-launch-command";
+import { wrapWithSandbox } from "@main/helpers/sandbox-launch";
+import { Sandbox } from "./sandbox";
 
 const isValidProtonDirectory = (directoryPath: string) => {
   const protonFilePath = path.join(directoryPath, "proton");
@@ -212,8 +214,13 @@ export class Umu {
       launchOptions?: string | null;
       useMangohud?: boolean;
       useGamemode?: boolean;
+      userPreferences?: UserPreferences | null;
+      sandboxGame?: Pick<
+        Game,
+        "sandboxDisabled" | "sandboxExtraPaths" | "sandboxShareIpc"
+      > | null;
     }
-  ): Promise<void> {
+  ): Promise<number | null> {
     const QUICK_EXIT_THRESHOLD_MS = 3000;
     const workingDirectory = path.dirname(executablePath);
     const umuLogPath = getUmuLogPath();
@@ -223,12 +230,29 @@ export class Umu {
     const executableArgs = pythonPath
       ? [umuBinaryPath, executablePath, ...launchParameters]
       : [executablePath, ...launchParameters];
-    const resolvedLaunchCommand = resolveLaunchCommand({
-      baseCommand: executableToSpawn,
-      baseArgs: executableArgs,
-      launchOptions: options?.launchOptions,
-      wrapperCommands: [...(options?.useGamemode ? ["gamemoderun"] : [])],
-    });
+
+    // umu's Steam-Linux-Runtime is itself a bwrap container and cannot be
+    // nested inside our sandbox; disable it so Proton runs directly.
+    const sandboxEnabled = Sandbox.isEnabled(
+      options?.userPreferences,
+      options?.sandboxGame
+    );
+
+    const resolvedLaunchCommand = wrapWithSandbox(
+      resolveLaunchCommand({
+        baseCommand: executableToSpawn,
+        baseArgs: executableArgs,
+        launchOptions: options?.launchOptions,
+        wrapperCommands: [...(options?.useGamemode ? ["gamemoderun"] : [])],
+      }),
+      {
+        userPreferences: options?.userPreferences,
+        game: options?.sandboxGame,
+        gameDir: workingDirectory,
+        winePrefix: options?.winePrefixPath,
+        protonDir: options?.protonPath,
+      }
+    );
 
     fs.mkdirSync(path.dirname(umuLogPath), { recursive: true });
     ensureExecutablePermission(umuBinaryPath);
@@ -241,6 +265,7 @@ export class Umu {
         : {}),
       ...(options?.protonPath ? { PROTONPATH: options.protonPath } : {}),
       ...(options?.useMangohud ? { MANGOHUD: "1" } : {}),
+      ...(sandboxEnabled ? { UMU_NO_RUNTIME: "1" } : {}),
       ...resolvedLaunchCommand.env,
     };
 
@@ -269,7 +294,7 @@ export class Umu {
       umuLogPath,
     });
 
-    await new Promise<void>((resolve, reject) => {
+    return await new Promise<number | null>((resolve, reject) => {
       const shouldPipeToTerminal = is.dev;
       const logFileDescriptor = shouldPipeToTerminal
         ? null
@@ -313,7 +338,7 @@ export class Umu {
           finalize(() => {
             child.unref();
             closeLogFileDescriptor();
-            resolve();
+            resolve(child.pid ?? null);
           });
         }, QUICK_EXIT_THRESHOLD_MS);
       });

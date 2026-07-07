@@ -13,12 +13,15 @@ import {
   Wine,
   NativeAddon,
   launchedGamePids,
+  sandboxedGamePids,
+  Sandbox,
 } from "@main/services";
 import { CommonRedistManager } from "@main/services/common-redist-manager";
 import { parseExecutablePath } from "../events/helpers/parse-executable-path";
 import { isGamemodeAvailable } from "./is-gamemode-available";
 import { isMangohudAvailable } from "./is-mangohud-available";
 import { resolveLaunchCommand } from "./resolve-launch-command";
+import { wrapWithSandbox } from "./sandbox-launch";
 import {
   buildWindowsBatchCommand,
   isWindowsBatchFile,
@@ -50,21 +53,34 @@ const ensureExecutablePermission = (executablePath: string) => {
   }
 };
 
+interface SandboxLaunchInput {
+  userPreferences?: UserPreferences | null;
+  game?: Game | null;
+}
+
 const launchNatively = (
   executablePath: string,
   launchOptions?: string | null,
   useMangohud = false,
-  useGamemode = false
+  useGamemode = false,
+  sandbox?: SandboxLaunchInput
 ): number | null => {
   const workingDirectory = path.dirname(executablePath);
-  const resolvedLaunchCommand = resolveLaunchCommand({
-    baseCommand: executablePath,
-    launchOptions,
-    wrapperCommands: [
-      ...(useGamemode ? ["gamemoderun"] : []),
-      ...(useMangohud ? ["mangohud"] : []),
-    ],
-  });
+  const resolvedLaunchCommand = wrapWithSandbox(
+    resolveLaunchCommand({
+      baseCommand: executablePath,
+      launchOptions,
+      wrapperCommands: [
+        ...(useGamemode ? ["gamemoderun"] : []),
+        ...(useMangohud ? ["mangohud"] : []),
+      ],
+    }),
+    {
+      userPreferences: sandbox?.userPreferences,
+      game: sandbox?.game,
+      gameDir: workingDirectory,
+    }
+  );
 
   if (process.platform === "linux") {
     ensureExecutablePermission(executablePath);
@@ -135,18 +151,30 @@ const launchWithWine = async (
   executablePath: string,
   launchOptions?: string | null,
   useMangohud = false,
-  useGamemode = false
+  useGamemode = false,
+  sandbox?: SandboxLaunchInput & {
+    winePrefix?: string | null;
+    gameKey?: string;
+  }
 ): Promise<boolean> => {
   const workingDirectory = path.dirname(executablePath);
-  const resolvedLaunchCommand = resolveLaunchCommand({
-    baseCommand: "wine",
-    baseArgs: [executablePath],
-    launchOptions,
-    wrapperCommands: [
-      ...(useGamemode ? ["gamemoderun"] : []),
-      ...(useMangohud ? ["mangohud"] : []),
-    ],
-  });
+  const resolvedLaunchCommand = wrapWithSandbox(
+    resolveLaunchCommand({
+      baseCommand: "wine",
+      baseArgs: [executablePath],
+      launchOptions,
+      wrapperCommands: [
+        ...(useGamemode ? ["gamemoderun"] : []),
+        ...(useMangohud ? ["mangohud"] : []),
+      ],
+    }),
+    {
+      userPreferences: sandbox?.userPreferences,
+      game: sandbox?.game,
+      gameDir: workingDirectory,
+      winePrefix: sandbox?.winePrefix,
+    }
+  );
 
   return await new Promise<boolean>((resolve) => {
     const processRef = spawn(
@@ -165,6 +193,15 @@ const launchWithWine = async (
     );
 
     processRef.once("spawn", () => {
+      if (
+        processRef.pid &&
+        sandbox?.gameKey &&
+        Sandbox.isEnabled(sandbox.userPreferences, sandbox.game)
+      ) {
+        launchedGamePids.set(sandbox.gameKey, processRef.pid);
+        sandboxedGamePids.add(sandbox.gameKey);
+      }
+
       processRef.unref();
       resolve(true);
     });
@@ -249,7 +286,8 @@ const launchWindowsBinaryOnLinux = async (
   game: Game | undefined,
   launchOptions: string | null | undefined,
   useMangohud: boolean,
-  useGamemode: boolean
+  useGamemode: boolean,
+  userPreferences: UserPreferences | null
 ): Promise<boolean> => {
   const protonPath = await resolveProtonPathForLaunch(game?.protonPath);
   const winePrefixPath = Wine.getEffectivePrefixPath(
@@ -260,14 +298,22 @@ const launchWindowsBinaryOnLinux = async (
   await cleanupStaleCompatibilityProcesses(objectId, winePrefixPath);
 
   try {
-    await Umu.launchExecutable(parsedPath, [], {
+    const umuPid = await Umu.launchExecutable(parsedPath, [], {
       winePrefixPath,
       protonPath,
       gameId: objectId,
       launchOptions,
       useGamemode,
       useMangohud,
+      userPreferences,
+      sandboxGame: game,
     });
+    if (umuPid !== null) {
+      launchedGamePids.set(gameKey, umuPid);
+      if (Sandbox.isEnabled(userPreferences, game)) {
+        sandboxedGamePids.add(gameKey);
+      }
+    }
     PowerSaveBlockerManager.markCompatibilityLaunchStarted(gameKey);
     return true;
   } catch (error) {
@@ -278,7 +324,13 @@ const launchWindowsBinaryOnLinux = async (
     parsedPath,
     launchOptions,
     useMangohud,
-    useGamemode
+    useGamemode,
+    {
+      userPreferences,
+      game,
+      winePrefix: winePrefixPath,
+      gameKey,
+    }
   );
 
   if (launchedWithWine) {
@@ -357,20 +409,27 @@ export const launchGame = async (
         game,
         launchOptions,
         useMangohud,
-        useGamemode
+        useGamemode,
+        userPreferences
       );
 
-      if (launched) return null;
+      if (launched) return launchedGamePids.get(gameKey) ?? null;
     }
 
     const pid = launchNatively(
       parsedPath,
       launchOptions,
       useMangohud,
-      useGamemode
+      useGamemode,
+      { userPreferences, game }
     );
 
-    if (pid !== null) launchedGamePids.set(gameKey, pid);
+    if (pid !== null) {
+      launchedGamePids.set(gameKey, pid);
+      if (Sandbox.isEnabled(userPreferences, game)) {
+        sandboxedGamePids.add(gameKey);
+      }
+    }
 
     return pid;
   }

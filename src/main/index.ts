@@ -1,4 +1,11 @@
-import { app, BrowserWindow, net, powerMonitor, protocol } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  net,
+  powerMonitor,
+  protocol,
+} from "electron";
 import updater from "electron-updater";
 import i18n from "i18next";
 import path from "node:path";
@@ -12,6 +19,7 @@ import {
   PowerSaveBlockerManager,
   DownloadOrchestrator,
   SSEClient,
+  SandboxUnavailableError,
 } from "@main/services";
 import resources from "@locales";
 import { PythonRPC } from "./services/python-rpc";
@@ -210,12 +218,21 @@ const handleRunGame = async (shop: GameShop, objectId: string) => {
     WindowManager.createMainWindow();
   }
 
-  await launchGame({
-    shop,
-    objectId,
-    executablePath: game.executablePath,
-    launchOptions: game.launchOptions,
-  });
+  try {
+    await launchGame({
+      shop,
+      objectId,
+      executablePath: game.executablePath,
+      launchOptions: game.launchOptions,
+    });
+  } catch (error) {
+    if (error instanceof SandboxUnavailableError) {
+      dialog.showErrorBox("Hydra", error.message);
+      return;
+    }
+
+    throw error;
+  }
 };
 
 const handleDeepLinkPath = (uri?: string) => {

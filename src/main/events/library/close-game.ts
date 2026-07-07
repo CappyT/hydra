@@ -1,5 +1,11 @@
 import { registerEvent } from "../register-event";
-import { emulators, launchedGamePids, logger, Wine } from "@main/services";
+import {
+  emulators,
+  launchedGamePids,
+  sandboxedGamePids,
+  logger,
+  Wine,
+} from "@main/services";
 import sudo from "sudo-prompt";
 import { app } from "electron";
 import { gamesSublevel, levelKeys } from "@main/level";
@@ -30,7 +36,23 @@ const closeGame = async (
 
   if (!game) return;
 
-  const launchedPid = launchedGamePids.get(levelKeys.game(shop, objectId));
+  const gameKey = levelKeys.game(shop, objectId);
+  const launchedPid = launchedGamePids.get(gameKey);
+
+  // A sandboxed launch records the bwrap wrapper pid, which is its own process
+  // group leader. Killing the group tears down the whole sandbox in one shot.
+  if (launchedPid && sandboxedGamePids.has(gameKey)) {
+    try {
+      process.kill(-launchedPid, "SIGKILL");
+      launchedGamePids.delete(gameKey);
+      sandboxedGamePids.delete(gameKey);
+      return;
+    } catch (error) {
+      logger.error("Failed to kill sandbox process group", error);
+      // Fall through to the legacy per-process matching below.
+    }
+  }
+
   const trackingPaths = game.trackingExecutablePaths?.filter(Boolean) ?? [];
   const targetPaths =
     game.executablePath && !isWindowsBatchFile(game.executablePath)
