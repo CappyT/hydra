@@ -8,7 +8,12 @@ import { registerEvent } from "../register-event";
 import { db, downloadsSublevel, gamesSublevel, levelKeys } from "@main/level";
 import { GameShop, type Game, type UserPreferences } from "@types";
 import { logger, Sandbox, Umu, Wine } from "@main/services";
-import { wrapWithSandbox } from "@main/helpers/sandbox-launch";
+import {
+  wrapWithSandbox,
+  openSeccompFd,
+  withSeccompStdio,
+  closeSeccompFd,
+} from "@main/helpers/sandbox-launch";
 import { buildSandboxEnv } from "@main/helpers/sandbox-env";
 
 interface InstallerSandboxContext {
@@ -50,30 +55,36 @@ const launchInstallerWithWine = async (
     }
   );
 
-  return await new Promise<boolean>((resolve) => {
-    const child = spawn(resolved.command, resolved.args, {
-      detached: true,
-      stdio: "ignore",
-      shell: false,
-      // Scrub the inherited env to an allowlist when sandboxed so the installer
-      // cannot read the user's secrets from /proc/self/environ, then re-apply
-      // the launch env. Full env is kept when the sandbox is off.
-      env: {
-        ...(sandboxEnabled ? buildSandboxEnv(process.env) : process.env),
-        ...resolved.env,
-      },
-    });
+  const seccompFd = openSeccompFd(resolved);
+  try {
+    return await new Promise<boolean>((resolve) => {
+      const child = spawn(resolved.command, resolved.args, {
+        detached: true,
+        stdio: withSeccompStdio(["ignore", "ignore", "ignore"], seccompFd),
+        shell: false,
+        // Scrub the inherited env to an allowlist when sandboxed so the
+        // installer cannot read the user's secrets from /proc/self/environ,
+        // then re-apply the launch env. Full env is kept when the sandbox is
+        // off.
+        env: {
+          ...(sandboxEnabled ? buildSandboxEnv(process.env) : process.env),
+          ...resolved.env,
+        },
+      });
 
-    child.once("spawn", () => {
-      child.unref();
-      resolve(true);
-    });
+      child.once("spawn", () => {
+        child.unref();
+        resolve(true);
+      });
 
-    child.once("error", (error) => {
-      logger.error("Failed to execute game installer with wine", error);
-      resolve(false);
+      child.once("error", (error) => {
+        logger.error("Failed to execute game installer with wine", error);
+        resolve(false);
+      });
     });
-  });
+  } finally {
+    closeSeccompFd(seccompFd);
+  }
 };
 
 const launchInstallerDirectly = async (filePath: string): Promise<boolean> => {

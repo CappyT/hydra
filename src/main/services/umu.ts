@@ -8,7 +8,12 @@ import { logsPath } from "@main/constants";
 import { logger } from "./logger";
 import type { Game, ProtonVersion, UserPreferences } from "@types";
 import { resolveLaunchCommand } from "@main/helpers/resolve-launch-command";
-import { wrapWithSandbox } from "@main/helpers/sandbox-launch";
+import {
+  wrapWithSandbox,
+  openSeccompFd,
+  withSeccompStdio,
+  closeSeccompFd,
+} from "@main/helpers/sandbox-launch";
 import { buildSandboxEnv } from "@main/helpers/sandbox-env";
 import { resolveSystemBinary } from "@main/helpers/resolve-system-binary";
 import { isWaylandSessionAvailable } from "@main/helpers/is-gamescope-available";
@@ -322,6 +327,10 @@ export class Umu {
         ? null
         : fs.openSync(umuLogPath, "a");
 
+      // Opened once here; the child inherits its own dup at stdio fd 3, so this
+      // copy is closed in the (single) finalize path below.
+      const seccompFd = openSeccompFd(resolvedLaunchCommand);
+
       let settled = false;
 
       const closeLogFileDescriptor = () => {
@@ -342,8 +351,11 @@ export class Umu {
         {
           detached: true,
           stdio: shouldPipeToTerminal
-            ? "inherit"
-            : ["ignore", logFileDescriptor, logFileDescriptor],
+            ? withSeccompStdio(["inherit", "inherit", "inherit"], seccompFd)
+            : withSeccompStdio(
+                ["ignore", logFileDescriptor, logFileDescriptor],
+                seccompFd
+              ),
           shell: false,
           cwd: workingDirectory,
           // Scrub the inherited env to an allowlist when sandboxed so the game
@@ -364,6 +376,7 @@ export class Umu {
           finalize(() => {
             child.unref();
             closeLogFileDescriptor();
+            closeSeccompFd(seccompFd);
             resolve(child.pid ?? null);
           });
         }, QUICK_EXIT_THRESHOLD_MS);
@@ -377,6 +390,7 @@ export class Umu {
 
         finalize(() => {
           closeLogFileDescriptor();
+          closeSeccompFd(seccompFd);
           const earlyExitError = new Error(
             `umu-run exited early with code=${code ?? "null"} signal=${signal ?? "null"}`
           );
@@ -396,6 +410,7 @@ export class Umu {
 
         finalize(() => {
           closeLogFileDescriptor();
+          closeSeccompFd(seccompFd);
           fs.appendFileSync(
             umuLogPath,
             `[${new Date().toISOString()}] Failed to spawn umu-run (${resolvedLaunchCommand.command}): ${String(error)}\n`

@@ -205,6 +205,13 @@ export interface UserPreferences {
   autoRunMangohud?: boolean;
   autoRunGamemode?: boolean;
   disableSandbox?: boolean;
+  /**
+   * Global kill-switch for the sandbox seccomp syscall filter. Default falsy =
+   * seccomp ON. When true, sandboxed launches get no `--seccomp` filter (the
+   * bwrap sandbox itself is unaffected). Disabling the whole sandbox
+   * (`disableSandbox`) also disables seccomp.
+   */
+  disableSeccomp?: boolean;
   hideClassicsBookmark?: boolean;
   classicsUseHeroLayout?: boolean;
   backupBackend?: "local" | "rclone";

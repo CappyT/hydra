@@ -988,6 +988,8 @@
     "sandbox_description": "Games run inside an isolated bubblewrap sandbox that hides your home directory and personal files while keeping network access. You can override this per game.",
     "sandbox_unavailable_error": "bubblewrap (bwrap) is not available. Install bubblewrap or disable the sandbox to launch this game.",
     "sandbox_unavailable_tooltip": "bubblewrap (bwrap) is not available in your PATH",
+    "enable_seccomp": "Apply a seccomp syscall filter",
+    "seccomp_description": "Blocks a small set of dangerous, never-legitimately-needed syscalls (kernel exploit and sandbox-escape primitives) inside the sandbox. Requires the sandbox to be enabled. Turn off only to diagnose a game that misbehaves with it on.",
     "common_redist": "Common redistributables",
     "common_redist_description": "Common redistributables are required to run some games. Installing them is recommended to avoid issues.",
     "install_common_redist": "Install",

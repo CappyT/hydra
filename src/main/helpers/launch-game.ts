@@ -25,7 +25,12 @@ import {
   isWaylandSessionAvailable,
 } from "./is-gamescope-available";
 import { resolveLaunchCommand } from "./resolve-launch-command";
-import { wrapWithSandbox } from "./sandbox-launch";
+import {
+  wrapWithSandbox,
+  openSeccompFd,
+  withSeccompStdio,
+  closeSeccompFd,
+} from "./sandbox-launch";
 import { buildSandboxEnv } from "./sandbox-env";
 import {
   buildWindowsBatchCommand,
@@ -138,13 +143,14 @@ const launchNatively = (
     return processRef.pid ?? null;
   }
 
+  const seccompFd = openSeccompFd(resolvedLaunchCommand);
   const processRef = spawn(
     resolvedLaunchCommand.command,
     resolvedLaunchCommand.args,
     {
       shell: false,
       detached: true,
-      stdio: "ignore",
+      stdio: withSeccompStdio(["ignore", "ignore", "ignore"], seccompFd),
       cwd: workingDirectory,
       // Scrub the inherited env to an allowlist when sandboxed so the game
       // cannot read the user's secrets from /proc/self/environ, then re-apply
@@ -161,6 +167,8 @@ const launchNatively = (
   });
 
   processRef.unref();
+  // The child inherited its own dup at fd 3; closing this copy is now safe.
+  closeSeccompFd(seccompFd);
 
   return processRef.pid ?? null;
 };
@@ -211,41 +219,47 @@ const launchWithWine = async (
     }
   );
 
-  return await new Promise<boolean>((resolve) => {
-    const processRef = spawn(
-      resolvedLaunchCommand.command,
-      resolvedLaunchCommand.args,
-      {
-        shell: false,
-        detached: true,
-        stdio: "ignore",
-        cwd: workingDirectory,
-        // Scrub the inherited env to an allowlist when sandboxed so the game
-        // cannot read the user's secrets from /proc/self/environ, then re-apply
-        // the prefix and launch env. Full env is kept when the sandbox is off.
-        env: {
-          ...(sandboxEnabled ? buildSandboxEnv(process.env) : process.env),
-          ...(winePrefix ? { WINEPREFIX: winePrefix } : {}),
-          ...resolvedLaunchCommand.env,
-        },
-      }
-    );
+  const seccompFd = openSeccompFd(resolvedLaunchCommand);
+  try {
+    return await new Promise<boolean>((resolve) => {
+      const processRef = spawn(
+        resolvedLaunchCommand.command,
+        resolvedLaunchCommand.args,
+        {
+          shell: false,
+          detached: true,
+          stdio: withSeccompStdio(["ignore", "ignore", "ignore"], seccompFd),
+          cwd: workingDirectory,
+          // Scrub the inherited env to an allowlist when sandboxed so the game
+          // cannot read the user's secrets from /proc/self/environ, then
+          // re-apply the prefix and launch env. Full env kept when sandbox off.
+          env: {
+            ...(sandboxEnabled ? buildSandboxEnv(process.env) : process.env),
+            ...(winePrefix ? { WINEPREFIX: winePrefix } : {}),
+            ...resolvedLaunchCommand.env,
+          },
+        }
+      );
 
-    processRef.once("spawn", () => {
-      if (processRef.pid && sandbox?.gameKey && sandboxEnabled) {
-        launchedGamePids.set(sandbox.gameKey, processRef.pid);
-        sandboxedGamePids.add(sandbox.gameKey);
-      }
+      processRef.once("spawn", () => {
+        if (processRef.pid && sandbox?.gameKey && sandboxEnabled) {
+          launchedGamePids.set(sandbox.gameKey, processRef.pid);
+          sandboxedGamePids.add(sandbox.gameKey);
+        }
 
-      processRef.unref();
-      resolve(true);
+        processRef.unref();
+        resolve(true);
+      });
+
+      processRef.once("error", (error) => {
+        logger.error("Failed to launch game with Wine", error);
+        resolve(false);
+      });
     });
-
-    processRef.once("error", (error) => {
-      logger.error("Failed to launch game with Wine", error);
-      resolve(false);
-    });
-  });
+  } finally {
+    // The child inherited its own dup at fd 3 once spawn returned; release ours.
+    closeSeccompFd(seccompFd);
+  }
 };
 
 const resolveProtonPathForLaunch = async (

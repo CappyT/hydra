@@ -81,6 +81,15 @@ export interface SandboxWrapOptions {
    * fallback path does not exist and apps read `/etc/machine-id`.
    */
   machineIdFile?: string;
+  /**
+   * When set (>= 0), append `--seccomp <fd>` so bwrap installs the compiled
+   * seccomp cBPF filter it reads from the given inherited file descriptor. The
+   * caller is responsible for opening the filter file and placing its fd at
+   * exactly this stdio index in the spawn call, so the number here and the
+   * spawn's `stdio[fd]` agree. Omitted when seccomp is disabled (globally via
+   * the `disableSeccomp` preference, or because the sandbox itself is off).
+   */
+  seccompFd?: number;
 }
 
 const isExistingPath = (
@@ -172,6 +181,7 @@ export const buildSandboxArgs = (
     shareIpc = false,
     hideX11 = false,
     machineIdFile,
+    seccompFd,
   } = options;
 
   const home = env.HOME || "";
@@ -198,6 +208,14 @@ export const buildSandboxArgs = (
 
   // Never --unshare-net: the game keeps full network access.
   bwrapArgs.push("--new-session");
+
+  // Install the compiled seccomp cBPF filter, read from the inherited fd the
+  // caller places at this stdio index. Blocks a small Tier-A set of kernel-LPE /
+  // escape syscalls (ENOSYS); everything else is allowed. Placed among the early
+  // flags; it applies to the final exec regardless of position.
+  if (typeof seccompFd === "number" && seccompFd >= 0) {
+    bwrapArgs.push("--seccomp", String(seccompFd));
+  }
 
   // Read-only system tree.
   bwrapArgs.push(

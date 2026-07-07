@@ -100,6 +100,29 @@ describe("Sandbox.wrapCommand", () => {
     assert.ok(!args.includes("--unshare-net"));
   });
 
+  it("emits --seccomp <fd> only when a seccomp fd is provided", () => {
+    const without = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: baseEnv,
+      gameDir,
+    });
+    assert.ok(!without.args.includes("--seccomp"));
+
+    const withFd = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: baseEnv,
+      gameDir,
+      seccompFd: 3,
+    });
+    const flagIndex = withFd.args.indexOf("--seccomp");
+    assert.ok(flagIndex >= 0);
+    assert.equal(withFd.args[flagIndex + 1], "3");
+    // The flag lands before the "--" command separator (an early bwrap flag).
+    assert.ok(flagIndex < withFd.args.indexOf("--"));
+  });
+
   it("ties the sandbox lifetime to the launcher with --die-with-parent", () => {
     const { args } = buildSandboxArgs({
       command: "/usr/bin/game",

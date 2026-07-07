@@ -3,7 +3,12 @@ import { registerEvent } from "../register-event";
 import { db, gamesSublevel, levelKeys } from "@main/level";
 import { logger, Sandbox, Wine } from "@main/services";
 import type { GameShop, UserPreferences } from "@types";
-import { wrapWithSandbox } from "@main/helpers/sandbox-launch";
+import {
+  wrapWithSandbox,
+  openSeccompFd,
+  withSeccompStdio,
+  closeSeccompFd,
+} from "@main/helpers/sandbox-launch";
 import { buildSandboxEnv } from "@main/helpers/sandbox-env";
 
 const openGameWinetricks = async (
@@ -46,11 +51,12 @@ const openGameWinetricks = async (
     }
   );
 
+  const seccompFd = openSeccompFd(resolved);
   try {
     await new Promise<void>((resolve, reject) => {
       const child = spawn(resolved.command, resolved.args, {
         detached: true,
-        stdio: "ignore",
+        stdio: withSeccompStdio(["ignore", "ignore", "ignore"], seccompFd),
         shell: false,
         env: {
           ...(Sandbox.isEnabled(userPreferences, game)
@@ -72,6 +78,8 @@ const openGameWinetricks = async (
   } catch (error) {
     logger.error("Failed to launch winetricks", error);
     return false;
+  } finally {
+    closeSeccompFd(seccompFd);
   }
 };
 

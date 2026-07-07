@@ -56,6 +56,13 @@ export const sandboxMachineIdsPath = path.join(
   "sandbox-machine-ids"
 );
 
+// Compiled seccomp cBPF filter for the bwrap sandbox. Written once per process
+// (see sandbox-launch.ts) and passed to bwrap via an inherited fd (`--seccomp`).
+export const sandboxSeccompFilterPath = path.join(
+  SystemPath.getPath("userData"),
+  "seccomp-filter.bpf"
+);
+
 export const appVersion = app.getVersion() + (isStaging ? "-staging" : "");
 
 export const ASSETS_PATH = path.join(SystemPath.getPath("userData"), "Assets");

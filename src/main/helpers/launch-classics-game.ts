@@ -4,7 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { db, gamesSublevel, levelKeys } from "@main/level";
 import { Sandbox, emulators, logger } from "@main/services";
-import { wrapWithSandbox } from "./sandbox-launch";
+import {
+  wrapWithSandbox,
+  openSeccompFd,
+  withSeccompStdio,
+  closeSeccompFd,
+} from "./sandbox-launch";
 import { buildSandboxEnv } from "./sandbox-env";
 import type {
   EmulatorBinary,
@@ -282,6 +287,7 @@ export const launchClassicsGame = async (
     }
   );
 
+  const seccompFd = openSeccompFd(resolvedLaunchCommand);
   try {
     const processRef = spawn(
       resolvedLaunchCommand.command,
@@ -289,7 +295,7 @@ export const launchClassicsGame = async (
       {
         shell: false,
         detached: true,
-        stdio: "ignore",
+        stdio: withSeccompStdio(["ignore", "ignore", "ignore"], seccompFd),
         cwd: workingDirectory,
         env: {
           ...(Sandbox.isEnabled(userPreferences, game)
@@ -327,5 +333,8 @@ export const launchClassicsGame = async (
   } catch (error) {
     logger.error("Failed to spawn classics emulator", error);
     throw error;
+  } finally {
+    // The child inherited its own dup at fd 3; release the parent's copy.
+    closeSeccompFd(seccompFd);
   }
 };

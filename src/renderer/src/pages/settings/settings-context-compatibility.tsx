@@ -44,6 +44,7 @@ export function SettingsContextCompatibility() {
   const [gamemodeAvailable, setGamemodeAvailable] = useState(false);
   const [mangohudAvailable, setMangohudAvailable] = useState(false);
   const [enableSandbox, setEnableSandbox] = useState(true);
+  const [enableSeccomp, setEnableSeccomp] = useState(true);
   const [sandboxAvailable, setSandboxAvailable] = useState(false);
 
   useEffect(() => {
@@ -85,6 +86,7 @@ export function SettingsContextCompatibility() {
     setAutoRunMangohud(userPreferences.autoRunMangohud ?? false);
     setAutoRunGamemode(userPreferences.autoRunGamemode ?? false);
     setEnableSandbox(userPreferences.disableSandbox !== true);
+    setEnableSeccomp(userPreferences.disableSeccomp !== true);
     setDefaultWinePrefixPath(
       userPreferences.defaultWinePrefixPath ?? defaultWinePrefixBasePath
     );
@@ -419,6 +421,25 @@ export function SettingsContextCompatibility() {
 
                 <p className="settings-behavior__proton-description">
                   {t("sandbox_description")}
+                </p>
+              </div>
+
+              <div className="settings-behavior__sandbox-toggle">
+                <CheckboxField
+                  label={t("enable_seccomp")}
+                  checked={enableSeccomp && enableSandbox}
+                  disabled={!sandboxAvailable || !enableSandbox}
+                  onChange={() =>
+                    setEnableSeccomp((previousValue) => {
+                      const nextValue = !previousValue;
+                      updateUserPreferences({ disableSeccomp: !nextValue });
+                      return nextValue;
+                    })
+                  }
+                />
+
+                <p className="settings-behavior__proton-description">
+                  {t("seccomp_description")}
                 </p>
               </div>
             </div>

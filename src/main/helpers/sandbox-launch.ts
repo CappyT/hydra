@@ -4,9 +4,32 @@ import path from "node:path";
 import type { Game, UserPreferences } from "@types";
 import { Sandbox } from "@main/services/sandbox";
 import { assertSandboxAvailable } from "@main/services/sandbox-command-builder";
+import { buildSeccompFilter } from "@main/services/sandbox-seccomp";
 import { logger } from "@main/services/logger";
-import { sandboxHomesPath, sandboxMachineIdsPath } from "@main/constants";
+import {
+  sandboxHomesPath,
+  sandboxMachineIdsPath,
+  sandboxSeccompFilterPath,
+} from "@main/constants";
 import type { ResolvedLaunchCommand } from "./resolve-launch-command";
+
+/**
+ * Conventional spawn `stdio` index at which a sandboxed spawn must place the
+ * opened seccomp filter fd. It becomes fd 3 in the child, which is what the
+ * bwrap args request via `--seccomp 3`. The two MUST agree; keep them in sync
+ * through this constant.
+ */
+export const SANDBOX_SECCOMP_FD = 3;
+
+/** Extends a resolved launch command with the seccomp filter path a sandboxed
+ *  spawn must open and place at {@link SANDBOX_SECCOMP_FD}. Absent when seccomp
+ *  is disabled (globally or because the sandbox itself is off). */
+export interface SandboxedLaunchCommand extends ResolvedLaunchCommand {
+  seccompFilterPath?: string;
+}
+
+/** Anything a sandboxed spawn's stdio array may hold at index 0..3. */
+type SeccompStdioEntry = "ignore" | "inherit" | "pipe" | number | null;
 
 type SandboxGame = Pick<
   Game,
@@ -128,16 +151,94 @@ const ensureSandboxMachineId = (
   }
 };
 
+let cachedSeccompFilterPath: string | null = null;
+
+/**
+ * Writes the compiled seccomp cBPF filter to its cached file under userData and
+ * returns the path, or undefined on failure. Written once per process so an app
+ * update always refreshes the filter, then memoized. On failure the launch
+ * proceeds WITHOUT `--seccomp` (the path is undefined, so no fd is wired and no
+ * `--seccomp` flag is emitted): seccomp is a hardening layer, not the sandbox
+ * boundary, so a write failure must not block launches.
+ */
+const ensureSeccompFilterFile = (): string | undefined => {
+  if (cachedSeccompFilterPath) return cachedSeccompFilterPath;
+
+  try {
+    fs.mkdirSync(path.dirname(sandboxSeccompFilterPath), { recursive: true });
+    fs.writeFileSync(sandboxSeccompFilterPath, buildSeccompFilter());
+    cachedSeccompFilterPath = sandboxSeccompFilterPath;
+    return cachedSeccompFilterPath;
+  } catch (error) {
+    logger.warn("Failed to write seccomp filter, launching without it", error);
+    return undefined;
+  }
+};
+
+/** The seccomp filter is attached only when the global kill-switch is unset.
+ *  (Gated together with the sandbox being enabled at the call site.) */
+const isSeccompEnabled = (
+  userPreferences: UserPreferences | null | undefined
+): boolean => userPreferences?.disableSeccomp !== true;
+
+/**
+ * Opens the compiled seccomp filter for a sandboxed spawn. Returns the fd to
+ * place at {@link SANDBOX_SECCOMP_FD} (via {@link withSeccompStdio}), or null
+ * when the launch carries no filter. The caller MUST release the fd with
+ * {@link closeSeccompFd} after the spawn — the child inherits its own dup, so
+ * closing the parent's copy is safe once `spawn` has returned.
+ */
+export const openSeccompFd = (
+  launch: Pick<SandboxedLaunchCommand, "seccompFilterPath">
+): number | null => {
+  if (!launch.seccompFilterPath) return null;
+
+  try {
+    return fs.openSync(launch.seccompFilterPath, "r");
+  } catch (error) {
+    // The bwrap args already carry `--seccomp <fd>`; without the fd bwrap fails
+    // and the game does not launch. This is a rare fs race and fails closed.
+    logger.error("Failed to open seccomp filter fd", error);
+    return null;
+  }
+};
+
+/**
+ * Appends the opened seccomp fd at {@link SANDBOX_SECCOMP_FD} of a spawn stdio
+ * array so it becomes fd 3 in the child (matching bwrap's `--seccomp 3`).
+ * Returns `base` unchanged when there is no fd. `base` must be the leading
+ * stdio triple (stdin/out/err); the seccomp fd is appended as the fourth entry.
+ */
+export const withSeccompStdio = (
+  base: [SeccompStdioEntry, SeccompStdioEntry, SeccompStdioEntry],
+  seccompFd: number | null
+): SeccompStdioEntry[] => (seccompFd === null ? base : [...base, seccompFd]);
+
+/** Closes a seccomp fd opened by {@link openSeccompFd}. No-op for null. Call
+ *  exactly once per fd (guard double-calls via try/finally at the call site) so
+ *  a reused fd number is never closed twice. */
+export const closeSeccompFd = (fd: number | null): void => {
+  if (fd === null) return;
+  try {
+    fs.closeSync(fd);
+  } catch {
+    // Already closed / invalid — ignore.
+  }
+};
+
 /**
  * Wraps an already-resolved launch command inside the bubblewrap sandbox when
  * the sandbox is enabled (globally by default, unless disabled). Throws
  * SandboxUnavailableError when the sandbox is enabled but bwrap is missing, so
- * that no launch silently escapes the sandbox.
+ * that no launch silently escapes the sandbox. When the sandbox is enabled and
+ * seccomp is not disabled, the result also carries `seccompFilterPath`: the
+ * caller must open it and place the fd at {@link SANDBOX_SECCOMP_FD} in its
+ * spawn (see {@link openSeccompFd} / {@link withSeccompStdio}).
  */
 export const wrapWithSandbox = (
   resolved: ResolvedLaunchCommand,
   context: SandboxLaunchContext
-): ResolvedLaunchCommand => {
+): SandboxedLaunchCommand => {
   const {
     userPreferences,
     game,
@@ -167,6 +268,13 @@ export const wrapWithSandbox = (
   const homePersistDir = ensureSandboxHome(gameKey);
   const machineIdFile = ensureSandboxMachineId(gameKey);
 
+  // Attach the seccomp filter unless the global kill-switch is set. Build the
+  // filter file first so the `--seccomp` flag is only emitted when the fd will
+  // actually be available at spawn time (args and fd stay in agreement).
+  const seccompFilterPath = isSeccompEnabled(userPreferences)
+    ? ensureSeccompFilterFile()
+    : undefined;
+
   const { command, args } = Sandbox.wrapCommand({
     command: resolved.command,
     args: resolved.args,
@@ -183,11 +291,13 @@ export const wrapWithSandbox = (
     shareIpc: game?.sandboxShareIpc === true,
     hideX11,
     machineIdFile,
+    seccompFd: seccompFilterPath ? SANDBOX_SECCOMP_FD : undefined,
   });
 
   return {
     command,
     args,
     env: resolved.env,
+    seccompFilterPath,
   };
 };
