@@ -15,6 +15,7 @@ import {
   useUserDetails,
 } from "@renderer/hooks";
 import { useDownloadOptionsListener } from "@renderer/hooks/use-download-options-listener";
+import { usePauseVideosWhenHidden } from "@renderer/hooks/use-pause-videos-when-hidden";
 import i18n from "i18next";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { WorkWonders } from "workwonders-sdk";
@@ -68,6 +69,10 @@ export function App() {
 
   // Listen for new download options updates
   useDownloadOptionsListener();
+
+  // Freeze all videos while the window is hidden so they don't visibly
+  // fast-forward to catch up with the media clock on restore.
+  usePauseVideosWhenHidden();
 
   const { t } = useTranslation("app");
 
