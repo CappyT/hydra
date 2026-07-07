@@ -27,7 +27,7 @@ import {
 } from "@primer/octicons-react";
 import { useTranslation } from "react-i18next";
 import { Tooltip } from "react-tooltip";
-import { AuthPage } from "@shared";
+import { AuthPage, ACCOUNTLESS } from "@shared";
 import { GameCollection, LibraryGame } from "@types";
 import {
   Button,
@@ -283,7 +283,7 @@ export default function Library() {
   }, []);
 
   const handleCreateCollectionButtonClick = useCallback(() => {
-    if (!userDetails) {
+    if (!ACCOUNTLESS && !userDetails) {
       window.electron.openAuthWindow(AuthPage.SignIn);
       return;
     }
@@ -346,13 +346,20 @@ export default function Library() {
     setIsRenamingCollection(true);
 
     try {
-      await window.electron.hydraApi.put(
-        `/profile/games/collections/${activeCollection.id}`,
-        {
-          data: { name: nextName },
-          needsAuth: true,
-        }
-      );
+      if (ACCOUNTLESS) {
+        await window.electron.renameGameCollection(
+          activeCollection.id,
+          nextName
+        );
+      } else {
+        await window.electron.hydraApi.put(
+          `/profile/games/collections/${activeCollection.id}`,
+          {
+            data: { name: nextName },
+            needsAuth: true,
+          }
+        );
+      }
 
       await loadCollections();
       showSuccessToast(t("collection_renamed"));
@@ -397,10 +404,14 @@ export default function Library() {
     setIsDeletingCollection(true);
 
     try {
-      await window.electron.hydraApi.delete(
-        `/profile/games/collections/${activeCollection.id}`,
-        { needsAuth: true }
-      );
+      if (ACCOUNTLESS) {
+        await window.electron.deleteGameCollection(activeCollection.id);
+      } else {
+        await window.electron.hydraApi.delete(
+          `/profile/games/collections/${activeCollection.id}`,
+          { needsAuth: true }
+        );
+      }
 
       if (selectedCollectionId === activeCollection.id) {
         handleCollectionSelect(null);

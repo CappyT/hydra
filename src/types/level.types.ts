@@ -32,6 +32,12 @@ export interface User {
   subscription: Subscription | null;
 }
 
+export interface GameCollectionRecord {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
 export interface Game {
   title: string;
   iconUrl: string | null;

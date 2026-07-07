@@ -24,6 +24,7 @@ import type {
   UserAchievement,
   ComparedAchievements,
   LibraryGame,
+  GameCollection,
   GameRunning,
   TorBoxUser,
   Theme,
@@ -271,6 +272,13 @@ declare global {
       objectId: string,
       collectionIds: string[]
     ) => Promise<void>;
+    getGameCollections: () => Promise<GameCollection[]>;
+    createGameCollection: (name: string) => Promise<GameCollection>;
+    renameGameCollection: (
+      collectionId: string,
+      name: string
+    ) => Promise<void>;
+    deleteGameCollection: (collectionId: string) => Promise<void>;
     clearNewDownloadOptions: (
       shop: GameShop,
       objectId: string
@@ -849,6 +857,10 @@ declare global {
       raGameId?: number
     ) => Promise<UserAchievement[] | null>;
     resetRetroAchievementsAchievements: () => Promise<void>;
+    validateRetroAchievementsWebApiKey: (
+      username: string,
+      webApiKey: string
+    ) => Promise<{ valid: boolean; userId: string | null }>;
 
     /* Profile */
     getMe: () => Promise<UserDetails | null>;

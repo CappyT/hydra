@@ -625,6 +625,13 @@ contextBridge.exposeInMainWorld("electron", {
     collectionIds: string[]
   ) =>
     ipcRenderer.invoke("assignGameToCollection", shop, objectId, collectionIds),
+  getGameCollections: () => ipcRenderer.invoke("getGameCollections"),
+  createGameCollection: (name: string) =>
+    ipcRenderer.invoke("createGameCollection", name),
+  renameGameCollection: (collectionId: string, name: string) =>
+    ipcRenderer.invoke("renameGameCollection", collectionId, name),
+  deleteGameCollection: (collectionId: string) =>
+    ipcRenderer.invoke("deleteGameCollection", collectionId),
   clearNewDownloadOptions: (shop: GameShop, objectId: string) =>
     ipcRenderer.invoke("clearNewDownloadOptions", shop, objectId),
   toggleGamePin: (shop: GameShop, objectId: string, pinned: boolean) =>
@@ -1142,6 +1149,12 @@ contextBridge.exposeInMainWorld("electron", {
     ),
   resetRetroAchievementsAchievements: () =>
     ipcRenderer.invoke("resetRetroAchievementsAchievements"),
+  validateRetroAchievementsWebApiKey: (username: string, webApiKey: string) =>
+    ipcRenderer.invoke(
+      "validateRetroAchievementsWebApiKey",
+      username,
+      webApiKey
+    ),
 
   /* Auth */
   getAuth: () => ipcRenderer.invoke("getAuth"),

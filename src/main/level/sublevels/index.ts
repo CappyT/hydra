@@ -5,6 +5,7 @@ export * from "./game-shop-assets";
 export * from "./game-shop-cache";
 export * from "./game-stats-cache";
 export * from "./game-achievements";
+export * from "./game-collections";
 export * from "./keys";
 export * from "./themes";
 export * from "./download-sources";
