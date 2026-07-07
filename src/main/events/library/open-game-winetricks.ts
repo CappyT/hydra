@@ -39,6 +39,7 @@ const openGameWinetricks = async (
     {
       userPreferences,
       game,
+      gameKey,
       gameDir: winePrefixPath,
       winePrefix: winePrefixPath,
     }

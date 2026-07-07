@@ -37,6 +37,11 @@ export const achievementSoundPath = app.isPackaged
 
 export const backupsPath = path.join(SystemPath.getPath("userData"), "Backups");
 
+export const sandboxHomesPath = path.join(
+  SystemPath.getPath("userData"),
+  "sandbox-homes"
+);
+
 export const appVersion = app.getVersion() + (isStaging ? "-staging" : "");
 
 export const ASSETS_PATH = path.join(SystemPath.getPath("userData"), "Assets");

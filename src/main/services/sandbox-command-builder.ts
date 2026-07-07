@@ -22,6 +22,13 @@ export interface SandboxWrapOptions {
   protonDir?: string | null;
   /** User-configured extra paths, bound read-write (1:1) when present. */
   extraBinds?: string[];
+  /**
+   * Persistent per-game home directory. When set and existing, it is bound
+   * over the sandbox $HOME (an intentional path remap of $HOME only) instead of
+   * a fresh empty dir, so native saves and shader caches survive across
+   * launches. The real host home stays hidden behind the /home tmpfs.
+   */
+  homePersistDir?: string | null;
   /** When false (default) the IPC namespace is unshared. */
   shareIpc?: boolean;
 }
@@ -99,6 +106,7 @@ export const buildSandboxArgs = (
     winePrefix,
     protonDir,
     extraBinds = [],
+    homePersistDir,
     shareIpc = false,
   } = options;
 
@@ -165,10 +173,16 @@ export const buildSandboxArgs = (
     bwrapArgs.push("--ro-bind", "/sys", "/sys");
   }
 
-  // Wipe $HOME and the runtime dir, then re-create the empty directories.
+  // Wipe $HOME and the runtime dir, then re-create the directories. When a
+  // persistent per-game home is provided, bind it over $HOME so saves and
+  // shader caches survive; otherwise re-create an empty $HOME on the tmpfs.
   bwrapArgs.push("--tmpfs", "/home");
   if (home) {
-    bwrapArgs.push("--dir", home);
+    if (isExistingPath(homePersistDir)) {
+      bwrapArgs.push("--bind", homePersistDir, home);
+    } else {
+      bwrapArgs.push("--dir", home);
+    }
   }
 
   bwrapArgs.push("--tmpfs", "/run");

@@ -3,6 +3,7 @@ import path from "node:path";
 import type { Game, UserPreferences } from "@types";
 import { Sandbox, SandboxUnavailableError } from "@main/services/sandbox";
 import { logger } from "@main/services/logger";
+import { sandboxHomesPath } from "@main/constants";
 import type { ResolvedLaunchCommand } from "./resolve-launch-command";
 
 type SandboxGame = Pick<
@@ -13,6 +14,13 @@ type SandboxGame = Pick<
 export interface SandboxLaunchContext {
   userPreferences?: UserPreferences | null;
   game?: SandboxGame | null;
+  /**
+   * Stable per-game identity (e.g. `levelKeys.game(shop, objectId)`). When
+   * provided, a persistent per-game sandbox home is created and bound so native
+   * saves and shader caches survive across launches. Callers without a game
+   * identity omit it and fall back to the ephemeral home.
+   */
+  gameKey?: string | null;
   /** Game directory, bound read-write. */
   gameDir: string;
   /** Wine/Proton prefix, bound read-write when present. */
@@ -51,6 +59,25 @@ const ensureWinePrefixDir = (winePrefix?: string | null) => {
 };
 
 /**
+ * Resolves (and creates) the persistent per-game sandbox home directory. Real
+ * home stays hidden; the game sees this directory bound over $HOME.
+ */
+const ensureSandboxHome = (gameKey?: string | null): string | undefined => {
+  if (!gameKey) return undefined;
+
+  const sanitized = gameKey.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const homePersistDir = path.join(sandboxHomesPath, sanitized);
+
+  try {
+    fs.mkdirSync(homePersistDir, { recursive: true });
+    return homePersistDir;
+  } catch (error) {
+    logger.warn("Failed to ensure sandbox home dir", error);
+    return undefined;
+  }
+};
+
+/**
  * Wraps an already-resolved launch command inside the bubblewrap sandbox when
  * the sandbox is enabled (globally by default, unless disabled). Throws
  * SandboxUnavailableError when the sandbox is enabled but bwrap is missing, so
@@ -63,6 +90,7 @@ export const wrapWithSandbox = (
   const {
     userPreferences,
     game,
+    gameKey,
     gameDir,
     winePrefix,
     protonDir,
@@ -83,6 +111,8 @@ export const wrapWithSandbox = (
   // not into the sandbox tmpfs.
   ensureWinePrefixDir(winePrefix);
 
+  const homePersistDir = ensureSandboxHome(gameKey);
+
   const { command, args } = Sandbox.wrapCommand({
     command: resolved.command,
     args: resolved.args,
@@ -94,6 +124,7 @@ export const wrapWithSandbox = (
       ...additionalBinds,
       ...(game?.sandboxExtraPaths?.filter(Boolean) ?? []),
     ],
+    homePersistDir,
     shareIpc: game?.sandboxShareIpc === true,
   });
 

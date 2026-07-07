@@ -219,6 +219,7 @@ export class Umu {
         Game,
         "sandboxDisabled" | "sandboxExtraPaths" | "sandboxShareIpc"
       > | null;
+      sandboxGameKey?: string | null;
     }
   ): Promise<number | null> {
     const QUICK_EXIT_THRESHOLD_MS = 3000;
@@ -248,6 +249,7 @@ export class Umu {
       {
         userPreferences: options?.userPreferences,
         game: options?.sandboxGame,
+        gameKey: options?.sandboxGameKey,
         gameDir: workingDirectory,
         winePrefix: options?.winePrefixPath,
         protonDir: options?.protonPath,

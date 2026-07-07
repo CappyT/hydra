@@ -39,6 +39,7 @@ describe("Sandbox.wrapCommand", () => {
   let winePrefix: string;
   let protonDir: string;
   let extraExisting: string;
+  let persistHome: string;
   const missingPath = "/nonexistent/path/does/not/exist";
 
   before(() => {
@@ -47,7 +48,14 @@ describe("Sandbox.wrapCommand", () => {
     winePrefix = path.join(tmpRoot, "prefix");
     protonDir = path.join(tmpRoot, "proton");
     extraExisting = path.join(tmpRoot, "extra");
-    for (const dir of [gameDir, winePrefix, protonDir, extraExisting]) {
+    persistHome = path.join(tmpRoot, "home");
+    for (const dir of [
+      gameDir,
+      winePrefix,
+      protonDir,
+      extraExisting,
+      persistHome,
+    ]) {
       fs.mkdirSync(dir, { recursive: true });
     }
   });
@@ -144,6 +152,59 @@ describe("Sandbox.wrapCommand", () => {
     });
 
     assert.ok(hasBind(args, "--bind", winePrefix));
+  });
+
+  it("binds a persistent home over $HOME and drops the empty dir", () => {
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: baseEnv,
+      gameDir,
+      homePersistDir: persistHome,
+    });
+
+    const bindPairs = collectBindPairs(args);
+    assert.ok(
+      bindPairs.some(
+        (pair) =>
+          pair.flag === "--bind" &&
+          pair.source === persistHome &&
+          pair.dest === baseEnv.HOME
+      ),
+      "expected persistent home bound over $HOME"
+    );
+
+    const homeDirIndex = args.indexOf(baseEnv.HOME);
+    assert.ok(homeDirIndex === -1 || args[homeDirIndex - 1] !== "--dir");
+  });
+
+  it("re-creates an empty $HOME when no persistent home is provided", () => {
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: baseEnv,
+      gameDir,
+    });
+
+    const homeDirIndex = args.indexOf(baseEnv.HOME);
+    assert.ok(homeDirIndex > 0);
+    assert.equal(args[homeDirIndex - 1], "--dir");
+    assert.ok(
+      !collectBindPairs(args).some((pair) => pair.dest === baseEnv.HOME)
+    );
+  });
+
+  it("ignores a persistent home dir that does not exist", () => {
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: baseEnv,
+      gameDir,
+      homePersistDir: missingPath,
+    });
+
+    const homeDirIndex = args.indexOf(baseEnv.HOME);
+    assert.equal(args[homeDirIndex - 1], "--dir");
   });
 
   it("skips binds for paths that do not exist", () => {

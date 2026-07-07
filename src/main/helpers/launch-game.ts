@@ -56,6 +56,7 @@ const ensureExecutablePermission = (executablePath: string) => {
 interface SandboxLaunchInput {
   userPreferences?: UserPreferences | null;
   game?: Game | null;
+  gameKey?: string;
 }
 
 const launchNatively = (
@@ -78,6 +79,7 @@ const launchNatively = (
     {
       userPreferences: sandbox?.userPreferences,
       game: sandbox?.game,
+      gameKey: sandbox?.gameKey,
       gameDir: workingDirectory,
     }
   );
@@ -171,6 +173,7 @@ const launchWithWine = async (
     {
       userPreferences: sandbox?.userPreferences,
       game: sandbox?.game,
+      gameKey: sandbox?.gameKey,
       gameDir: workingDirectory,
       winePrefix: sandbox?.winePrefix,
     }
@@ -307,6 +310,7 @@ const launchWindowsBinaryOnLinux = async (
       useMangohud,
       userPreferences,
       sandboxGame: game,
+      sandboxGameKey: gameKey,
     });
     if (umuPid !== null) {
       launchedGamePids.set(gameKey, umuPid);
@@ -421,7 +425,7 @@ export const launchGame = async (
       launchOptions,
       useMangohud,
       useGamemode,
-      { userPreferences, game }
+      { userPreferences, game, gameKey }
     );
 
     if (pid !== null) {

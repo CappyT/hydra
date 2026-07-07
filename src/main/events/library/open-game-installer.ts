@@ -13,6 +13,7 @@ import { wrapWithSandbox } from "@main/helpers/sandbox-launch";
 interface InstallerSandboxContext {
   userPreferences?: UserPreferences | null;
   game?: Game | null;
+  gameKey?: string;
   winePrefixPath?: string | null;
 }
 
@@ -25,6 +26,7 @@ const launchInstallerWithWine = async (
     {
       userPreferences: sandbox?.userPreferences,
       game: sandbox?.game,
+      gameKey: sandbox?.gameKey,
       gameDir: path.dirname(filePath),
       winePrefix: sandbox?.winePrefixPath,
     }
@@ -82,6 +84,7 @@ const executeGameInstaller = async (
   filePath: string,
   options?: {
     gameId?: string;
+    gameKey?: string;
     winePrefixPath?: string | null;
     protonPath?: string | null;
     userPreferences?: UserPreferences | null;
@@ -105,6 +108,7 @@ const executeGameInstaller = async (
         protonPath: options?.protonPath,
         userPreferences: options?.userPreferences,
         sandboxGame: options?.game,
+        sandboxGameKey: options?.gameKey,
       });
       return true;
     } catch (error) {
@@ -113,6 +117,7 @@ const executeGameInstaller = async (
       const launchedWithWine = await launchInstallerWithWine(filePath, {
         userPreferences: options?.userPreferences,
         game: options?.game,
+        gameKey: options?.gameKey,
         winePrefixPath: options?.winePrefixPath,
       });
       if (launchedWithWine) {
@@ -169,6 +174,7 @@ const openGameInstaller = async (
   if (fs.existsSync(setupPath)) {
     return await executeGameInstaller(setupPath, {
       gameId: objectId,
+      gameKey: downloadKey,
       winePrefixPath: effectiveWinePrefixPath,
       protonPath: game?.protonPath,
       userPreferences,
@@ -186,6 +192,7 @@ const openGameInstaller = async (
       path.join(gamePath, gamePathExecutableFiles[0]),
       {
         gameId: objectId,
+        gameKey: downloadKey,
         winePrefixPath: effectiveWinePrefixPath,
         protonPath: game?.protonPath,
         userPreferences,
