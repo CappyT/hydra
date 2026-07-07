@@ -6,6 +6,7 @@ import path from "node:path";
 import YAML from "yaml";
 import cp from "node:child_process";
 import { SystemPath } from "./system-path";
+import { resolveSystemBinary } from "@main/helpers/resolve-system-binary";
 
 export class Ludusavi {
   private static ludusaviResourcesPath = app.isPackaged
@@ -19,7 +20,19 @@ export class Ludusavi {
   private static binaryName =
     process.platform === "win32" ? "ludusavi.exe" : "ludusavi";
 
-  private static binaryPath = path.join(this.configPath, this.binaryName);
+  private static userDataBinaryPath = path.join(
+    this.configPath,
+    this.binaryName
+  );
+
+  // Prefer a system-installed ludusavi if present on PATH, otherwise use the
+  // copy placed in userData from the build-time download.
+  private static resolveBinaryPath(): string {
+    const systemLudusavi = resolveSystemBinary(["ludusavi"]);
+    if (systemLudusavi) return systemLudusavi;
+
+    return this.userDataBinaryPath;
+  }
 
   public static async getConfig() {
     const config = YAML.parse(
@@ -41,10 +54,13 @@ export class Ludusavi {
   }
 
   public static async copyBinaryToUserData() {
-    if (!fs.existsSync(this.binaryPath)) {
+    // A system-installed ludusavi takes precedence, so no copy is needed.
+    if (resolveSystemBinary(["ludusavi"])) return;
+
+    if (!fs.existsSync(this.userDataBinaryPath)) {
       fs.cpSync(
         path.join(this.ludusaviResourcesPath, this.binaryName),
-        this.binaryPath
+        this.userDataBinaryPath
       );
     }
   }
@@ -71,7 +87,7 @@ export class Ludusavi {
       if (winePrefix) args.push("--wine-prefix", winePrefix);
 
       cp.execFile(
-        this.binaryPath,
+        this.resolveBinaryPath(),
         args,
         (err: cp.ExecFileException | null, stdout: string) => {
           if (err) {

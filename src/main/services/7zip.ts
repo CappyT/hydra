@@ -2,6 +2,7 @@ import { app } from "electron";
 import Seven, { CommandLineSwitches } from "node-7z";
 import path from "node:path";
 import { logger } from "./logger";
+import { resolveSystemBinary } from "@main/helpers/resolve-system-binary";
 
 export const binaryName = {
   linux: "7zzs",
@@ -21,15 +22,25 @@ export interface ExtractionResult {
 }
 
 export class SevenZip {
-  private static readonly binaryPath = app.isPackaged
-    ? path.join(process.resourcesPath, binaryName[process.platform])
-    : path.join(
-        __dirname,
-        "..",
-        "..",
-        "binaries",
-        binaryName[process.platform]
-      );
+  private static readonly binaryPath = SevenZip.resolveBinaryPath();
+
+  // Prefer the official 7-Zip provided by the system (Fedora ships `7z`, other
+  // distros the standalone `7zz`); both are argument-compatible with the bundled
+  // static `7zzs`. Fall back to the copy fetched into binaries/ at build time.
+  private static resolveBinaryPath(): string {
+    const systemBinary = resolveSystemBinary(["7zz", "7z"]);
+    if (systemBinary) return systemBinary;
+
+    return app.isPackaged
+      ? path.join(process.resourcesPath, binaryName[process.platform])
+      : path.join(
+          __dirname,
+          "..",
+          "..",
+          "binaries",
+          binaryName[process.platform]
+        );
+  }
 
   private static isPasswordRelatedError(error: unknown): boolean {
     const errorMessage =

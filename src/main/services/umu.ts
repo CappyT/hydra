@@ -9,6 +9,7 @@ import { logger } from "./logger";
 import type { Game, ProtonVersion, UserPreferences } from "@types";
 import { resolveLaunchCommand } from "@main/helpers/resolve-launch-command";
 import { wrapWithSandbox } from "@main/helpers/sandbox-launch";
+import { resolveSystemBinary } from "@main/helpers/resolve-system-binary";
 import { Sandbox } from "./sandbox";
 
 const isValidProtonDirectory = (directoryPath: string) => {
@@ -24,10 +25,16 @@ const getVersionName = (directoryPath: string) => {
 
 const getUmuLogPath = () => path.join(logsPath, "umu.log");
 
-const getUmuBinaryPath = () =>
-  app.isPackaged
+const getUmuBinaryPath = () => {
+  // Prefer a system-installed umu-run (e.g. Fedora's umu-launcher package),
+  // falling back to the copy fetched into binaries/umu at build time.
+  const systemUmu = resolveSystemBinary(["umu-run"]);
+  if (systemUmu) return systemUmu;
+
+  return app.isPackaged
     ? path.join(process.resourcesPath, "umu-run")
     : path.join(__dirname, "..", "..", "binaries", "umu", "umu-run");
+};
 
 const parsePythonVersion = (versionText: string): [number, number] | null => {
   const match = versionText.trim().match(/^(\d+)\.(\d+)$/);
