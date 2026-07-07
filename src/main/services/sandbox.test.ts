@@ -144,6 +144,23 @@ describe("Sandbox.wrapCommand", () => {
     assert.ok(hasBind(args, "--ro-bind", protonDir));
   });
 
+  it("masks the session d-bus socket with a dead placeholder", () => {
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: baseEnv,
+      gameDir,
+    });
+
+    const pairs = collectBindPairs(args);
+    const busBind = pairs.find(
+      (pair) => pair.dest === "/run/user/1000/bus"
+    );
+    assert.ok(busBind);
+    assert.equal(busBind.flag, "--ro-bind");
+    assert.equal(busBind.source, "/dev/null");
+  });
+
   it("binds extra read-only paths (bundled umu-run) and skips missing ones", () => {
     const umuBinary = path.join(tmpRoot, "umu-run");
     fs.writeFileSync(umuBinary, "");
@@ -268,6 +285,14 @@ describe("Sandbox.wrapCommand", () => {
     });
 
     for (const pair of collectBindPairs(args)) {
+      // The dead session-bus placeholder is the single sanctioned path remap
+      // besides the $HOME override (which uses --bind over --dir, not a pair
+      // collected here).
+      if (pair.dest === "/run/user/1000/bus") {
+        assert.equal(pair.source, "/dev/null");
+        continue;
+      }
+
       assert.equal(
         pair.source,
         pair.dest,

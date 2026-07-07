@@ -229,6 +229,15 @@ export const buildSandboxArgs = (
     bwrapArgs.push("--ro-bind", "/run/systemd/resolve", "/run/systemd/resolve");
   }
 
+  // Proton's Steam Linux Runtime (pressure-vessel) binds the session D-Bus
+  // socket advertised by DBUS_SESSION_BUS_ADDRESS without checking that it
+  // exists, and its nested bwrap aborts when the source is missing. The real
+  // session bus is deliberately NOT shared with games (it would be a sandbox
+  // escape via e.g. systemd-run), so satisfy the bind with a dead placeholder.
+  if (runtimeDir) {
+    bwrapArgs.push("--ro-bind", "/dev/null", path.join(runtimeDir, "bus"));
+  }
+
   // Read-write, 1:1 binds. These must come after the tmpfs mounts above so
   // paths located under $HOME re-appear inside the sandbox.
   const readWriteBinds: (string | null | undefined)[] = [
