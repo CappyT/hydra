@@ -42,5 +42,3 @@ publish:
   provider: github
   owner: CappyT
   repo: hydra
-electronDownload:
-  mirror: https://npmmirror.com/mirrors/electron/
