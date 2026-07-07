@@ -28,7 +28,6 @@ linux:
     - from: binaries/umu/umu-run
   target:
     - AppImage
-    - snap
     - deb
     - rpm
   maintainer: electronjs.org
