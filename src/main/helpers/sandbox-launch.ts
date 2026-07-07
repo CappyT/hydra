@@ -40,6 +40,16 @@ const ensureUmuRuntimeDir = () => {
   }
 };
 
+const ensureWinePrefixDir = (winePrefix?: string | null) => {
+  if (!winePrefix) return;
+
+  try {
+    fs.mkdirSync(winePrefix, { recursive: true });
+  } catch (error) {
+    logger.warn("Failed to ensure wine prefix dir for sandbox", error);
+  }
+};
+
 /**
  * Wraps an already-resolved launch command inside the bubblewrap sandbox when
  * the sandbox is enabled (globally by default, unless disabled). Throws
@@ -68,6 +78,10 @@ export const wrapWithSandbox = (
   }
 
   ensureUmuRuntimeDir();
+  // On a first launch the wine prefix dir does not exist yet; create it before
+  // binding so Proton writes the prefix (saves, achievements) to the host and
+  // not into the sandbox tmpfs.
+  ensureWinePrefixDir(winePrefix);
 
   const { command, args } = Sandbox.wrapCommand({
     command: resolved.command,

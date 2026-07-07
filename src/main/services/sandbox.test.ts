@@ -134,6 +134,18 @@ describe("Sandbox.wrapCommand", () => {
     assert.ok(hasBind(args, "--ro-bind", protonDir));
   });
 
+  it("binds the wine prefix read-write when the dir exists", () => {
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: baseEnv,
+      gameDir,
+      winePrefix,
+    });
+
+    assert.ok(hasBind(args, "--bind", winePrefix));
+  });
+
   it("skips binds for paths that do not exist", () => {
     const { args } = buildSandboxArgs({
       command: "/usr/bin/game",
