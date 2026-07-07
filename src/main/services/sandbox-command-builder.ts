@@ -72,6 +72,15 @@ export interface SandboxWrapOptions {
    * sockets, MangoHud config, the dead d-bus placeholder) are unaffected.
    */
   hideX11?: boolean;
+  /**
+   * Path to a per-game fake `/etc/machine-id` file. When set and existing, it
+   * is `--ro-bind`-ed over `/etc/machine-id` (an intentional path remap) so the
+   * game reads a stable-per-game, different-across-games id instead of the
+   * host's real, globally unique machine fingerprint. `/var/lib/dbus/machine-id`
+   * needs no separate spoof: `/var` is never mounted into the sandbox, so that
+   * fallback path does not exist and apps read `/etc/machine-id`.
+   */
+  machineIdFile?: string;
 }
 
 const isExistingPath = (
@@ -162,6 +171,7 @@ export const buildSandboxArgs = (
     homePersistDir,
     shareIpc = false,
     hideX11 = false,
+    machineIdFile,
   } = options;
 
   const home = env.HOME || "";
@@ -171,6 +181,15 @@ export const buildSandboxArgs = (
     "--unshare-pid",
     "--unshare-uts",
     "--unshare-cgroup",
+    // Kill the whole sandbox tree if the process that spawned bwrap (the
+    // Electron main process) dies, instead of orphaning the game. Lifetime is
+    // tied to the Electron main, NOT to the Hydra window: closing the window
+    // only hides the app (window-all-closed keeps the main process alive), so
+    // in-progress games survive a window close. The main process — and thus the
+    // game — only dies on a real app quit (tray "Quit", or the
+    // preferQuitInsteadOfHiding preference turning a window close into a quit),
+    // which is the intended "quit takes the games with it" behavior.
+    "--die-with-parent",
   ];
 
   if (!shareIpc) {
@@ -210,6 +229,16 @@ export const buildSandboxArgs = (
     "--tmpfs",
     "/dev/shm"
   );
+
+  // Spoof /etc/machine-id with a per-game fake. Must come AFTER the whole-/etc
+  // ro-bind above so it overlays that file (later binds win in bwrap). The real
+  // /etc/machine-id is a stable, globally unique hardware fingerprint; a fake,
+  // deterministic-per-game value stops games from fingerprinting the host or
+  // correlating across titles. No /var/lib/dbus/machine-id bind is needed: /var
+  // is never mounted into the sandbox, so that fallback path is simply absent.
+  if (isExistingPath(machineIdFile)) {
+    bwrapArgs.push("--ro-bind", machineIdFile, "/etc/machine-id");
+  }
 
   // GPU access.
   if (isExistingPath("/dev/dri")) {

@@ -54,10 +54,12 @@ export class Sandbox {
    * Tears down a sandboxed launch started from the given bwrap wrapper pid.
    *
    * A sandboxed payload runs with `--unshare-pid` and `--new-session`, so it
-   * setsid()s into its own process group inside a private pid namespace and
-   * bwrap does not use `--die-with-parent` (games survive launcher exit).
-   * Killing the wrapper's process group therefore leaves the pid-namespace
-   * init (and the game under it) alive. To reliably reap the whole tree we
+   * setsid()s into its own process group inside a private pid namespace. bwrap
+   * uses `--die-with-parent`, but that only reaps the tree when the Electron
+   * main process itself exits — not on an explicit in-app stop, where the
+   * parent stays alive and the game must be killed here instead. Killing the
+   * wrapper's process group leaves the pid-namespace init (and the game under
+   * it) alive. To reliably reap the whole tree we
    * first SIGKILL bwrap's direct children, which are the pid-namespace init
    * processes: killing a namespace's init makes the kernel kill every process
    * inside that namespace. We then kill the wrapper's group and the wrapper

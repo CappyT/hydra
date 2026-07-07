@@ -49,6 +49,13 @@ export const sandboxHomesPath = path.join(
   "sandbox-homes"
 );
 
+// Per-game fake /etc/machine-id files, ro-bound into each sandbox. Kept outside
+// the game-writable sandbox home so a game cannot tamper with its own id.
+export const sandboxMachineIdsPath = path.join(
+  SystemPath.getPath("userData"),
+  "sandbox-machine-ids"
+);
+
 export const appVersion = app.getVersion() + (isStaging ? "-staging" : "");
 
 export const ASSETS_PATH = path.join(SystemPath.getPath("userData"), "Assets");

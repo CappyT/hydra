@@ -1,10 +1,11 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { Game, UserPreferences } from "@types";
 import { Sandbox } from "@main/services/sandbox";
 import { assertSandboxAvailable } from "@main/services/sandbox-command-builder";
 import { logger } from "@main/services/logger";
-import { sandboxHomesPath } from "@main/constants";
+import { sandboxHomesPath, sandboxMachineIdsPath } from "@main/constants";
 import type { ResolvedLaunchCommand } from "./resolve-launch-command";
 
 type SandboxGame = Pick<
@@ -98,6 +99,36 @@ const ensureSandboxHome = (gameKey?: string | null): string | undefined => {
 };
 
 /**
+ * Writes (and returns the path to) a per-game fake `/etc/machine-id`. The value
+ * is a deterministic hash of the game key rendered as 32 lowercase hex chars +
+ * newline (the machine-id format): stable per game so the game is not confused
+ * by an id changing under it, yet different across games so two titles cannot
+ * correlate to a single host fingerprint. Guards fs errors like
+ * ensureSandboxHome: on failure the launch simply keeps the host machine-id.
+ */
+const ensureSandboxMachineId = (
+  gameKey?: string | null
+): string | undefined => {
+  if (!gameKey) return undefined;
+
+  const sanitized = sanitizeSandboxGameKey(gameKey);
+  const machineIdFile = path.join(sandboxMachineIdsPath, sanitized);
+
+  try {
+    const fakeMachineId =
+      crypto.createHash("sha256").update(gameKey).digest("hex").slice(0, 32) +
+      "\n";
+
+    fs.mkdirSync(sandboxMachineIdsPath, { recursive: true });
+    fs.writeFileSync(machineIdFile, fakeMachineId);
+    return machineIdFile;
+  } catch (error) {
+    logger.warn("Failed to write sandbox machine-id", error);
+    return undefined;
+  }
+};
+
+/**
  * Wraps an already-resolved launch command inside the bubblewrap sandbox when
  * the sandbox is enabled (globally by default, unless disabled). Throws
  * SandboxUnavailableError when the sandbox is enabled but bwrap is missing, so
@@ -134,6 +165,7 @@ export const wrapWithSandbox = (
   ensureWinePrefixDir(winePrefix);
 
   const homePersistDir = ensureSandboxHome(gameKey);
+  const machineIdFile = ensureSandboxMachineId(gameKey);
 
   const { command, args } = Sandbox.wrapCommand({
     command: resolved.command,
@@ -150,6 +182,7 @@ export const wrapWithSandbox = (
     homePersistDir,
     shareIpc: game?.sandboxShareIpc === true,
     hideX11,
+    machineIdFile,
   });
 
   return {

@@ -100,6 +100,17 @@ describe("Sandbox.wrapCommand", () => {
     assert.ok(!args.includes("--unshare-net"));
   });
 
+  it("ties the sandbox lifetime to the launcher with --die-with-parent", () => {
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: baseEnv,
+      gameDir,
+    });
+
+    assert.ok(args.includes("--die-with-parent"));
+  });
+
   it("unshares the ipc namespace by default and shares it on request", () => {
     const isolated = buildSandboxArgs({
       command: "/usr/bin/game",
@@ -435,6 +446,104 @@ describe("Sandbox X11 hardening (hideX11)", () => {
     assert.ok(hasBind(args, "--ro-bind", path.join(runtimeDir, "wayland-1")));
     assert.ok(hasBind(args, "--ro-bind", path.join(runtimeDir, "gamescope-0")));
     assert.ok(!hasBind(args, "--ro-bind", xauthority));
+  });
+});
+
+describe("Sandbox machine-id spoofing", () => {
+  let tmpRoot: string;
+  let gameDir: string;
+  let machineIdFile: string;
+  const missingPath = "/nonexistent/path/does/not/exist";
+
+  const baseEnv = {
+    HOME: "/home/tester",
+    XDG_RUNTIME_DIR: "/run/user/1000",
+  };
+
+  before(() => {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sbx-mid-"));
+    gameDir = path.join(tmpRoot, "game");
+    machineIdFile = path.join(tmpRoot, "machine-id");
+    fs.mkdirSync(gameDir, { recursive: true });
+    // 32 lowercase hex chars + newline, the /etc/machine-id format.
+    fs.writeFileSync(machineIdFile, `${"a".repeat(32)}\n`);
+  });
+
+  after(() => {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  it("ro-binds the fake machine-id over /etc/machine-id when present", () => {
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: baseEnv,
+      gameDir,
+      machineIdFile,
+    });
+
+    const busBind = collectBindPairs(args).find(
+      (pair) => pair.dest === "/etc/machine-id"
+    );
+    assert.ok(busBind, "expected a bind over /etc/machine-id");
+    assert.equal(busBind.flag, "--ro-bind");
+    assert.equal(busBind.source, machineIdFile);
+  });
+
+  it("omits the machine-id bind when no file is provided", () => {
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: baseEnv,
+      gameDir,
+    });
+
+    assert.ok(
+      !collectBindPairs(args).some((pair) => pair.dest === "/etc/machine-id")
+    );
+  });
+
+  it("omits the machine-id bind when the file does not exist", () => {
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: baseEnv,
+      gameDir,
+      machineIdFile: missingPath,
+    });
+
+    assert.ok(
+      !collectBindPairs(args).some((pair) => pair.dest === "/etc/machine-id")
+    );
+  });
+
+  it("remaps only /etc/machine-id and keeps every other bind 1:1", () => {
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: baseEnv,
+      gameDir,
+      machineIdFile,
+    });
+
+    for (const pair of collectBindPairs(args)) {
+      // The two sanctioned path remaps: the dead session-bus placeholder and
+      // the per-game machine-id spoof.
+      if (pair.dest === "/run/user/1000/bus") {
+        assert.equal(pair.source, "/dev/null");
+        continue;
+      }
+      if (pair.dest === "/etc/machine-id") {
+        assert.equal(pair.source, machineIdFile);
+        continue;
+      }
+
+      assert.equal(
+        pair.source,
+        pair.dest,
+        `expected 1:1 bind for ${pair.flag} ${pair.source} -> ${pair.dest}`
+      );
+    }
   });
 });
 
