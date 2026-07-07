@@ -336,6 +336,17 @@ function onOpenGame(game: Game) {
     game.objectId
   );
 
+  // Fire the save-game backup regardless of account state. Gated only on
+  // automaticCloudSync, not on remoteId (which is set only for Hydra accounts).
+  if (game.automaticCloudSync) {
+    CloudSync.uploadSaveGame(
+      game.objectId,
+      game.shop,
+      null,
+      CloudSync.getBackupLabel(true)
+    );
+  }
+
   if (game.remoteId) {
     const deltaToSync = game.unsyncedDeltaPlayTimeInMilliseconds ?? 0;
     const syncTimestamp = new Date();
@@ -362,15 +373,6 @@ function onOpenGame(game: Game) {
           error: error instanceof Error ? error.message : String(error),
         });
       });
-
-    if (game.automaticCloudSync) {
-      CloudSync.uploadSaveGame(
-        game.objectId,
-        game.shop,
-        null,
-        CloudSync.getBackupLabel(true)
-      );
-    }
   } else {
     const payload = { ...game, lastTimePlayed: new Date() };
 
@@ -494,16 +496,19 @@ const onCloseGame = (game: Game) => {
 
   if (game.shop === "custom") return;
 
-  if (game.remoteId) {
-    if (game.automaticCloudSync) {
-      CloudSync.uploadSaveGame(
-        game.objectId,
-        game.shop,
-        null,
-        CloudSync.getBackupLabel(true)
-      );
-    }
+  // Fire the save-game backup regardless of account state (fresh-close is the
+  // most important moment to back up). Mirrors the game-open path, which is
+  // gated only on automaticCloudSync.
+  if (game.automaticCloudSync) {
+    CloudSync.uploadSaveGame(
+      game.objectId,
+      game.shop,
+      null,
+      CloudSync.getBackupLabel(true)
+    );
+  }
 
+  if (game.remoteId) {
     const deltaToSync =
       now -
       gamePlaytime.lastSyncTick +
