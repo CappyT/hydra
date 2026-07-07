@@ -5,6 +5,7 @@ import {
   setHydraCloudModalHidden,
 } from "@renderer/features";
 import { HydraCloudFeature } from "@types";
+import { ACCOUNTLESS } from "@shared";
 
 export function useSubscription() {
   const dispatch = useAppDispatch();
@@ -15,6 +16,8 @@ export function useSubscription() {
 
   const showHydraCloudModal = useCallback(
     (feature: HydraCloudFeature) => {
+      // Accountless mode: never surface the Hydra Cloud subscription/paywall.
+      if (ACCOUNTLESS) return;
       dispatch(setHydraCloudModalVisible(feature));
     },
     [dispatch]

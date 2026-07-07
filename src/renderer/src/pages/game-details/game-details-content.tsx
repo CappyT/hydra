@@ -17,7 +17,7 @@ import { Sidebar } from "./sidebar/sidebar";
 import { GameReviews } from "./game-reviews";
 import { GameLogo } from "./game-logo";
 
-import { AuthPage } from "@shared";
+import { AuthPage, ACCOUNTLESS } from "@shared";
 import { cloudSyncContext, gameDetailsContext } from "@renderer/context";
 
 import cloudIconAnimated from "@renderer/assets/icons/cloud-animated.gif";
@@ -435,7 +435,7 @@ export function GameDetailsContent() {
               </button>
             )}
 
-            {shop !== "custom" && shop && objectId && (
+            {!ACCOUNTLESS && shop !== "custom" && shop && objectId && (
               <div ref={reviewsRef}>
                 <GameReviews
                   shop={shop}

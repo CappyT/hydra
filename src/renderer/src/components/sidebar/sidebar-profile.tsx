@@ -11,7 +11,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import SteamLogo from "@renderer/assets/steam-logo.svg?react";
 import { Avatar } from "../avatar/avatar";
-import { AuthPage } from "@shared";
+import { AuthPage, ACCOUNTLESS } from "@shared";
 import { logger } from "@renderer/logger";
 import type {
   NotificationCountResponse,
@@ -23,6 +23,13 @@ import { setFriendRequestCount } from "@renderer/features/user-details-slice";
 import "./sidebar-profile.scss";
 
 export function SidebarProfile() {
+  // Accountless mode: no sign-in/profile surface in the sidebar.
+  if (ACCOUNTLESS) return null;
+
+  return <SidebarProfileInner />;
+}
+
+function SidebarProfileInner() {
   const navigate = useNavigate();
   const dispatch = useDispatch();
 
