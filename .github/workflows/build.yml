@@ -32,6 +32,20 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "native/hydra-native"
+
+      - name: Cache third-party binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            binaries/7zzs
+            binaries/umu/umu-run
+            ludusavi/ludusavi
+          key: binaries-${{ runner.os }}-${{ hashFiles('scripts/postinstall.cjs') }}
+
       - name: Install dependencies
         run: yarn --frozen-lockfile
 
@@ -39,6 +53,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: 3.9
+          cache: "pip"
+          cache-dependency-path: requirements.txt
 
       - name: Install Python dependencies
         run: pip install -r requirements.txt
@@ -48,6 +64,16 @@ jobs:
 
       - name: Install rpm tooling
         run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - name: Cache Electron and electron-builder
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: electron-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            electron-${{ runner.os }}-
 
       - name: Build Linux
         if: matrix.os == 'ubuntu-latest'
@@ -99,6 +125,20 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "native/hydra-native"
+
+      - name: Cache third-party binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            binaries/7zzs
+            binaries/umu/umu-run
+            ludusavi/ludusavi
+          key: binaries-${{ runner.os }}-${{ hashFiles('scripts/postinstall.cjs') }}
+
       - name: Install dependencies
         run: yarn --frozen-lockfile
 
@@ -106,6 +146,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: 3.9
+          cache: "pip"
+          cache-dependency-path: requirements.txt
 
       - name: Install Python dependencies
         run: pip install -r requirements.txt
@@ -115,6 +157,16 @@ jobs:
 
       - name: Install rpm tooling
         run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - name: Cache Electron and electron-builder
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: electron-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            electron-${{ runner.os }}-
 
       - name: Build Linux
         if: matrix.os == 'ubuntu-latest'
