@@ -58,6 +58,28 @@ yarn lint
 Resolve conflicts favoring **upstream for product code and dependencies**, and **the fork for
 CI, packaging, and platform-gating**. Commit the merge only once typecheck and lint are green.
 
+## Environment configuration
+
+The fork commits a working `.env` (force-added past `.gitignore`) so `yarn dev`
+and `yarn build` work out of the box. All values are **public endpoints, not
+secrets**:
+
+- `MAIN_VITE_API_URL=https://hydra-api-us-east-1.losbroxas.org` — the anonymous
+  Hydra API (catalogue, download sources, achievements), used without any auth
+  header in accountless mode.
+- `MAIN_VITE_EXTERNAL_RESOURCES_URL` / `RENDERER_VITE_EXTERNAL_RESOURCES_URL=https://cdn.losbroxas.org`
+  — public CDN serving `game-executables.json`, `steam-*.json` and the theme
+  `bundle.js`.
+
+Account/login-only vars (`MAIN_VITE_AUTH_URL`, `MAIN_VITE_WS_URL`,
+`MAIN_VITE_CHECKOUT_URL`, `MAIN_VITE_LAUNCHER_SUBDOMAIN`) are unused in
+accountless mode and left empty; their consumers are guarded to degrade
+gracefully rather than crash. `MAIN_VITE_NIMBUS_API_URL` (VikingFile hoster
+unlock) has no public endpoint wired here, so that single feature throws a clear
+error if used; everything else works. Env reads that previously assumed a value
+(`isStaging`, the cloud-iframe URL) are now null-safe, so a missing `.env` no
+longer hard-crashes boot.
+
 ## Sandbox selftest
 
 The game sandbox (bubblewrap) ships with an adversarial verifier that runs the
