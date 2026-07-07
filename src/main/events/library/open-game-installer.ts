@@ -21,8 +21,21 @@ const launchInstallerWithWine = async (
   filePath: string,
   sandbox?: InstallerSandboxContext
 ): Promise<boolean> => {
+  const winePrefixPath = sandbox?.winePrefixPath;
+
+  // Point wine at the per-game prefix so the install lands in the same prefix
+  // the umu launch path uses; without this, bare wine defaults to ~/.wine (or
+  // the ephemeral sandbox-home default).
+  if (winePrefixPath) {
+    fs.mkdirSync(winePrefixPath, { recursive: true });
+  }
+
   const resolved = wrapWithSandbox(
-    { command: "wine", args: [filePath], env: {} },
+    {
+      command: "wine",
+      args: [filePath],
+      env: winePrefixPath ? { WINEPREFIX: winePrefixPath } : {},
+    },
     {
       userPreferences: sandbox?.userPreferences,
       game: sandbox?.game,

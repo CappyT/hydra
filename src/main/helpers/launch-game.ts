@@ -160,6 +160,15 @@ const launchWithWine = async (
   }
 ): Promise<boolean> => {
   const workingDirectory = path.dirname(executablePath);
+  const winePrefix = sandbox?.winePrefix;
+
+  // Point wine at the per-game prefix so this fallback reads/writes the same
+  // prefix as the umu path; without this, bare wine defaults to ~/.wine (or the
+  // ephemeral sandbox-home default).
+  if (winePrefix) {
+    fs.mkdirSync(winePrefix, { recursive: true });
+  }
+
   const resolvedLaunchCommand = wrapWithSandbox(
     resolveLaunchCommand({
       baseCommand: "wine",
@@ -175,7 +184,7 @@ const launchWithWine = async (
       game: sandbox?.game,
       gameKey: sandbox?.gameKey,
       gameDir: workingDirectory,
-      winePrefix: sandbox?.winePrefix,
+      winePrefix,
     }
   );
 
@@ -190,6 +199,7 @@ const launchWithWine = async (
         cwd: workingDirectory,
         env: {
           ...process.env,
+          ...(winePrefix ? { WINEPREFIX: winePrefix } : {}),
           ...resolvedLaunchCommand.env,
         },
       }
