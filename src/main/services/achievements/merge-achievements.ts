@@ -15,12 +15,7 @@ import { achievementsLogger } from "../logger";
 import { db, gameAchievementsSublevel, levelKeys } from "@main/level";
 import { getGameAchievementData } from "./get-game-achievement-data";
 import { AchievementWatcherManager } from "./achievement-watcher-manager";
-
-const isRareAchievement = (points: number) => {
-  const rawPercentage = (50 - Math.sqrt(points)) * 2;
-
-  return rawPercentage < 10;
-};
+import { buildAchievementNotificationInfo } from "./build-achievement-notification-info";
 
 const saveAchievementsOnLocal = async (
   objectId: string,
@@ -105,37 +100,12 @@ export const mergeAchievements = async (
     publishNotification &&
     userPreferences.achievementNotificationsEnabled !== false
   ) {
-    const filteredAchievements = newAchievements
-      .toSorted((a, b) => {
-        return a.unlockTime - b.unlockTime;
-      })
-      .map((achievement) => {
-        return achievementsData.find((steamAchievement) => {
-          return (
-            achievement.name.toUpperCase() ===
-            steamAchievement.name.toUpperCase()
-          );
-        });
-      })
-      .filter((achievement) => !!achievement);
-
     const achievementsInfo: AchievementNotificationInfo[] =
-      filteredAchievements.map((achievement, index) => {
-        return {
-          title: achievement.displayName,
-          description: achievement.description,
-          points: achievement.points,
-          isHidden: achievement.hidden,
-          isRare: achievement.points
-            ? isRareAchievement(achievement.points)
-            : false,
-          isPlatinum:
-            index === filteredAchievements.length - 1 &&
-            newAchievements.length + unlockedAchievements.length ===
-              achievementsData.length,
-          iconUrl: achievement.icon,
-        };
-      });
+      buildAchievementNotificationInfo(
+        newAchievements,
+        achievementsData,
+        unlockedAchievements.length
+      );
 
     achievementsLogger.log(
       "Publishing achievement notification",
