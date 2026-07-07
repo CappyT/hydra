@@ -32,6 +32,7 @@ import cn from "classnames";
 import { sortBy } from "lodash-es";
 import { SidebarAddingCustomGameModal } from "./sidebar-adding-custom-game-modal";
 import { SidebarGameItem } from "./sidebar-game-item";
+import { SidebarNotifications } from "./sidebar-notifications";
 import { SidebarProfile } from "./sidebar-profile";
 
 const SIDEBAR_MIN_WIDTH = 200;
@@ -345,6 +346,8 @@ export function Sidebar() {
                   </button>
                 </li>
               ))}
+
+              <SidebarNotifications />
 
               {window.electron.platform === "linux" && homebrewFolderExists && (
                 <li className="sidebar__menu-item sidebar__menu-item--decky">

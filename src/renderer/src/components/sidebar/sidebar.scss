@@ -162,6 +162,23 @@
     overflow: hidden;
   }
 
+  &__notification-badge {
+    margin-left: auto;
+    flex-shrink: 0;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9px;
+    font-size: 11px;
+    line-height: 1;
+    font-weight: 600;
+    color: #fff;
+    background-color: #e53170;
+  }
+
   &__friends-icon {
     position: relative;
     display: inline-flex;
