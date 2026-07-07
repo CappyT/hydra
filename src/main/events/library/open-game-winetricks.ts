@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
 import { registerEvent } from "../register-event";
 import { db, gamesSublevel, levelKeys } from "@main/level";
-import { logger, Wine } from "@main/services";
+import { logger, Sandbox, Wine } from "@main/services";
 import type { GameShop, UserPreferences } from "@types";
 import { wrapWithSandbox } from "@main/helpers/sandbox-launch";
+import { buildSandboxEnv } from "@main/helpers/sandbox-env";
 
 const openGameWinetricks = async (
   _event: Electron.IpcMainInvokeEvent,
@@ -52,7 +53,9 @@ const openGameWinetricks = async (
         stdio: "ignore",
         shell: false,
         env: {
-          ...process.env,
+          ...(Sandbox.isEnabled(userPreferences, game)
+            ? buildSandboxEnv(process.env)
+            : process.env),
           ...resolved.env,
         },
       });

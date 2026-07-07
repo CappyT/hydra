@@ -7,8 +7,9 @@ import { getDownloadsPath } from "../helpers/get-downloads-path";
 import { registerEvent } from "../register-event";
 import { db, downloadsSublevel, gamesSublevel, levelKeys } from "@main/level";
 import { GameShop, type Game, type UserPreferences } from "@types";
-import { logger, Umu, Wine } from "@main/services";
+import { logger, Sandbox, Umu, Wine } from "@main/services";
 import { wrapWithSandbox } from "@main/helpers/sandbox-launch";
+import { buildSandboxEnv } from "@main/helpers/sandbox-env";
 
 interface InstallerSandboxContext {
   userPreferences?: UserPreferences | null;
@@ -22,6 +23,10 @@ const launchInstallerWithWine = async (
   sandbox?: InstallerSandboxContext
 ): Promise<boolean> => {
   const winePrefixPath = sandbox?.winePrefixPath;
+  const sandboxEnabled = Sandbox.isEnabled(
+    sandbox?.userPreferences,
+    sandbox?.game
+  );
 
   // Point wine at the per-game prefix so the install lands in the same prefix
   // the umu launch path uses; without this, bare wine defaults to ~/.wine (or
@@ -50,8 +55,11 @@ const launchInstallerWithWine = async (
       detached: true,
       stdio: "ignore",
       shell: false,
+      // Scrub the inherited env to an allowlist when sandboxed so the installer
+      // cannot read the user's secrets from /proc/self/environ, then re-apply
+      // the launch env. Full env is kept when the sandbox is off.
       env: {
-        ...process.env,
+        ...(sandboxEnabled ? buildSandboxEnv(process.env) : process.env),
         ...resolved.env,
       },
     });

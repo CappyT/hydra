@@ -26,6 +26,7 @@ import {
 } from "./is-gamescope-available";
 import { resolveLaunchCommand } from "./resolve-launch-command";
 import { wrapWithSandbox } from "./sandbox-launch";
+import { buildSandboxEnv } from "./sandbox-env";
 import {
   buildWindowsBatchCommand,
   isWindowsBatchFile,
@@ -72,6 +73,10 @@ const launchNatively = (
   sandbox?: SandboxLaunchInput
 ): number | null => {
   const workingDirectory = path.dirname(executablePath);
+  const sandboxEnabled = Sandbox.isEnabled(
+    sandbox?.userPreferences,
+    sandbox?.game
+  );
   const resolvedLaunchCommand = wrapWithSandbox(
     resolveLaunchCommand({
       baseCommand: executablePath,
@@ -116,8 +121,9 @@ const launchNatively = (
         detached: true,
         stdio: "ignore",
         cwd: workingDirectory,
+        // See the general spawn below: scrub the inherited env when sandboxed.
         env: {
-          ...process.env,
+          ...(sandboxEnabled ? buildSandboxEnv(process.env) : process.env),
           ...resolvedLaunchCommand.env,
         },
       }
@@ -140,8 +146,11 @@ const launchNatively = (
       detached: true,
       stdio: "ignore",
       cwd: workingDirectory,
+      // Scrub the inherited env to an allowlist when sandboxed so the game
+      // cannot read the user's secrets from /proc/self/environ, then re-apply
+      // the launch's explicit env. Full env is kept when the sandbox is off.
       env: {
-        ...process.env,
+        ...(sandboxEnabled ? buildSandboxEnv(process.env) : process.env),
         ...resolvedLaunchCommand.env,
       },
     }
@@ -169,6 +178,10 @@ const launchWithWine = async (
 ): Promise<boolean> => {
   const workingDirectory = path.dirname(executablePath);
   const winePrefix = sandbox?.winePrefix;
+  const sandboxEnabled = Sandbox.isEnabled(
+    sandbox?.userPreferences,
+    sandbox?.game
+  );
 
   // Point wine at the per-game prefix so this fallback reads/writes the same
   // prefix as the umu path; without this, bare wine defaults to ~/.wine (or the
@@ -207,8 +220,11 @@ const launchWithWine = async (
         detached: true,
         stdio: "ignore",
         cwd: workingDirectory,
+        // Scrub the inherited env to an allowlist when sandboxed so the game
+        // cannot read the user's secrets from /proc/self/environ, then re-apply
+        // the prefix and launch env. Full env is kept when the sandbox is off.
         env: {
-          ...process.env,
+          ...(sandboxEnabled ? buildSandboxEnv(process.env) : process.env),
           ...(winePrefix ? { WINEPREFIX: winePrefix } : {}),
           ...resolvedLaunchCommand.env,
         },
@@ -216,11 +232,7 @@ const launchWithWine = async (
     );
 
     processRef.once("spawn", () => {
-      if (
-        processRef.pid &&
-        sandbox?.gameKey &&
-        Sandbox.isEnabled(sandbox.userPreferences, sandbox.game)
-      ) {
+      if (processRef.pid && sandbox?.gameKey && sandboxEnabled) {
         launchedGamePids.set(sandbox.gameKey, processRef.pid);
         sandboxedGamePids.add(sandbox.gameKey);
       }

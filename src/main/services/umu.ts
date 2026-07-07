@@ -9,6 +9,7 @@ import { logger } from "./logger";
 import type { Game, ProtonVersion, UserPreferences } from "@types";
 import { resolveLaunchCommand } from "@main/helpers/resolve-launch-command";
 import { wrapWithSandbox } from "@main/helpers/sandbox-launch";
+import { buildSandboxEnv } from "@main/helpers/sandbox-env";
 import { resolveSystemBinary } from "@main/helpers/resolve-system-binary";
 import { isWaylandSessionAvailable } from "@main/helpers/is-gamescope-available";
 import { Sandbox } from "./sandbox";
@@ -345,8 +346,12 @@ export class Umu {
             : ["ignore", logFileDescriptor, logFileDescriptor],
           shell: false,
           cwd: workingDirectory,
+          // Scrub the inherited env to an allowlist when sandboxed so the game
+          // cannot read the user's secrets from /proc/self/environ, then re-apply
+          // the launch's explicit env on top. When the sandbox is disabled for
+          // this game, keep the full inherited env (escape hatch).
           env: {
-            ...process.env,
+            ...(sandboxEnabled ? buildSandboxEnv(process.env) : process.env),
             ...launchEnv,
           },
         }

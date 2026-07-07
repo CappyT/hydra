@@ -3,8 +3,9 @@ import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { db, gamesSublevel, levelKeys } from "@main/level";
-import { emulators, logger } from "@main/services";
+import { Sandbox, emulators, logger } from "@main/services";
 import { wrapWithSandbox } from "./sandbox-launch";
+import { buildSandboxEnv } from "./sandbox-env";
 import type {
   EmulatorBinary,
   EmulatorConfig,
@@ -291,7 +292,9 @@ export const launchClassicsGame = async (
         stdio: "ignore",
         cwd: workingDirectory,
         env: {
-          ...process.env,
+          ...(Sandbox.isEnabled(userPreferences, game)
+            ? buildSandboxEnv(process.env)
+            : process.env),
           ...resolvedLaunchCommand.env,
         },
       }
