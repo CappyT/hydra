@@ -144,6 +144,22 @@ describe("Sandbox.wrapCommand", () => {
     assert.ok(hasBind(args, "--ro-bind", protonDir));
   });
 
+  it("binds extra read-only paths (bundled umu-run) and skips missing ones", () => {
+    const umuBinary = path.join(tmpRoot, "umu-run");
+    fs.writeFileSync(umuBinary, "");
+
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/python3",
+      args: [umuBinary],
+      env: baseEnv,
+      gameDir,
+      extraRoBinds: [umuBinary, missingPath],
+    });
+
+    assert.ok(hasBind(args, "--ro-bind", umuBinary));
+    assert.ok(!hasBind(args, "--ro-bind", missingPath));
+  });
+
   it("binds the wine prefix read-write when the dir exists", () => {
     const { args } = buildSandboxArgs({
       command: "/usr/bin/game",

@@ -34,6 +34,11 @@ export interface SandboxLaunchContext {
    * per-game extra paths.
    */
   additionalBinds?: string[];
+  /**
+   * Extra read-only paths required by this launch flavor (e.g. the bundled
+   * umu-run zipapp under the AppImage mount, hidden by the /tmp tmpfs).
+   */
+  additionalRoBinds?: string[];
 }
 
 const ensureUmuRuntimeDir = () => {
@@ -96,6 +101,7 @@ export const wrapWithSandbox = (
     winePrefix,
     protonDir,
     additionalBinds = [],
+    additionalRoBinds = [],
   } = context;
 
   const sandboxEnabled = Sandbox.isEnabled(userPreferences, game);
@@ -125,6 +131,7 @@ export const wrapWithSandbox = (
       ...additionalBinds,
       ...(game?.sandboxExtraPaths?.filter(Boolean) ?? []),
     ],
+    extraRoBinds: additionalRoBinds,
     homePersistDir,
     shareIpc: game?.sandboxShareIpc === true,
   });

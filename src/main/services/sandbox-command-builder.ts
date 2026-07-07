@@ -49,6 +49,12 @@ export interface SandboxWrapOptions {
   /** User-configured extra paths, bound read-write (1:1) when present. */
   extraBinds?: string[];
   /**
+   * Extra read-only paths required by this launch flavor (e.g. the bundled
+   * umu-run zipapp, which lives under the AppImage mount in /tmp and would
+   * otherwise be hidden by the /tmp tmpfs).
+   */
+  extraRoBinds?: string[];
+  /**
    * Persistent per-game home directory. When set and existing, it is bound
    * over the sandbox $HOME (an intentional path remap of $HOME only) instead of
    * a fresh empty dir, so native saves and shader caches survive across
@@ -132,6 +138,7 @@ export const buildSandboxArgs = (
     winePrefix,
     protonDir,
     extraBinds = [],
+    extraRoBinds = [],
     homePersistDir,
     shareIpc = false,
   } = options;
@@ -240,6 +247,7 @@ export const buildSandboxArgs = (
   // Read-only, 1:1 binds.
   const readOnlyBinds: (string | null | undefined)[] = [
     protonDir,
+    ...extraRoBinds,
     env.XAUTHORITY,
     home ? path.join(home, ".Xauthority") : null,
     "/tmp/.X11-unix",

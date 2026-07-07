@@ -260,6 +260,10 @@ export class Umu {
         gameDir: workingDirectory,
         winePrefix: options?.winePrefixPath,
         protonDir: options?.protonPath,
+        // The bundled umu-run zipapp lives under the AppImage mount in /tmp
+        // (or the repo checkout under /home in dev), both hidden by the
+        // sandbox tmpfs mounts — re-expose it read-only.
+        additionalRoBinds: [umuBinaryPath],
       }
     );
 
