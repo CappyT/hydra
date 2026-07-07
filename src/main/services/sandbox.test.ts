@@ -358,6 +358,86 @@ describe("Sandbox.wrapCommand", () => {
   });
 });
 
+describe("Sandbox X11 hardening (hideX11)", () => {
+  let tmpRoot: string;
+  let gameDir: string;
+  let xauthority: string;
+  let home: string;
+
+  before(() => {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sbx-x11-"));
+    gameDir = path.join(tmpRoot, "game");
+    home = path.join(tmpRoot, "home");
+    xauthority = path.join(tmpRoot, "xauthority");
+    fs.mkdirSync(gameDir, { recursive: true });
+    fs.mkdirSync(path.join(home, ".config", "MangoHud"), { recursive: true });
+    fs.writeFileSync(path.join(home, ".Xauthority"), "");
+    fs.writeFileSync(xauthority, "");
+  });
+
+  after(() => {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  const env = () => ({
+    HOME: home,
+    XDG_RUNTIME_DIR: "/run/user/1000",
+    XAUTHORITY: xauthority,
+  });
+
+  it("keeps the session X11 binds when hideX11 is absent", () => {
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: env(),
+      gameDir,
+    });
+
+    assert.ok(hasBind(args, "--ro-bind", xauthority));
+    assert.ok(hasBind(args, "--ro-bind", path.join(home, ".Xauthority")));
+    // MangoHud config stays regardless of hideX11.
+    assert.ok(hasBind(args, "--ro-bind", path.join(home, ".config", "MangoHud")));
+  });
+
+  it("omits every session X11 bind when hideX11 is true", () => {
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: env(),
+      gameDir,
+      hideX11: true,
+    });
+
+    assert.ok(!hasBind(args, "--ro-bind", xauthority));
+    assert.ok(!hasBind(args, "--ro-bind", path.join(home, ".Xauthority")));
+    assert.ok(
+      !collectBindPairs(args).some((pair) => pair.dest === "/tmp/.X11-unix")
+    );
+    // Non-X11 binds are untouched: MangoHud config is still exposed.
+    assert.ok(
+      hasBind(args, "--ro-bind", path.join(home, ".config", "MangoHud"))
+    );
+  });
+
+  it("still re-exposes wayland/gamescope sockets when hideX11 is true", () => {
+    const runtimeDir = fs.mkdtempSync(path.join(tmpRoot, "runtime-"));
+    fs.writeFileSync(path.join(runtimeDir, "wayland-1"), "");
+    fs.writeFileSync(path.join(runtimeDir, "gamescope-0"), "");
+
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: { HOME: home, XDG_RUNTIME_DIR: runtimeDir, XAUTHORITY: xauthority },
+      gameDir,
+      hideX11: true,
+    });
+
+    assert.ok(hasBind(args, "--ro-bind", path.join(runtimeDir, "wayland-1")));
+    assert.ok(hasBind(args, "--ro-bind", path.join(runtimeDir, "gamescope-0")));
+    assert.ok(!hasBind(args, "--ro-bind", xauthority));
+  });
+});
+
 describe("Sandbox.isEnabled", () => {
   const originalPlatform = process.platform;
 

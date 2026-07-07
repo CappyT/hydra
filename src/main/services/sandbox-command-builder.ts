@@ -63,6 +63,15 @@ export interface SandboxWrapOptions {
   homePersistDir?: string | null;
   /** When false (default) the IPC namespace is unshared. */
   shareIpc?: boolean;
+  /**
+   * When true, the session X11 binds (`/tmp/.X11-unix`, XAUTHORITY and
+   * `~/.Xauthority`) are omitted. Used when gamescope wraps the launch: the
+   * game talks only to gamescope's private embedded Xwayland, whose socket
+   * lives in the sandbox's own /tmp tmpfs, so it never needs the outer
+   * session's X server. All other binds (wayland/gamescope/pipewire/pulse
+   * sockets, MangoHud config, the dead d-bus placeholder) are unaffected.
+   */
+  hideX11?: boolean;
 }
 
 const isExistingPath = (
@@ -152,6 +161,7 @@ export const buildSandboxArgs = (
     extraRoBinds = [],
     homePersistDir,
     shareIpc = false,
+    hideX11 = false,
   } = options;
 
   const home = env.HOME || "";
@@ -286,13 +296,18 @@ export const buildSandboxArgs = (
     }
   }
 
-  // Read-only, 1:1 binds.
+  // Read-only, 1:1 binds. The session X11 sockets/cookies are dropped when
+  // hideX11 is set (gamescope hosts a private Xwayland inside the sandbox).
   const readOnlyBinds: (string | null | undefined)[] = [
     protonDir,
     ...extraRoBinds,
-    env.XAUTHORITY,
-    home ? path.join(home, ".Xauthority") : null,
-    "/tmp/.X11-unix",
+    ...(hideX11
+      ? []
+      : [
+          env.XAUTHORITY,
+          home ? path.join(home, ".Xauthority") : null,
+          "/tmp/.X11-unix",
+        ]),
     home ? path.join(home, ".config", "MangoHud") : null,
   ];
 

@@ -39,6 +39,12 @@ export interface SandboxLaunchContext {
    * umu-run zipapp under the AppImage mount, hidden by the /tmp tmpfs).
    */
   additionalRoBinds?: string[];
+  /**
+   * When true, the session X11 binds are omitted from the sandbox. Set by the
+   * launch sites when gamescope wraps the launch on a Wayland session, so the
+   * game only sees gamescope's private embedded Xwayland.
+   */
+  hideX11?: boolean;
 }
 
 const ensureUmuRuntimeDir = () => {
@@ -110,6 +116,7 @@ export const wrapWithSandbox = (
     protonDir,
     additionalBinds = [],
     additionalRoBinds = [],
+    hideX11 = false,
   } = context;
 
   const sandboxEnabled = Sandbox.isEnabled(userPreferences, game);
@@ -142,6 +149,7 @@ export const wrapWithSandbox = (
     extraRoBinds: additionalRoBinds,
     homePersistDir,
     shareIpc: game?.sandboxShareIpc === true,
+    hideX11,
   });
 
   return {
