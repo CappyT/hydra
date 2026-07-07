@@ -16,6 +16,7 @@ import { AchievementList } from "./achievement-list";
 import { AchievementPanel } from "./achievement-panel";
 import { ComparedAchievementPanel } from "./compared-achievement-panel";
 import { useSubscription } from "@renderer/hooks/use-subscription";
+import { ACCOUNTLESS } from "@shared";
 import { RetroAchievementsConnectBanner } from "@renderer/components/retro-achievements-connect-banner/retro-achievements-connect-banner";
 import "./achievements-content.scss";
 
@@ -134,6 +135,7 @@ export function AchievementsContent({
   otherUser,
   comparedAchievements,
 }: AchievementsContentProps) {
+  const { t } = useTranslation("achievement");
   const heroRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isHeaderStuck, setIsHeaderStuck] = useState(false);
@@ -179,7 +181,16 @@ export function AchievementsContent({
     );
   };
 
-  if (!objectId || !shop || !gameTitle || !userDetails) return null;
+  if (!objectId || !shop || !gameTitle) return null;
+  // Accountless mode has no profile; render the page with a local placeholder
+  // identity instead of bailing out to a blank screen.
+  if (!userDetails && !ACCOUNTLESS) return null;
+
+  const summaryUser = userDetails ?? {
+    id: "",
+    displayName: t("your_achievements"),
+    profileImageUrl: null,
+  };
 
   return (
     <div className="achievements-content__achievements-list">
@@ -215,7 +226,7 @@ export function AchievementsContent({
           <div className="achievements-content__achievements-list__section__container__achievements-summary-wrapper">
             <AchievementSummary
               user={{
-                ...userDetails,
+                ...summaryUser,
                 totalAchievementCount: comparedAchievements
                   ? comparedAchievements.owner.totalAchievementCount
                   : achievements!.length,
@@ -239,7 +250,7 @@ export function AchievementsContent({
               className={`achievements-content__achievements-list__section__table-header__container ${hasActiveSubscription ? "achievements-content__achievements-list__section__table-header__container--has-active-subscription" : "achievements-content__achievements-list__section__table-header__container--has-no-active-subscription"}`}
             >
               <div></div>
-              {hasActiveSubscription && (
+              {hasActiveSubscription && userDetails && (
                 <div className="achievements-content__achievements-list__section__table-header__container__user-avatar">
                   {getProfileImage({ ...userDetails })}
                 </div>
