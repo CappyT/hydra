@@ -5,8 +5,10 @@ import path from "node:path";
 import { after, before, describe, it } from "node:test";
 
 import {
+  assertSandboxAvailable,
   buildSandboxArgs,
   isSandboxEnabled,
+  SandboxUnavailableError,
 } from "./sandbox-command-builder.ts";
 
 const BIND_FLAGS = new Set(["--bind", "--ro-bind", "--dev-bind"]);
@@ -287,5 +289,28 @@ describe("Sandbox.isEnabled", () => {
       isSandboxEnabled({ disableSandbox: false }, { sandboxDisabled: true }),
       false
     );
+  });
+});
+
+// Regression guard for the security-critical fail-closed behavior that backs
+// wrapWithSandbox in sandbox-launch.ts: the sandbox must never be silently
+// skipped. wrapWithSandbox calls assertSandboxAvailable(enabled, available)
+// as its throw site, so testing the pure helper here covers that exact path
+// without pulling electron into the test runner.
+describe("assertSandboxAvailable", () => {
+  it("throws SandboxUnavailableError when enabled but bwrap is unavailable", () => {
+    assert.throws(
+      () => assertSandboxAvailable(true, false),
+      SandboxUnavailableError
+    );
+  });
+
+  it("does not throw when enabled and bwrap is available", () => {
+    assert.doesNotThrow(() => assertSandboxAvailable(true, true));
+  });
+
+  it("does not throw when the sandbox is disabled", () => {
+    assert.doesNotThrow(() => assertSandboxAvailable(false, false));
+    assert.doesNotThrow(() => assertSandboxAvailable(false, true));
   });
 });

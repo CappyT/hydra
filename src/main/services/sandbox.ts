@@ -6,21 +6,12 @@ import {
   BWRAP_PATH,
   buildSandboxArgs,
   isSandboxEnabled,
+  SandboxUnavailableError,
   type SandboxWrapOptions,
 } from "./sandbox-command-builder";
 
 export type { SandboxWrapOptions };
-
-export class SandboxUnavailableError extends Error {
-  code = "SANDBOX_UNAVAILABLE" as const;
-
-  constructor() {
-    super(
-      "bubblewrap (bwrap) is not available, but the sandbox is enabled. " +
-        "Install bubblewrap or disable the sandbox to launch this game."
-    );
-  }
-}
+export { SandboxUnavailableError };
 
 export class Sandbox {
   private static availabilityCache: boolean | null = null;

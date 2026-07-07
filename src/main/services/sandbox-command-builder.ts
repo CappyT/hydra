@@ -4,6 +4,32 @@ import type { Game, UserPreferences } from "@types";
 
 export const BWRAP_PATH = "/usr/bin/bwrap";
 
+export class SandboxUnavailableError extends Error {
+  code = "SANDBOX_UNAVAILABLE" as const;
+
+  constructor() {
+    super(
+      "bubblewrap (bwrap) is not available, but the sandbox is enabled. " +
+        "Install bubblewrap or disable the sandbox to launch this game."
+    );
+  }
+}
+
+/**
+ * Fail-closed guard for the sandbox. When the sandbox is enabled but bwrap is
+ * unavailable, this throws SandboxUnavailableError so that no launch can ever
+ * escape the sandbox. Kept in this electron/logger-free module so the
+ * security-critical invariant is unit-testable in isolation.
+ */
+export const assertSandboxAvailable = (
+  enabled: boolean,
+  available: boolean
+): void => {
+  if (enabled && !available) {
+    throw new SandboxUnavailableError();
+  }
+};
+
 export interface SandboxWrapOptions {
   command: string;
   args: string[];

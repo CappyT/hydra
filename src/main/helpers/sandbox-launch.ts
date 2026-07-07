@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Game, UserPreferences } from "@types";
-import { Sandbox, SandboxUnavailableError } from "@main/services/sandbox";
+import { Sandbox } from "@main/services/sandbox";
+import { assertSandboxAvailable } from "@main/services/sandbox-command-builder";
 import { logger } from "@main/services/logger";
 import { sandboxHomesPath } from "@main/constants";
 import type { ResolvedLaunchCommand } from "./resolve-launch-command";
@@ -97,13 +98,13 @@ export const wrapWithSandbox = (
     additionalBinds = [],
   } = context;
 
-  if (!Sandbox.isEnabled(userPreferences, game)) {
+  const sandboxEnabled = Sandbox.isEnabled(userPreferences, game);
+  if (!sandboxEnabled) {
     return resolved;
   }
 
-  if (!Sandbox.isAvailable()) {
-    throw new SandboxUnavailableError();
-  }
+  // Fail closed: never let a launch escape the sandbox when bwrap is missing.
+  assertSandboxAvailable(sandboxEnabled, Sandbox.isAvailable());
 
   ensureUmuRuntimeDir();
   // On a first launch the wine prefix dir does not exist yet; create it before
