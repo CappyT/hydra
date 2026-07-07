@@ -101,10 +101,18 @@ jobs:
             dist/latest-linux.yml
             dist/*.blockmap
 
+      # The workflow runs on release/** branch pushes, so there is no tag in
+      # the ref; gh-release requires one. Derive it from the app version.
+      - name: Read app version
+        id: app_version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           draft: true
+          tag_name: v${{ steps.app_version.outputs.version }}
+          name: v${{ steps.app_version.outputs.version }}
           files: |
             dist/*.AppImage
             dist/*.deb
