@@ -8,6 +8,7 @@ import { useUserDetails } from "@renderer/hooks";
 import { Fragment, useMemo } from "react";
 import "./settings.scss";
 import {
+  ArchiveIcon,
   BellIcon,
   CloudIcon,
   DownloadIcon,
@@ -25,6 +26,7 @@ import { SettingsContextIntegrations } from "./settings-context-integrations";
 import { SettingsContextCompatibility } from "./settings-context-compatibility";
 import { SettingsContextBigPicture } from "./settings-context-big-picture";
 import { SettingsContextEmulation } from "./emulation/settings-context-emulation";
+import { SettingsBackup } from "./settings-backup";
 
 export default function Settings() {
   const { t } = useTranslation("settings");
@@ -57,6 +59,11 @@ export default function Settings() {
         id: "integrations" as const,
         label: t("integrations"),
         icon: <CloudIcon size={16} />,
+      },
+      {
+        id: "backup" as const,
+        label: t("backup"),
+        icon: <ArchiveIcon size={16} />,
       },
       {
         id: "compatibility" as const,
@@ -115,6 +122,10 @@ export default function Settings() {
 
             if (selectedCategoryId === "integrations") {
               return <SettingsContextIntegrations />;
+            }
+
+            if (selectedCategoryId === "backup") {
+              return <SettingsBackup />;
             }
 
             if (selectedCategoryId === "compatibility") {

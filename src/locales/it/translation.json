@@ -778,7 +778,21 @@
     "proton_version_auto": "Auto (global default or umu default)",
     "proton_source_umu_default": "umu default selection",
     "proton_source_steam": "Installed by Steam",
-    "proton_source_compatibility_tools": "Installed in Steam compatibilitytools.d"
+    "proton_source_compatibility_tools": "Installed in Steam compatibilitytools.d",
+    "backup": "Backup",
+    "backup_backend": "Backend di backup",
+    "backup_backend_description": "Scegli dove archiviare i backup dei salvataggi. I backup vengono creati con ludusavi e restano sotto il tuo controllo.",
+    "backup_backend_local": "Cartella locale",
+    "backup_backend_rclone": "Remote rclone",
+    "backup_local_path": "Cartella dei backup",
+    "backup_local_path_placeholder": "Cartella backup predefinita",
+    "backup_local_path_hint": "Lascia vuoto per usare la cartella backup predefinita nella directory dati dell’app.",
+    "backup_rclone_remote": "Remote rclone",
+    "backup_rclone_remote_hint": "Un remote rclone configurato con percorso, es. myremote:games-saves. Configura i remote con `rclone config`.",
+    "backup_test_connection": "Prova connessione",
+    "backup_test_ok": "Il backend di backup è raggiungibile",
+    "backup_test_failed": "Test del backend di backup fallito",
+    "backup_save_failed": "Impossibile salvare le impostazioni di backup"
   },
   "notifications": {
     "download_complete": "Download completato",

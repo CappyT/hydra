@@ -1278,7 +1278,21 @@
     "big_picture_enable_sounds": "Enable Big Picture sounds",
     "big_picture_enable_virtual_keyboard": "Enable Big Picture virtual keyboard",
     "big_picture_enable_diagnostics": "Enable navigation diagnostics",
-    "big_picture_diagnostics_position": "Diagnostics position"
+    "big_picture_diagnostics_position": "Diagnostics position",
+    "backup": "Backup",
+    "backup_backend": "Backup backend",
+    "backup_backend_description": "Choose where your game save backups are stored. Backups are created with ludusavi and stored under your control.",
+    "backup_backend_local": "Local directory",
+    "backup_backend_rclone": "rclone remote",
+    "backup_local_path": "Backup folder",
+    "backup_local_path_placeholder": "Default backups folder",
+    "backup_local_path_hint": "Leave empty to use the default backups folder inside the app data directory.",
+    "backup_rclone_remote": "rclone remote",
+    "backup_rclone_remote_hint": "A configured rclone remote and path, e.g. myremote:games-saves. Configure remotes with `rclone config`.",
+    "backup_test_connection": "Test connection",
+    "backup_test_ok": "Backup backend is reachable",
+    "backup_test_failed": "Backup backend test failed",
+    "backup_save_failed": "Failed to save backup settings"
   },
   "notifications": {
     "download_complete": "Download complete",
