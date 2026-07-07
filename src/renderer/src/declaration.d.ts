@@ -178,7 +178,23 @@ declare global {
     ) => Promise<void>;
     isGamemodeAvailable: () => Promise<boolean>;
     isMangohudAvailable: () => Promise<boolean>;
+    isSandboxAvailable: () => Promise<boolean>;
     isWinetricksAvailable: () => Promise<boolean>;
+    toggleGameSandbox: (
+      shop: GameShop,
+      objectId: string,
+      sandboxDisabled: boolean
+    ) => Promise<void>;
+    toggleGameSandboxIpc: (
+      shop: GameShop,
+      objectId: string,
+      sandboxShareIpc: boolean
+    ) => Promise<void>;
+    updateGameSandboxPaths: (
+      shop: GameShop,
+      objectId: string,
+      sandboxExtraPaths: string[]
+    ) => Promise<void>;
     addGameToLibrary: (
       shop: GameShop,
       objectId: string,

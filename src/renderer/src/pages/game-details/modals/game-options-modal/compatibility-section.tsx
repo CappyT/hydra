@@ -23,6 +23,10 @@ interface CompatibilitySettingsSectionProps {
   gamemodeAvailable: boolean;
   mangohudAvailable: boolean;
   winetricksAvailable: boolean;
+  sandboxAvailable: boolean;
+  sandboxEnabled: boolean;
+  sandboxShareIpc: boolean;
+  sandboxExtraPaths: string[];
   mangohudSiteUrl: string;
   gamemodeSiteUrl: string;
   onChangeWinePrefixPath: () => Promise<void>;
@@ -30,6 +34,10 @@ interface CompatibilitySettingsSectionProps {
   onOpenWinetricks: () => Promise<void>;
   onChangeGamemodeState: (value: boolean) => Promise<void>;
   onChangeMangohudState: (value: boolean) => Promise<void>;
+  onChangeSandboxState: (value: boolean) => Promise<void>;
+  onChangeSandboxShareIpc: (value: boolean) => Promise<void>;
+  onAddSandboxPath: () => Promise<void>;
+  onRemoveSandboxPath: (path: string) => Promise<void>;
   onChangeProtonVersion: (value: string) => void;
 }
 
@@ -45,6 +53,10 @@ export function CompatibilitySettingsSection({
   gamemodeAvailable,
   mangohudAvailable,
   winetricksAvailable,
+  sandboxAvailable,
+  sandboxEnabled,
+  sandboxShareIpc,
+  sandboxExtraPaths,
   mangohudSiteUrl,
   gamemodeSiteUrl,
   onChangeWinePrefixPath,
@@ -52,6 +64,10 @@ export function CompatibilitySettingsSection({
   onOpenWinetricks,
   onChangeGamemodeState,
   onChangeMangohudState,
+  onChangeSandboxState,
+  onChangeSandboxShareIpc,
+  onAddSandboxPath,
+  onRemoveSandboxPath,
   onChangeProtonVersion,
 }: Readonly<CompatibilitySettingsSectionProps>) {
   const { t } = useTranslation("game_details");
@@ -254,6 +270,95 @@ export function CompatibilitySettingsSection({
             <Tooltip id={mangohudTooltipId} />
           )}
         </div>
+
+        <div className="game-options-modal__sandbox-toggle">
+          <CheckboxField
+            label={
+              <span
+                className={`game-options-modal__sandbox-label ${
+                  !sandboxAvailable
+                    ? "game-options-modal__sandbox-label--disabled"
+                    : ""
+                }`}
+                data-tooltip-id={
+                  !sandboxAvailable ? "sandbox-unavailable-tooltip" : undefined
+                }
+                data-tooltip-content={
+                  !sandboxAvailable
+                    ? t("sandbox_unavailable_tooltip")
+                    : undefined
+                }
+              >
+                {t("enable_sandbox")}
+              </span>
+            }
+            checked={sandboxEnabled && sandboxAvailable}
+            disabled={!sandboxAvailable}
+            onChange={(event) => onChangeSandboxState(event.target.checked)}
+          />
+
+          {!sandboxAvailable && <Tooltip id="sandbox-unavailable-tooltip" />}
+
+          <h4 className="game-options-modal__header-description">
+            {t("sandbox_description")}
+          </h4>
+        </div>
+
+        {sandboxEnabled && sandboxAvailable && (
+          <>
+            <div className="game-options-modal__sandbox-ipc-toggle">
+              <CheckboxField
+                label={t("sandbox_share_ipc")}
+                checked={sandboxShareIpc}
+                onChange={(event) =>
+                  onChangeSandboxShareIpc(event.target.checked)
+                }
+              />
+              <h4 className="game-options-modal__header-description">
+                {t("sandbox_share_ipc_description")}
+              </h4>
+            </div>
+
+            <div className="game-options-modal__sandbox-paths">
+              <div className="game-options-modal__header">
+                <h2>{t("sandbox_extra_paths")}</h2>
+                <h4 className="game-options-modal__header-description">
+                  {t("sandbox_extra_paths_description")}
+                </h4>
+              </div>
+
+              {sandboxExtraPaths.map((extraPath) => (
+                <TextField
+                  key={extraPath}
+                  value={extraPath}
+                  readOnly
+                  theme="dark"
+                  disabled
+                  rightContent={
+                    <Button
+                      type="button"
+                      theme="outline"
+                      onClick={() => onRemoveSandboxPath(extraPath)}
+                    >
+                      {t("clear")}
+                    </Button>
+                  }
+                />
+              ))}
+
+              <div className="game-options-modal__row">
+                <Button
+                  type="button"
+                  theme="outline"
+                  onClick={onAddSandboxPath}
+                >
+                  <FileDirectoryIcon />
+                  {t("sandbox_add_path")}
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="game-options-modal__section">

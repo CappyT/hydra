@@ -125,6 +125,7 @@ export function GameOptionsModal({
   const [gamemodeAvailable, setGamemodeAvailable] = useState(false);
   const [mangohudAvailable, setMangohudAvailable] = useState(false);
   const [winetricksAvailable, setWinetricksAvailable] = useState(false);
+  const [sandboxAvailable, setSandboxAvailable] = useState(false);
   const [selectedCategory, setSelectedCategory] =
     useState<GameSettingsCategoryId>("general");
   const [defaultWinePrefixPath, setDefaultWinePrefixPath] = useState<
@@ -147,6 +148,14 @@ export function GameOptionsModal({
 
   const globalAutoRunGamemode = userPreferences?.autoRunGamemode === true;
   const globalAutoRunMangohud = userPreferences?.autoRunMangohud === true;
+  const sandboxEnabled =
+    game.sandboxDisabled === true
+      ? false
+      : game.sandboxDisabled === false
+        ? true
+        : userPreferences?.disableSandbox !== true;
+  const sandboxShareIpc = game.sandboxShareIpc === true;
+  const sandboxExtraPaths = game.sandboxExtraPaths ?? [];
   const hasAchievements =
     (achievements?.filter((a) => a.unlocked).length ?? 0) > 0;
   const deleting = isGameDeleting(game.id);
@@ -242,6 +251,17 @@ export function GameOptionsModal({
       .isWinetricksAvailable()
       .then(setWinetricksAvailable)
       .catch(() => setWinetricksAvailable(false));
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible || globalThis.window.electron.platform !== "linux") {
+      setSandboxAvailable(false);
+      return;
+    }
+    globalThis.window.electron
+      .isSandboxAvailable()
+      .then(setSandboxAvailable)
+      .catch(() => setSandboxAvailable(false));
   }, [visible]);
 
   useEffect(() => {
@@ -598,6 +618,54 @@ export function GameOptionsModal({
       game.shop,
       game.objectId,
       value
+    );
+    updateGame();
+  };
+
+  const handleChangeSandboxState = async (value: boolean) => {
+    await globalThis.window.electron.toggleGameSandbox(
+      game.shop,
+      game.objectId,
+      !value
+    );
+    updateGame();
+  };
+
+  const handleChangeSandboxShareIpc = async (value: boolean) => {
+    await globalThis.window.electron.toggleGameSandboxIpc(
+      game.shop,
+      game.objectId,
+      value
+    );
+    updateGame();
+  };
+
+  const handleAddSandboxPath = async () => {
+    const { filePaths } = await globalThis.window.electron.showOpenDialog({
+      properties: ["openDirectory"],
+    });
+
+    if (!filePaths.length) return;
+
+    const nextPaths = Array.from(
+      new Set([...(game.sandboxExtraPaths ?? []), filePaths[0]])
+    );
+    await globalThis.window.electron.updateGameSandboxPaths(
+      game.shop,
+      game.objectId,
+      nextPaths
+    );
+    updateGame();
+  };
+
+  const handleRemoveSandboxPath = async (path: string) => {
+    const nextPaths = (game.sandboxExtraPaths ?? []).filter(
+      (value) => value !== path
+    );
+    await globalThis.window.electron.updateGameSandboxPaths(
+      game.shop,
+      game.objectId,
+      nextPaths
     );
     updateGame();
   };
@@ -1010,6 +1078,10 @@ export function GameOptionsModal({
                   gamemodeAvailable={gamemodeAvailable}
                   mangohudAvailable={mangohudAvailable}
                   winetricksAvailable={winetricksAvailable}
+                  sandboxAvailable={sandboxAvailable}
+                  sandboxEnabled={sandboxEnabled}
+                  sandboxShareIpc={sandboxShareIpc}
+                  sandboxExtraPaths={sandboxExtraPaths}
                   gamemodeSiteUrl={GAMEMODE_SITE_URL}
                   mangohudSiteUrl={MANGOHUD_SITE_URL}
                   onChangeWinePrefixPath={handleChangeWinePrefixPath}
@@ -1017,6 +1089,10 @@ export function GameOptionsModal({
                   onOpenWinetricks={handleOpenWinetricks}
                   onChangeGamemodeState={handleChangeGamemodeState}
                   onChangeMangohudState={handleChangeMangohudState}
+                  onChangeSandboxState={handleChangeSandboxState}
+                  onChangeSandboxShareIpc={handleChangeSandboxShareIpc}
+                  onAddSandboxPath={handleAddSandboxPath}
+                  onRemoveSandboxPath={handleRemoveSandboxPath}
                   onChangeProtonVersion={handleChangeProtonVersion}
                 />
               )}

@@ -43,6 +43,8 @@ export function SettingsContextCompatibility() {
   const [autoRunGamemode, setAutoRunGamemode] = useState(false);
   const [gamemodeAvailable, setGamemodeAvailable] = useState(false);
   const [mangohudAvailable, setMangohudAvailable] = useState(false);
+  const [enableSandbox, setEnableSandbox] = useState(true);
+  const [sandboxAvailable, setSandboxAvailable] = useState(false);
 
   useEffect(() => {
     if (!shouldShowCommonRedist) return;
@@ -82,6 +84,7 @@ export function SettingsContextCompatibility() {
     setSelectedDefaultProtonPath(userPreferences.defaultProtonPath ?? "");
     setAutoRunMangohud(userPreferences.autoRunMangohud ?? false);
     setAutoRunGamemode(userPreferences.autoRunGamemode ?? false);
+    setEnableSandbox(userPreferences.disableSandbox !== true);
     setDefaultWinePrefixPath(
       userPreferences.defaultWinePrefixPath ?? defaultWinePrefixBasePath
     );
@@ -103,6 +106,11 @@ export function SettingsContextCompatibility() {
       .isMangohudAvailable()
       .then(setMangohudAvailable)
       .catch(() => setMangohudAvailable(false));
+
+    window.electron
+      .isSandboxAvailable()
+      .then(setSandboxAvailable)
+      .catch(() => setSandboxAvailable(false));
   }, []);
 
   useEffect(() => {
@@ -369,6 +377,49 @@ export function SettingsContextCompatibility() {
                 {!mangohudAvailable && (
                   <Tooltip id="settings-mangohud-unavailable-tooltip" />
                 )}
+              </div>
+
+              <div className="settings-behavior__sandbox-toggle">
+                <CheckboxField
+                  label={
+                    <span
+                      className={`settings-behavior__sandbox-label ${
+                        !sandboxAvailable
+                          ? "settings-behavior__sandbox-label--disabled"
+                          : ""
+                      }`}
+                      data-tooltip-id={
+                        !sandboxAvailable
+                          ? "settings-sandbox-unavailable-tooltip"
+                          : undefined
+                      }
+                      data-tooltip-content={
+                        !sandboxAvailable
+                          ? t("sandbox_unavailable_tooltip")
+                          : undefined
+                      }
+                    >
+                      {t("enable_sandbox")}
+                    </span>
+                  }
+                  checked={enableSandbox}
+                  disabled={!sandboxAvailable}
+                  onChange={() =>
+                    setEnableSandbox((previousValue) => {
+                      const nextValue = !previousValue;
+                      updateUserPreferences({ disableSandbox: !nextValue });
+                      return nextValue;
+                    })
+                  }
+                />
+
+                {!sandboxAvailable && (
+                  <Tooltip id="settings-sandbox-unavailable-tooltip" />
+                )}
+
+                <p className="settings-behavior__proton-description">
+                  {t("sandbox_description")}
+                </p>
               </div>
             </div>
           </div>

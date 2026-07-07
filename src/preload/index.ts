@@ -509,7 +509,30 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.invoke("toggleGameGamemode", shop, objectId, autoRunGamemode),
   isGamemodeAvailable: () => ipcRenderer.invoke("isGamemodeAvailable"),
   isMangohudAvailable: () => ipcRenderer.invoke("isMangohudAvailable"),
+  isSandboxAvailable: () => ipcRenderer.invoke("isSandboxAvailable"),
   isWinetricksAvailable: () => ipcRenderer.invoke("isWinetricksAvailable"),
+  toggleGameSandbox: (
+    shop: GameShop,
+    objectId: string,
+    sandboxDisabled: boolean
+  ) => ipcRenderer.invoke("toggleGameSandbox", shop, objectId, sandboxDisabled),
+  toggleGameSandboxIpc: (
+    shop: GameShop,
+    objectId: string,
+    sandboxShareIpc: boolean
+  ) =>
+    ipcRenderer.invoke("toggleGameSandboxIpc", shop, objectId, sandboxShareIpc),
+  updateGameSandboxPaths: (
+    shop: GameShop,
+    objectId: string,
+    sandboxExtraPaths: string[]
+  ) =>
+    ipcRenderer.invoke(
+      "updateGameSandboxPaths",
+      shop,
+      objectId,
+      sandboxExtraPaths
+    ),
   addGameToLibrary: (
     shop: GameShop,
     objectId: string,
