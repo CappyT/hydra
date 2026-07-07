@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@renderer/components";
+import { ACCOUNTLESS } from "@shared";
 import type { LibraryGame, UserDetails } from "@types";
 
 interface DangerZoneSectionProps {
@@ -56,7 +57,7 @@ export function DangerZoneSection({
               deleting ||
               isDeletingAchievements ||
               !hasAchievements ||
-              !userDetails
+              (!userDetails && !ACCOUNTLESS)
             }
           >
             {t("reset_achievements")}
