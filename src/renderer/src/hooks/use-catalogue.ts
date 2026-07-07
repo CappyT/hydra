@@ -9,6 +9,23 @@ export const externalResourcesInstance = axios.create({
   baseURL: import.meta.env.RENDERER_VITE_EXTERNAL_RESOURCES_URL,
 });
 
+/**
+ * Fetches an optional external catalogue resource. These resources only feed
+ * non-critical catalogue-filter UI, so a failure (e.g. a 403 from an
+ * unreachable CDN) must never bubble up to the global error handler and show
+ * an "Unexpected error" modal. On failure we log and resolve to `null` so the
+ * caller can keep its state at the default value.
+ */
+const fetchExternalResource = async <T>(path: string): Promise<T | null> => {
+  try {
+    const response = await externalResourcesInstance.get<T>(path);
+    return response.data;
+  } catch (error) {
+    console.warn(`Failed to fetch external resource "${path}"`, error);
+    return null;
+  }
+};
+
 export function useCatalogue() {
   const dispatch = useAppDispatch();
 
@@ -16,28 +33,33 @@ export function useCatalogue() {
   const [steamDevelopers, setSteamDevelopers] = useState<string[]>([]);
   const [downloadSources, setDownloadSources] = useState<DownloadSource[]>([]);
 
-  const getSteamUserTags = useCallback(() => {
-    externalResourcesInstance.get("/steam-user-tags.json").then((response) => {
-      dispatch(setTags(response.data));
-    });
+  const getSteamUserTags = useCallback(async () => {
+    const data = await fetchExternalResource<
+      Record<string, Record<string, number>>
+    >("/steam-user-tags.json");
+    if (data) dispatch(setTags(data));
   }, [dispatch]);
 
-  const getSteamGenres = useCallback(() => {
-    externalResourcesInstance.get("/steam-genres.json").then((response) => {
-      dispatch(setGenres(response.data));
-    });
+  const getSteamGenres = useCallback(async () => {
+    const data =
+      await fetchExternalResource<Record<string, string[]>>(
+        "/steam-genres.json"
+      );
+    if (data) dispatch(setGenres(data));
   }, [dispatch]);
 
-  const getSteamPublishers = useCallback(() => {
-    externalResourcesInstance.get("/steam-publishers.json").then((response) => {
-      setSteamPublishers(response.data);
-    });
+  const getSteamPublishers = useCallback(async () => {
+    const data = await fetchExternalResource<string[]>(
+      "/steam-publishers.json"
+    );
+    if (data) setSteamPublishers(data);
   }, []);
 
-  const getSteamDevelopers = useCallback(() => {
-    externalResourcesInstance.get("/steam-developers.json").then((response) => {
-      setSteamDevelopers(response.data);
-    });
+  const getSteamDevelopers = useCallback(async () => {
+    const data = await fetchExternalResource<string[]>(
+      "/steam-developers.json"
+    );
+    if (data) setSteamDevelopers(data);
   }, []);
 
   const getDownloadSources = useCallback(() => {

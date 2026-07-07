@@ -293,6 +293,9 @@ export function App() {
       const $script = document.createElement("script");
       $script.id = "external-resources";
       $script.src = `${import.meta.env.RENDERER_VITE_EXTERNAL_RESOURCES_URL}/bundle.js?t=${Date.now()}`;
+      // The external theming bundle is optional; swallow load failures (e.g. a
+      // 403 from an unreachable CDN) so they never surface as an error.
+      $script.onerror = () => {};
       document.head.appendChild($script);
     }
   }, [fetchUserDetails, updateUserDetails, dispatch, setupWorkWonders]);
