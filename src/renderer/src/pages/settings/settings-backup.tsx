@@ -1,7 +1,12 @@
 import { useContext, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Button, SelectField, TextField } from "@renderer/components";
+import {
+  Button,
+  CheckboxField,
+  SelectField,
+  TextField,
+} from "@renderer/components";
 import { useAppSelector, useToast } from "@renderer/hooks";
 import { settingsContext } from "@renderer/context";
 import type { BackupBackend } from "@types";
@@ -22,6 +27,7 @@ export function SettingsBackup() {
     backupBackend: "local" as BackupBackend,
     backupLocalPath: "" as string,
     rcloneRemote: "" as string,
+    autoBackupNewGames: false,
   });
 
   useEffect(() => {
@@ -30,6 +36,7 @@ export function SettingsBackup() {
         backupBackend: userPreferences.backupBackend ?? "local",
         backupLocalPath: userPreferences.backupLocalPath ?? "",
         rcloneRemote: userPreferences.rcloneRemote ?? "",
+        autoBackupNewGames: userPreferences.autoBackupNewGames ?? false,
       });
     }
   }, [userPreferences]);
@@ -53,6 +60,7 @@ export function SettingsBackup() {
         backupBackend: form.backupBackend,
         backupLocalPath: form.backupLocalPath || null,
         rcloneRemote: form.rcloneRemote || null,
+        autoBackupNewGames: form.autoBackupNewGames,
       });
       showSuccessToast(t("changes_saved"));
     } catch (_err) {
@@ -139,6 +147,18 @@ export function SettingsBackup() {
             hint={t("backup_rclone_remote_hint")}
           />
         )}
+
+        <CheckboxField
+          label={t("auto_backup_new_games")}
+          checked={form.autoBackupNewGames}
+          onChange={() =>
+            setForm((prev) => ({
+              ...prev,
+              autoBackupNewGames: !prev.autoBackupNewGames,
+            }))
+          }
+        />
+        <p>{t("auto_backup_new_games_description")}</p>
 
         <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
           <Button onClick={handleSave} disabled={saving}>

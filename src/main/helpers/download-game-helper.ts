@@ -1,9 +1,11 @@
 import {
+  db,
   downloadsSublevel,
   gamesShopAssetsSublevel,
   gamesSublevel,
+  levelKeys,
 } from "@main/level";
-import type { GameShop } from "@types";
+import type { GameShop, UserPreferences } from "@types";
 
 interface PrepareGameEntryParams {
   gameKey: string;
@@ -29,6 +31,12 @@ export const prepareGameEntry = async ({
       isDeleted: false,
     });
   } else {
+    const userPreferences = await db
+      .get<string, UserPreferences | null>(levelKeys.userPreferences, {
+        valueEncoding: "json",
+      })
+      .catch(() => null);
+
     await gamesSublevel.put(gameKey, {
       title,
       iconUrl: gameAssets?.iconUrl ?? null,
@@ -41,6 +49,7 @@ export const prepareGameEntry = async ({
       lastTimePlayed: null,
       addedToLibraryAt: new Date(),
       isDeleted: false,
+      automaticCloudSync: userPreferences?.autoBackupNewGames ?? false,
     });
   }
 };

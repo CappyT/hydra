@@ -1,7 +1,8 @@
 import { registerEvent } from "../register-event";
-import type { GameShop } from "@types";
+import type { GameShop, UserPreferences } from "@types";
 import { createGame } from "@main/services/library-sync";
 import {
+  db,
   downloadsSublevel,
   gamesShopAssetsSublevel,
   gamesShopCacheSublevel,
@@ -57,6 +58,12 @@ const addGameToLibrary = async (
 
     await gamesSublevel.put(gameKey, game);
   } else {
+    const userPreferences = await db
+      .get<string, UserPreferences | null>(levelKeys.userPreferences, {
+        valueEncoding: "json",
+      })
+      .catch(() => null);
+
     game = {
       title,
       iconUrl: gameAssets?.iconUrl ?? null,
@@ -70,6 +77,7 @@ const addGameToLibrary = async (
       lastTimePlayed: null,
       addedToLibraryAt: new Date(),
       platform: resolvedPlatform ?? null,
+      automaticCloudSync: userPreferences?.autoBackupNewGames ?? false,
     };
 
     await gamesSublevel.put(gameKey, game);

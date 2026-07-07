@@ -1293,7 +1293,9 @@
     "backup_test_connection": "Test connection",
     "backup_test_ok": "Backup backend is reachable",
     "backup_test_failed": "Backup backend test failed",
-    "backup_save_failed": "Failed to save backup settings"
+    "backup_save_failed": "Failed to save backup settings",
+    "auto_backup_new_games": "Back up new games automatically",
+    "auto_backup_new_games_description": "New games added to your library will have automatic save backups enabled by default. Existing games are not affected."
   },
   "notifications": {
     "download_complete": "Download complete",

@@ -793,7 +793,9 @@
     "backup_test_connection": "Prova connessione",
     "backup_test_ok": "Il backend di backup è raggiungibile",
     "backup_test_failed": "Test del backend di backup fallito",
-    "backup_save_failed": "Impossibile salvare le impostazioni di backup"
+    "backup_save_failed": "Impossibile salvare le impostazioni di backup",
+    "auto_backup_new_games": "Esegui il backup dei nuovi giochi automaticamente",
+    "auto_backup_new_games_description": "I nuovi giochi aggiunti alla libreria avranno i backup automatici dei salvataggi abilitati per impostazione predefinita. I giochi esistenti non vengono modificati."
   },
   "notifications": {
     "download_complete": "Download completato",

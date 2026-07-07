@@ -198,6 +198,7 @@ export interface UserPreferences {
   backupBackend?: "local" | "rclone";
   backupLocalPath?: string | null;
   rcloneRemote?: string | null;
+  autoBackupNewGames?: boolean;
   ludusaviManifestUrl?: string | null;
 }
 
