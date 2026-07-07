@@ -359,7 +359,7 @@
     "select_folder": "Seleziona cartella",
     "backup_from": "Backup del {{date}}",
     "automatic_backup_from": "Backup automatico dal {{date}}",
-    "enable_automatic_cloud_sync": "Abilita sincronizzazione cloud automatica",
+    "enable_automatic_cloud_sync": "Abilita il backup automatico",
     "custom_backup_location_set": "Percorso backup personalizzato impostato",
     "no_directory_selected": "Nessuna cartella selezionata",
     "no_write_permission": "Impossibile scaricare in questa cartella. Clicca qui per saperne di più.",

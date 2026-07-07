@@ -280,7 +280,7 @@ export function GameCloudSettingsTab({
         game.objectId,
         game.shop,
         () => {
-          showSuccessToast("Cloud backup complete");
+          showSuccessToast("Backup complete");
           setCreatingBackup(false);
           loadArtifacts().catch(() => {});
           loadBackupPreview().catch(() => {});
@@ -293,9 +293,9 @@ export function GameCloudSettingsTab({
         game.shop,
         (success) => {
           if (success) {
-            showSuccessToast("Cloud save restored");
+            showSuccessToast("Save restored");
           } else {
-            showErrorToast("Failed to restore cloud save");
+            showErrorToast("Failed to restore save");
           }
           setRestoringArtifactId(null);
           setBackupDownloadProgress(null);
@@ -341,10 +341,10 @@ export function GameCloudSettingsTab({
           record.cardFilePath,
           record.folderName
         );
-        showSuccessToast("Cloud backup complete");
+        showSuccessToast("Backup complete");
         loadArtifacts().catch(() => {});
       } catch {
-        showErrorToast("Cloud backup failed");
+        showErrorToast("Backup failed");
       } finally {
         setUploadingCardKey(null);
       }
@@ -365,7 +365,7 @@ export function GameCloudSettingsTab({
       );
     } catch {
       setCreatingBackup(false);
-      showErrorToast("Cloud backup failed");
+      showErrorToast("Backup failed");
     }
   }, [
     creatingBackup,
@@ -395,7 +395,7 @@ export function GameCloudSettingsTab({
         );
       } catch {
         setRestoringArtifactId(null);
-        showErrorToast("Failed to restore cloud save");
+        showErrorToast("Failed to restore save");
       }
     },
     [
@@ -421,7 +421,7 @@ export function GameCloudSettingsTab({
         );
         await loadArtifacts();
       } catch {
-        showErrorToast("Unable to sync cloud save");
+        showErrorToast("Unable to sync save");
       } finally {
         setUpdatingArtifactId(null);
       }
@@ -441,10 +441,10 @@ export function GameCloudSettingsTab({
         } else {
           await globalThis.window.electron.deleteGameArtifact(artifactId);
         }
-        showSuccessToast("Cloud save removed");
+        showSuccessToast("Save removed");
         await loadArtifacts();
       } catch (error) {
-        showErrorToast("Unable to sync cloud save");
+        showErrorToast("Unable to sync save");
         throw error;
       } finally {
         setDeletingArtifactId(null);
