@@ -239,15 +239,9 @@ export function GameCloudSettingsTab({
       return;
     }
 
-    const params = new URLSearchParams({
-      objectId: game.objectId,
-      shop: game.shop,
-    });
-    const result = await globalThis.window.electron.hydraApi
-      .get<GameArtifact[]>(`/profile/games/artifacts?${params.toString()}`, {
-        needsSubscription: true,
-      })
-      .catch(() => []);
+    const result = await globalThis.window.electron
+      .getGameArtifacts(game.objectId, game.shop)
+      .catch(() => [] as GameArtifact[]);
     setArtifacts(result ?? []);
     setLoadingArtifacts(false);
   }, [game.objectId, game.shop, isEmulationGame, system]);
@@ -421,8 +415,9 @@ export function GameCloudSettingsTab({
       setUpdatingArtifactId(artifactId);
 
       try {
-        await globalThis.window.electron.hydraApi.put(
-          `/profile/games/artifacts/${artifactId}/${freeze ? "freeze" : "unfreeze"}`
+        await globalThis.window.electron.toggleArtifactFreeze(
+          artifactId,
+          freeze
         );
         await loadArtifacts();
       } catch {
@@ -444,9 +439,7 @@ export function GameCloudSettingsTab({
         if (isEmulationGame) {
           await globalThis.window.electron.deleteEmulationSave(artifactId);
         } else {
-          await globalThis.window.electron.hydraApi.delete<{ ok: boolean }>(
-            `/profile/games/artifacts/${artifactId}`
-          );
+          await globalThis.window.electron.deleteGameArtifact(artifactId);
         }
         showSuccessToast("Cloud save removed");
         await loadArtifacts();

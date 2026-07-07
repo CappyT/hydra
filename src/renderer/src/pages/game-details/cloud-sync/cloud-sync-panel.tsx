@@ -16,13 +16,7 @@ import {
   TrashIcon,
   UploadIcon,
 } from "@primer/octicons-react";
-import {
-  useAppSelector,
-  useDate,
-  useFormat,
-  useToast,
-  useUserDetails,
-} from "@renderer/hooks";
+import { useDate, useFormat, useToast } from "@renderer/hooks";
 import { useTranslation } from "react-i18next";
 import { AxiosProgressEvent } from "axios";
 import { formatDownloadProgress } from "@renderer/helpers";
@@ -50,10 +44,8 @@ export function CloudSyncPanel({
   );
 
   const { t } = useTranslation("game_details");
-  const { t: tHydraCloud } = useTranslation("hydra_cloud");
   const { formatDate, formatDateTime } = useDate();
   const { formatNumber } = useFormat();
-  const { hasActiveSubscription } = useUserDetails();
 
   const {
     artifacts,
@@ -75,9 +67,6 @@ export function CloudSyncPanel({
     useContext(gameDetailsContext);
 
   const { showSuccessToast, showErrorToast } = useToast();
-
-  const userDetails = useAppSelector((state) => state.userDetails.userDetails);
-  const backupsPerGameLimit = userDetails?.quirks?.backupsPerGameLimit ?? 0;
 
   const handleDeleteArtifactClick = async (gameArtifactId: string) => {
     setDeletingArtifact(true);
@@ -107,11 +96,9 @@ export function CloudSyncPanel({
   }, [objectId, shop]);
 
   useEffect(() => {
-    if (!hasActiveSubscription) return;
-
     getGameBackupPreview();
     getGameArtifacts();
-  }, [getGameArtifacts, getGameBackupPreview, hasActiveSubscription]);
+  }, [getGameArtifacts, getGameBackupPreview]);
 
   const handleBackupInstallClick = async (artifactId: string) => {
     setBackupDownloadProgress(null);
@@ -132,9 +119,6 @@ export function CloudSyncPanel({
       );
     }
   };
-
-  const hasReachedLimit =
-    backupsPerGameLimit > 0 && artifacts.length >= backupsPerGameLimit;
 
   const backupStateLabel = useMemo(() => {
     if (uploadingBackup) {
@@ -165,9 +149,6 @@ export function CloudSyncPanel({
         </span>
       );
     }
-    if (hasReachedLimit) {
-      return t("max_number_of_artifacts_reached");
-    }
     if (!backupPreview) {
       return t("no_backup_preview");
     }
@@ -179,7 +160,6 @@ export function CloudSyncPanel({
     artifacts.length,
     backupDownloadProgress?.progress,
     backupPreview,
-    hasReachedLimit,
     loadingPreview,
     restoringBackup,
     t,
@@ -188,17 +168,6 @@ export function CloudSyncPanel({
 
   const disableActions =
     uploadingBackup || restoringBackup || deletingArtifact || freezingArtifact;
-
-  if (!hasActiveSubscription) {
-    return (
-      <div className="cloud-sync-panel__upgrade">
-        <p>{tHydraCloud("hydra_cloud_feature_found")}</p>
-        <Button onClick={() => window.electron.openCheckout()}>
-          {tHydraCloud("learn_more")}
-        </Button>
-      </div>
-    );
-  }
 
   return (
     <>
@@ -218,13 +187,10 @@ export function CloudSyncPanel({
           label={
             <div className="cloud-sync-panel__automatic-sync-label">
               {t("enable_automatic_cloud_sync")}
-              <span className="cloud-sync-panel__automatic-sync-badge">
-                Hydra Cloud
-              </span>
             </div>
           }
           checked={automaticCloudSync}
-          disabled={!hasActiveSubscription || !game?.executablePath}
+          disabled={!game?.executablePath}
           onChange={onToggleAutomaticCloudSync}
         />
       </div>
@@ -245,11 +211,7 @@ export function CloudSyncPanel({
         <Button
           type="button"
           onClick={() => uploadSaveGame(lastDownloadedOption?.title ?? null)}
-          disabled={
-            disableActions ||
-            !backupPreview?.overall.totalGames ||
-            hasReachedLimit
-          }
+          disabled={disableActions || !backupPreview?.overall.totalGames}
         >
           {uploadingBackup ? (
             <SyncIcon className="cloud-sync-panel__sync-icon" />

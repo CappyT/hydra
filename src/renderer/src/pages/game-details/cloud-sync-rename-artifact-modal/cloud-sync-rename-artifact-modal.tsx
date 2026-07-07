@@ -58,14 +58,7 @@ export function CloudSyncRenameArtifactModal({
       try {
         if (!artifact) return;
 
-        await window.electron.hydraApi.put(
-          `/profile/games/artifacts/${artifact.id}`,
-          {
-            data: {
-              label: data.label,
-            },
-          }
-        );
+        await window.electron.renameGameArtifact(artifact.id, data.label);
         await getGameArtifacts();
 
         showSuccessToast(t("artifact_renamed"));

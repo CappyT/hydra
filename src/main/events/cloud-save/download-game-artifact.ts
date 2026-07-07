@@ -1,6 +1,6 @@
 import {
   CloudSync,
-  HydraApi,
+  getArtifactBackend,
   logger,
   WindowManager,
   Wine,
@@ -8,14 +8,12 @@ import {
 import fs from "node:fs";
 import * as tar from "tar";
 import { registerEvent } from "../register-event";
-import axios from "axios";
 import path from "node:path";
 import { backupsPath, publicProfilePath } from "@main/constants";
 import type { GameShop, LudusaviBackupMapping } from "@types";
 
 import YAML from "yaml";
 import { addTrailingSlash, normalizePath } from "@main/helpers";
-import { SystemPath } from "@main/services/system-path";
 import { gamesSublevel, levelKeys } from "@main/level";
 
 export const transformLudusaviBackupPathIntoWindowsPath = (
@@ -109,19 +107,19 @@ const downloadGameArtifact = async (
       objectId
     );
 
-    const {
-      downloadUrl,
-      objectKey,
-      homeDir,
-      winePrefixPath: artifactWinePrefixPath,
-    } = await HydraApi.post<{
-      downloadUrl: string;
-      objectKey: string;
-      homeDir: string;
-      winePrefixPath: string | null;
-    }>(`/profile/games/artifacts/${gameArtifactId}/download`);
+    const backend = await getArtifactBackend();
 
-    const zipLocation = path.join(SystemPath.getPath("userData"), objectKey);
+    const artifacts = await backend.list(shop, objectId);
+    const artifact = artifacts.find((item) => item.id === gameArtifactId);
+
+    if (!artifact) {
+      throw new Error(`Artifact not found: ${gameArtifactId}`);
+    }
+
+    const homeDir = artifact.homeDir;
+    const artifactWinePrefixPath = artifact.winePrefixPath;
+
+    const tarLocation = await backend.download(gameArtifactId);
     const backupPath = path.join(backupsPath, `${shop}-${objectId}`);
 
     if (fs.existsSync(backupPath)) {
@@ -131,46 +129,25 @@ const downloadGameArtifact = async (
       });
     }
 
-    const response = await axios.get(downloadUrl, {
-      responseType: "stream",
-      onDownloadProgress: (progressEvent) => {
-        WindowManager.sendToAppWindows(
-          `on-backup-download-progress-${objectId}-${shop}`,
-          progressEvent
-        );
-      },
-    });
-
-    const writer = fs.createWriteStream(zipLocation);
-
-    response.data.pipe(writer);
-
-    writer.on("error", (err) => {
-      logger.error("Failed to write tar file", err);
-      throw err;
-    });
-
     fs.mkdirSync(backupPath, { recursive: true });
 
-    writer.on("close", async () => {
-      await tar.x({
-        file: zipLocation,
-        cwd: backupPath,
-      });
-
-      restoreLudusaviBackup(
-        backupPath,
-        objectId,
-        normalizePath(homeDir),
-        effectiveWinePrefixPath,
-        artifactWinePrefixPath
-      );
-
-      WindowManager.sendToAppWindows(
-        `on-backup-download-complete-${objectId}-${shop}`,
-        true
-      );
+    await tar.x({
+      file: tarLocation,
+      cwd: backupPath,
     });
+
+    restoreLudusaviBackup(
+      backupPath,
+      objectId,
+      normalizePath(homeDir),
+      effectiveWinePrefixPath,
+      artifactWinePrefixPath
+    );
+
+    WindowManager.sendToAppWindows(
+      `on-backup-download-complete-${objectId}-${shop}`,
+      true
+    );
   } catch (err) {
     logger.error("Failed to download game artifact", err);
 

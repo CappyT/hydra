@@ -36,6 +36,7 @@ import type {
   MemcardFormatState,
   MemcardRestoreResult,
   MemcardRestoreTarget,
+  BackupBackend,
 } from "@types";
 import type { AuthPage } from "@shared";
 import type { AxiosProgressEvent } from "axios";
@@ -841,6 +842,16 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.invoke("downloadGameArtifact", objectId, shop, gameArtifactId),
   getGameArtifacts: (objectId: string, shop: GameShop) =>
     ipcRenderer.invoke("getGameArtifacts", objectId, shop),
+  deleteGameArtifact: (gameArtifactId: string) =>
+    ipcRenderer.invoke("deleteGameArtifact", gameArtifactId),
+  renameGameArtifact: (gameArtifactId: string, label: string) =>
+    ipcRenderer.invoke("renameGameArtifact", gameArtifactId, label),
+  toggleArtifactFreeze: (gameArtifactId: string, freeze: boolean) =>
+    ipcRenderer.invoke("toggleArtifactFreeze", gameArtifactId, freeze),
+  testBackupBackend: (
+    backend: BackupBackend,
+    config: { localPath?: string | null; rcloneRemote?: string | null }
+  ) => ipcRenderer.invoke("testBackupBackend", backend, config),
   getGameBackupPreview: (objectId: string, shop: GameShop) =>
     ipcRenderer.invoke("getGameBackupPreview", objectId, shop),
   selectGameBackupPath: (

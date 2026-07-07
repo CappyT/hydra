@@ -195,6 +195,10 @@ export interface UserPreferences {
   disableSandbox?: boolean;
   hideClassicsBookmark?: boolean;
   classicsUseHeroLayout?: boolean;
+  backupBackend?: "local" | "rclone";
+  backupLocalPath?: string | null;
+  rcloneRemote?: string | null;
+  ludusaviManifestUrl?: string | null;
 }
 
 export interface NetworkInterface {

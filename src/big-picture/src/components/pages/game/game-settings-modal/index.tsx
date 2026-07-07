@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SidebarModal, type SidebarModalTab } from "../../../common";
 import { resolvePreferredGameAssets } from "../../../../helpers";
-import { useUserDetails } from "../../../../hooks/use-user-details.hook";
 
 import "./styles.scss";
 import {
@@ -70,7 +69,6 @@ export function GameSettingsModal({
 }: Readonly<GameSettingsModalProps>) {
   const { t } = useTranslation(["game_details", "header"]);
   const [activeTabId, setActiveTabId] = useState<GameSettingsTabId>("launch");
-  const { userDetails, hasActiveSubscription } = useUserDetails();
   const preferredAssets = useMemo(
     () => resolvePreferredGameAssets(game, null),
     [game]
@@ -111,7 +109,7 @@ export function GameSettingsModal({
     [game]
   );
 
-  const shouldShowCloudTab = userDetails !== null && hasActiveSubscription;
+  const shouldShowCloudTab = game.shop !== "custom";
 
   useEffect(() => {
     if (!shouldShowCloudTab && activeTabId === "hydra_cloud") {

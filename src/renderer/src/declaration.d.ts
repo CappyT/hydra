@@ -18,6 +18,8 @@ import type {
   FriendPresenceSync,
   NotificationSync,
   GameArtifact,
+  BackupBackend,
+  BackupBackendTestResult,
   LudusaviBackup,
   UserAchievement,
   ComparedAchievements,
@@ -664,6 +666,19 @@ declare global {
       objectId: string,
       shop: GameShop
     ) => Promise<GameArtifact[]>;
+    deleteGameArtifact: (gameArtifactId: string) => Promise<{ ok: boolean }>;
+    renameGameArtifact: (
+      gameArtifactId: string,
+      label: string
+    ) => Promise<{ ok: boolean }>;
+    toggleArtifactFreeze: (
+      gameArtifactId: string,
+      freeze: boolean
+    ) => Promise<{ ok: boolean }>;
+    testBackupBackend: (
+      backend: BackupBackend,
+      config: { localPath?: string | null; rcloneRemote?: string | null }
+    ) => Promise<BackupBackendTestResult>;
     getGameBackupPreview: (
       objectId: string,
       shop: GameShop

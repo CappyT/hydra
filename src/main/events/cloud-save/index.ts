@@ -1,4 +1,9 @@
 import "./download-game-artifact";
+import "./get-game-artifacts";
 import "./get-game-backup-preview";
+import "./delete-game-artifact";
+import "./rename-game-artifact";
+import "./toggle-artifact-freeze";
+import "./test-backup-backend";
 import "./select-game-backup-path";
 import "./upload-save-game";
