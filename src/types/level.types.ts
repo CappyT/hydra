@@ -64,6 +64,9 @@ export interface Game {
   launchOptions?: string | null;
   autoRunMangohud?: boolean | null;
   autoRunGamemode?: boolean | null;
+  sandboxDisabled?: boolean;
+  sandboxExtraPaths?: string[];
+  sandboxShareIpc?: boolean;
   favorite?: boolean;
   isPinned?: boolean;
   achievementCount?: number;
@@ -189,6 +192,7 @@ export interface UserPreferences {
   defaultProtonPath?: string | null;
   autoRunMangohud?: boolean;
   autoRunGamemode?: boolean;
+  disableSandbox?: boolean;
   hideClassicsBookmark?: boolean;
   classicsUseHeroLayout?: boolean;
 }
