@@ -4,6 +4,7 @@ import {
   launchedGamePids,
   sandboxedGamePids,
   logger,
+  Sandbox,
   Wine,
 } from "@main/services";
 import sudo from "sudo-prompt";
@@ -39,18 +40,15 @@ const closeGame = async (
   const gameKey = levelKeys.game(shop, objectId);
   const launchedPid = launchedGamePids.get(gameKey);
 
-  // A sandboxed launch records the bwrap wrapper pid, which is its own process
-  // group leader. Killing the group tears down the whole sandbox in one shot.
+  // A sandboxed launch records the bwrap wrapper pid. Because the payload runs
+  // in its own pid namespace and session, killing the wrapper's group is not
+  // enough; Sandbox.killSandboxTree reaps the whole tree via the pid-namespace
+  // init. We never return early: after the kill attempt we fall through to the
+  // legacy per-process scan below as a safety net for any survivor.
   if (launchedPid && sandboxedGamePids.has(gameKey)) {
-    try {
-      process.kill(-launchedPid, "SIGKILL");
-      launchedGamePids.delete(gameKey);
-      sandboxedGamePids.delete(gameKey);
-      return;
-    } catch (error) {
-      logger.error("Failed to kill sandbox process group", error);
-      // Fall through to the legacy per-process matching below.
-    }
+    Sandbox.killSandboxTree(launchedPid);
+    launchedGamePids.delete(gameKey);
+    sandboxedGamePids.delete(gameKey);
   }
 
   const trackingPaths = game.trackingExecutablePaths?.filter(Boolean) ?? [];
