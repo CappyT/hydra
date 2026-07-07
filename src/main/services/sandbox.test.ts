@@ -273,6 +273,62 @@ describe("Sandbox.wrapCommand", () => {
     assert.ok(args.includes("/run/user/1000"));
   });
 
+  it("binds /dev/input and hidraw nodes when present, never /dev/uinput", () => {
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: baseEnv,
+      gameDir,
+    });
+
+    // The host /dev is the real one here, so only assert the binds that the
+    // host actually exposes (mirrors how nvidia devices are tolerated absent).
+    if (fs.existsSync("/dev/input")) {
+      assert.ok(hasBind(args, "--dev-bind", "/dev/input"));
+    }
+
+    for (const entry of fs.readdirSync("/dev")) {
+      if (entry.startsWith("hidraw")) {
+        assert.ok(hasBind(args, "--dev-bind", path.join("/dev", entry)));
+      }
+    }
+
+    // /dev/uinput is deliberately never bound: games read virtual pads as
+    // event nodes, they do not create them.
+    assert.ok(!hasBind(args, "--dev-bind", "/dev/uinput"));
+  });
+
+  it("re-exposes the gamescope compositor socket from the runtime dir", () => {
+    const runtimeDir = fs.mkdtempSync(path.join(tmpRoot, "runtime-"));
+    fs.writeFileSync(path.join(runtimeDir, "gamescope-0"), "");
+    fs.writeFileSync(path.join(runtimeDir, "wayland-1"), "");
+
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: { HOME: "/home/tester", XDG_RUNTIME_DIR: runtimeDir },
+      gameDir,
+    });
+
+    assert.ok(hasBind(args, "--ro-bind", path.join(runtimeDir, "gamescope-0")));
+    assert.ok(hasBind(args, "--ro-bind", path.join(runtimeDir, "wayland-1")));
+  });
+
+  it("re-exposes NetworkManager DNS after the /run tmpfs when present", () => {
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: baseEnv,
+      gameDir,
+    });
+
+    // SteamOS and other NM-managed hosts symlink /etc/resolv.conf into
+    // /run/NetworkManager; only assert the bind when the host has it.
+    if (fs.existsSync("/run/NetworkManager")) {
+      assert.ok(hasBind(args, "--ro-bind", "/run/NetworkManager"));
+    }
+  });
+
   it("keeps every filesystem bind 1:1 (same source and destination)", () => {
     const { args } = buildSandboxArgs({
       command: "/usr/bin/game",

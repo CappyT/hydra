@@ -83,6 +83,14 @@ const listNvidiaDevices = (): string[] => {
   }
 };
 
+const listHidrawDevices = (): string[] => {
+  try {
+    return fs.readdirSync("/dev").filter((entry) => entry.startsWith("hidraw"));
+  } catch {
+    return [];
+  }
+};
+
 const listRuntimeSockets = (runtimeDir: string): string[] => {
   try {
     return fs
@@ -91,6 +99,9 @@ const listRuntimeSockets = (runtimeDir: string): string[] => {
         (entry) =>
           entry.startsWith("wayland-") ||
           entry.startsWith("pipewire-") ||
+          // gamescope-N is the SteamOS Game Mode compositor socket; the
+          // gamescope WSI Vulkan layer needs it for direct presentation.
+          entry.startsWith("gamescope-") ||
           entry === "pulse"
       );
   } catch {
@@ -200,6 +211,22 @@ export const buildSandboxArgs = (
     bwrapArgs.push("--dev-bind", devicePath, devicePath);
   }
 
+  // Game input. The minimal --dev /dev hides evdev/hidraw, so controllers
+  // (including SteamOS Steam Input virtual pads, which surface as
+  // /dev/input/event*) would not exist inside the sandbox. Bind the whole
+  // /dev/input directory so nodes that appear/disappear at hotplug stay
+  // visible. /dev/uinput is intentionally left out: virtual pads are created
+  // by the host-side Steam daemon, not by games, so games only need to read
+  // the resulting event nodes above.
+  if (isExistingPath("/dev/input")) {
+    bwrapArgs.push("--dev-bind", "/dev/input", "/dev/input");
+  }
+
+  for (const deviceName of listHidrawDevices()) {
+    const devicePath = path.join("/dev", deviceName);
+    bwrapArgs.push("--dev-bind", devicePath, devicePath);
+  }
+
   // /sys is required for GPU / device discovery. A whole-tree ro bind is
   // acceptable here.
   if (isExistingPath("/sys")) {
@@ -227,6 +254,12 @@ export const buildSandboxArgs = (
   // re-expose it after the /run tmpfs so DNS keeps working.
   if (isExistingPath("/run/systemd/resolve")) {
     bwrapArgs.push("--ro-bind", "/run/systemd/resolve", "/run/systemd/resolve");
+  }
+
+  // On NetworkManager-managed hosts (SteamOS included) /etc/resolv.conf is a
+  // symlink into /run/NetworkManager; re-expose it after the /run tmpfs too.
+  if (isExistingPath("/run/NetworkManager")) {
+    bwrapArgs.push("--ro-bind", "/run/NetworkManager", "/run/NetworkManager");
   }
 
   // Proton's Steam Linux Runtime (pressure-vessel) binds the session D-Bus
