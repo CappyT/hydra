@@ -15,10 +15,21 @@ export interface RetroAchievementsGameInfoAndUserProgress {
   Achievements: Record<string, RetroAchievementsApiAchievement>;
 }
 
+export interface RetroAchievementsUserProfile {
+  User: string;
+  ID?: number;
+  ULID?: string;
+}
+
 interface GetGameInfoAndUserProgressParams {
   username: string;
   webApiKey: string;
   raGameId: number;
+}
+
+interface GetUserProfileParams {
+  username: string;
+  webApiKey: string;
 }
 
 export class RetroAchievementsClient {
@@ -37,6 +48,18 @@ export class RetroAchievementsClient {
         "/API_GetGameInfoAndUserProgress.php",
         { params: { u: username, y: webApiKey, g: raGameId } }
       );
+
+    return response.data;
+  }
+
+  static async getUserProfile({
+    username,
+    webApiKey,
+  }: GetUserProfileParams) {
+    const response = await this.instance.get<RetroAchievementsUserProfile>(
+      "/API_GetUserProfile.php",
+      { params: { u: username, z: username, y: webApiKey } }
+    );
 
     return response.data;
   }

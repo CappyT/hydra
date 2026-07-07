@@ -8,6 +8,7 @@ import {
   Modal,
   TextField,
 } from "@renderer/components";
+import { ACCOUNTLESS } from "@shared";
 import { useAppSelector, useToast } from "@renderer/hooks";
 import { settingsContext } from "@renderer/context";
 import {
@@ -85,6 +86,27 @@ export function SettingsRetroAchievements() {
   }, [connectedUsername]);
 
   useEffect(() => {
+    // Accountless fork: the integration state is derived from the locally
+    // stored RetroAchievements credentials, not the Hydra profile endpoint.
+    if (ACCOUNTLESS) {
+      const storedKey = userPreferences?.retroAchievementsWebApiKey;
+      const storedUsername = userPreferences?.retroAchievementsUsername;
+
+      if (storedKey && storedUsername) {
+        setIntegration({
+          connected: true,
+          username: storedUsername,
+          retroAchievementsUserId: null,
+          retroAchievementsAccountStatus: "active",
+        });
+      } else {
+        setIntegration({ connected: false });
+      }
+
+      setIsLoading(false);
+      return;
+    }
+
     let active = true;
 
     globalThis.window.electron.hydraApi
@@ -102,7 +124,10 @@ export function SettingsRetroAchievements() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [
+    userPreferences?.retroAchievementsWebApiKey,
+    userPreferences?.retroAchievementsUsername,
+  ]);
 
   useEffect(() => {
     const storedKey = userPreferences?.retroAchievementsWebApiKey;
@@ -135,8 +160,40 @@ export function SettingsRetroAchievements() {
     setIsSubmitting(true);
 
     const webApiKey = form.webApiKey.trim();
+    const username = form.username.trim();
 
     try {
+      if (ACCOUNTLESS) {
+        // Validate the Web API key against the RetroAchievements Web API
+        // directly (via the main process), then persist the credentials
+        // locally so the local achievements sync can use them.
+        const result =
+          await globalThis.window.electron.validateRetroAchievementsWebApiKey(
+            username,
+            webApiKey
+          );
+
+        if (!result.valid) {
+          showErrorToast(t("retroachievements_invalid_web_api_key"));
+          return;
+        }
+
+        await updateUserPreferences({
+          retroAchievementsWebApiKey: webApiKey,
+          retroAchievementsUsername: username,
+        }).catch(() => {});
+
+        setIntegration({
+          connected: true,
+          username,
+          retroAchievementsUserId: result.userId,
+          retroAchievementsAccountStatus: "active",
+        });
+        setForm((prev) => ({ ...prev, password: "" }));
+        showSuccessToast(t("retroachievements_account_linked"));
+        return;
+      }
+
       const status =
         await globalThis.window.electron.hydraApi.post<RetroAchievementsIntegration>(
           `${INTEGRATION_ENDPOINT}/connect`,
@@ -188,6 +245,24 @@ export function SettingsRetroAchievements() {
     setIsSubmitting(true);
 
     try {
+      if (ACCOUNTLESS) {
+        if (deleteAchievements) {
+          await globalThis.window.electron
+            .resetRetroAchievementsAchievements()
+            .catch(() => {});
+        }
+
+        await updateUserPreferences({
+          retroAchievementsWebApiKey: null,
+          retroAchievementsUsername: null,
+        }).catch(() => {});
+
+        setIntegration({ connected: false });
+        setForm({ username: "", password: "", webApiKey: "" });
+        showSuccessToast(t("retroachievements_account_unlinked"));
+        return;
+      }
+
       await globalThis.window.electron.hydraApi.delete(
         `${INTEGRATION_ENDPOINT}?deleteAchievements=${deleteAchievements}`
       );
@@ -217,6 +292,31 @@ export function SettingsRetroAchievements() {
     setIsRefreshing(true);
 
     try {
+      if (ACCOUNTLESS) {
+        const username = userPreferences?.retroAchievementsUsername;
+        const webApiKey = userPreferences?.retroAchievementsWebApiKey;
+
+        if (username && webApiKey) {
+          const result =
+            await globalThis.window.electron.validateRetroAchievementsWebApiKey(
+              username,
+              webApiKey
+            );
+
+          setIntegration({
+            connected: true,
+            username,
+            retroAchievementsUserId: result.userId,
+            retroAchievementsAccountStatus: result.valid
+              ? "active"
+              : "invalid_credentials",
+          });
+          showSuccessToast(t("retroachievements_status_updated"));
+        }
+
+        return;
+      }
+
       const status =
         await globalThis.window.electron.hydraApi.get<RetroAchievementsIntegration>(
           INTEGRATION_ENDPOINT
@@ -237,7 +337,9 @@ export function SettingsRetroAchievements() {
 
   const isConnectDisabled =
     !form.username.trim() ||
-    !form.password.trim() ||
+    // Accountless connect uses only the username + Web API key (RA Web API),
+    // so the account password is not required.
+    (!ACCOUNTLESS && !form.password.trim()) ||
     !form.webApiKey.trim() ||
     isSubmitting;
 
@@ -357,15 +459,17 @@ export function SettingsRetroAchievements() {
           placeholder={t("retroachievements_username")}
         />
 
-        <TextField
-          label={t("retroachievements_password")}
-          value={form.password}
-          type="password"
-          onChange={(event) =>
-            setForm({ ...form, password: event.target.value })
-          }
-          placeholder={t("retroachievements_password")}
-        />
+        {!ACCOUNTLESS && (
+          <TextField
+            label={t("retroachievements_password")}
+            value={form.password}
+            type="password"
+            onChange={(event) =>
+              setForm({ ...form, password: event.target.value })
+            }
+            placeholder={t("retroachievements_password")}
+          />
+        )}
 
         <TextField
           label={t("retroachievements_web_api_key")}
