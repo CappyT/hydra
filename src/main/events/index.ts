@@ -1,3 +1,5 @@
+import fs from "node:fs";
+
 import { appVersion, defaultDownloadsPath, isStaging } from "@main/constants";
 import { ipcMain } from "electron";
 
@@ -29,7 +31,12 @@ ipcMain.handle("ping", () => "pong");
 ipcMain.handle("getVersion", () => appVersion);
 ipcMain.handle("isStaging", () => isStaging);
 ipcMain.handle("isPortableVersion", () => isPortableVersion());
-ipcMain.handle("getDefaultDownloadsPath", () => defaultDownloadsPath);
+ipcMain.handle("getDefaultDownloadsPath", () => {
+  // The launcher-owned default may not exist yet (unlike the system
+  // Downloads folder) — ensure it does before handing it to the renderer.
+  fs.mkdirSync(defaultDownloadsPath, { recursive: true });
+  return defaultDownloadsPath;
+});
 ipcMain.handle("getCloudIframeUrl", () => {
   const checkoutUrl = import.meta.env.MAIN_VITE_CHECKOUT_URL;
   if (!checkoutUrl) return "";

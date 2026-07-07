@@ -2,7 +2,13 @@ import { app } from "electron";
 import path from "node:path";
 import { SystemPath } from "./services/system-path";
 
-export const defaultDownloadsPath = SystemPath.getPath("downloads");
+// Downloads default to a launcher-owned directory instead of the user's
+// system Downloads folder, so the sandbox game-dir bind never exposes any
+// real user data. A user-configured downloadsPath preference still wins.
+export const defaultDownloadsPath = path.join(
+  SystemPath.getPath("userData"),
+  "Downloads"
+);
 
 export const isStaging =
   import.meta.env.MAIN_VITE_API_URL?.includes("staging") ?? false;
