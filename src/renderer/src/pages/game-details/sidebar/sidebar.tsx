@@ -33,6 +33,7 @@ import { RetroAchievementsConnectBanner } from "@renderer/components/retro-achie
 import "./sidebar.scss";
 import { GameLanguageSection } from "./game-language-section";
 import { ControllerSupportSection } from "./controller-support-section";
+import { ACCOUNTLESS } from "@shared";
 
 const ProtonDBSection = lazy(async () => {
   const mod = await import("./protondb-section");
@@ -135,7 +136,7 @@ export function Sidebar() {
   const { numberFormatter } = useFormat();
   const achievementsCount = achievements?.length ?? 0;
   const shouldRenderAchievementsSection =
-    (!!userDetails && achievementsCount > 0) ||
+    ((!!userDetails || ACCOUNTLESS) && achievementsCount > 0) ||
     (shop === "launchbox" &&
       !!shopDetails?.retroAchievementsGameId &&
       !userPreferences?.retroAchievementsWebApiKey);
@@ -190,36 +191,38 @@ export function Sidebar() {
         </Suspense>
       )}
 
-      {userDetails === null && !shouldRenderAchievementsSection && (
-        <SidebarSection title={t("achievements")}>
-          <div className="achievements-placeholder">
-            <LockIcon size={36} />
-            <h3>{t("sign_in_to_see_achievements")}</h3>
-          </div>
-          <ul className="list achievements-placeholder__blur">
-            {achievementsPlaceholder.map((achievement) => (
-              <li key={achievement.name}>
-                <div className="list__item">
-                  <img
-                    className={`list__item-image achievements-placeholder__blur ${
-                      achievement.unlocked ? "" : "list__item-image--locked"
-                    }`}
-                    src={achievement.icon}
-                    alt={achievement.displayName}
-                  />
-                  <div>
-                    <p>{achievement.displayName}</p>
-                    <small>
-                      {achievement.unlockTime != null &&
-                        formatDateTime(achievement.unlockTime)}
-                    </small>
+      {!ACCOUNTLESS &&
+        userDetails === null &&
+        !shouldRenderAchievementsSection && (
+          <SidebarSection title={t("achievements")}>
+            <div className="achievements-placeholder">
+              <LockIcon size={36} />
+              <h3>{t("sign_in_to_see_achievements")}</h3>
+            </div>
+            <ul className="list achievements-placeholder__blur">
+              {achievementsPlaceholder.map((achievement) => (
+                <li key={achievement.name}>
+                  <div className="list__item">
+                    <img
+                      className={`list__item-image achievements-placeholder__blur ${
+                        achievement.unlocked ? "" : "list__item-image--locked"
+                      }`}
+                      src={achievement.icon}
+                      alt={achievement.displayName}
+                    />
+                    <div>
+                      <p>{achievement.displayName}</p>
+                      <small>
+                        {achievement.unlockTime != null &&
+                          formatDateTime(achievement.unlockTime)}
+                      </small>
+                    </div>
                   </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </SidebarSection>
-      )}
+                </li>
+              ))}
+            </ul>
+          </SidebarSection>
+        )}
 
       {shouldRenderAchievementsSection && (
         <SidebarSection
@@ -236,15 +239,17 @@ export function Sidebar() {
           <ul className="list">
             <RetroAchievementsConnectBanner />
 
-            {!hasActiveSubscription && achievementsCount > 0 && (
-              <button
-                className="subscription-required-button"
-                onClick={() => showHydraCloudModal("achievements")}
-              >
-                <CloudOfflineIcon size={16} />
-                <span>{t("achievements_not_sync")}</span>
-              </button>
-            )}
+            {!ACCOUNTLESS &&
+              !hasActiveSubscription &&
+              achievementsCount > 0 && (
+                <button
+                  className="subscription-required-button"
+                  onClick={() => showHydraCloudModal("achievements")}
+                >
+                  <CloudOfflineIcon size={16} />
+                  <span>{t("achievements_not_sync")}</span>
+                </button>
+              )}
 
             {(achievements ?? []).slice(0, 4).map((achievement) => (
               <li key={achievement.displayName}>

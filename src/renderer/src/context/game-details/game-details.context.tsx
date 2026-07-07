@@ -26,7 +26,11 @@ import {
   GameDetailsContext,
   GameOptionsCategoryId,
 } from "./game-details.context.types";
-import { getGameExecutableFilters, SteamContentDescriptor } from "@shared";
+import {
+  ACCOUNTLESS,
+  getGameExecutableFilters,
+  SteamContentDescriptor,
+} from "@shared";
 
 export const gameDetailsContext = createContext<GameDetailsContext>({
   game: null,
@@ -136,7 +140,7 @@ export function GameDetailsContextProvider({
           setIsLoading(false);
         }
 
-        if (userDetails && shop !== "custom") {
+        if ((userDetails || ACCOUNTLESS) && shop !== "custom") {
           const useRetroAchievements =
             shop === "launchbox" &&
             Boolean(userPreferences?.retroAchievementsWebApiKey);
@@ -389,7 +393,7 @@ export function GameDetailsContextProvider({
       objectId,
       shop,
       (achievements) => {
-        if (!userDetails) return;
+        if (!userDetails && !ACCOUNTLESS) return;
         setAchievements(achievements);
       }
     );
