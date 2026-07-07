@@ -24,6 +24,7 @@ import {
   levelKeys,
 } from "@main/level";
 import { AchievementWatcherManager } from "@main/services/achievements/achievement-watcher-manager";
+import { ACCOUNTLESS } from "@shared";
 import type {
   ClassicsDisc,
   EmulatorSystem,
@@ -245,6 +246,9 @@ const persistEntryLocally = async (
 };
 
 const syncProfileBatch = async (objectIds: string[]) => {
+  // Skipped in accountless mode: there is no remote profile to sync to, so the
+  // batch POST would only fail auth once per chunk and spam the logs.
+  if (ACCOUNTLESS) return;
   if (objectIds.length === 0) return;
 
   const chunks = chunk(objectIds, PROFILE_BATCH_CHUNK_SIZE);
