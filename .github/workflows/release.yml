@@ -9,6 +9,11 @@ on:
     branches:
       - release/**
 
+# The default GITHUB_TOKEN is read-only; creating the draft release and its
+# tag requires write access to repository contents.
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
