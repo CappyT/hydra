@@ -8,7 +8,6 @@ import {
   getSteamShortcuts,
   getSteamUsersIds,
   logger,
-  SystemPath,
   writeSteamShortcuts,
 } from "@main/services";
 import fs from "node:fs";
@@ -16,6 +15,20 @@ import axios from "axios";
 import path from "node:path";
 import { ASSETS_PATH } from "@main/constants";
 import { getGameAssets } from "../catalogue/get-game-assets";
+
+const buildRunDeepLink = (shop: GameShop, objectId: string) => {
+  const query = new URLSearchParams({ shop, objectId });
+  return `hydralauncher://run?${query.toString()}`;
+};
+
+const buildSteamLaunchOptions = (deepLink: string) => {
+  if (process.defaultApp && process.argv.length >= 2) {
+    const appEntry = path.resolve(process.argv[1]);
+    return `"${appEntry}" "${deepLink}"`;
+  }
+
+  return `"${deepLink}"`;
+};
 
 const downloadAsset = async (downloadPath: string, url?: string | null) => {
   try {
@@ -107,6 +120,15 @@ const createSteamShortcut = async (
       options
     );
 
+    // Launch Hydra via its deep link instead of the game executable directly,
+    // so Steam-initiated launches still go through Hydra (and the sandbox)
+    // rather than bypassing them. The appid stays derived from the real
+    // executable path above to remain stable/unique per game.
+    const deepLink = buildRunDeepLink(game.shop, game.objectId);
+    newShortcut.Exe = `"${process.execPath}"`;
+    newShortcut.StartDir = `"${path.dirname(process.execPath)}"`;
+    newShortcut.LaunchOptions = buildSteamLaunchOptions(deepLink);
+
     for (const steamUserId of steamUserIds) {
       logger.info("Adding shortcut for Steam user", steamUserId);
 
@@ -157,30 +179,6 @@ const createSteamShortcut = async (
       ...game,
       steamShortcutAppId: newShortcut.appid,
     });
-
-    if (process.platform === "linux" && !game.winePrefixPath) {
-      const steamWinePrefixes = path.join(
-        SystemPath.getPath("home"),
-        ".local",
-        "share",
-        "Steam",
-        "steamapps",
-        "compatdata"
-      );
-
-      const winePrefixPath = path.join(
-        steamWinePrefixes,
-        newShortcut.appid.toString(),
-        "pfx"
-      );
-
-      await fs.promises.mkdir(winePrefixPath, { recursive: true });
-
-      await gamesSublevel.put(gameKey, {
-        ...game,
-        winePrefixPath,
-      });
-    }
   }
 };
 
