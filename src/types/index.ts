@@ -385,6 +385,46 @@ export interface GameArtifact {
   isFrozen: boolean;
 }
 
+/**
+ * Local equivalent of {@link GameArtifact} for user-controlled backup backends
+ * (local directory / rclone). Each artifact is a `.tar` plus a sidecar `.json`
+ * holding this metadata, named by `id`. `homeDir` and `winePrefixPath` are
+ * essential for the cross-machine restore path translation and must be
+ * preserved locally (they used to live server-side).
+ */
+export interface LocalArtifact {
+  id: string;
+  shop: GameShop;
+  objectId: string;
+  label?: string;
+  hostname: string;
+  platform: string;
+  homeDir: string;
+  winePrefixPath: string | null;
+  downloadOptionTitle: string | null;
+  sizeBytes: number;
+  isFrozen: boolean;
+  createdAt: string;
+}
+
+export interface ArtifactUploadMeta {
+  shop: GameShop;
+  objectId: string;
+  label?: string;
+  hostname: string;
+  platform: string;
+  homeDir: string;
+  winePrefixPath: string | null;
+  downloadOptionTitle: string | null;
+}
+
+export interface BackupBackendTestResult {
+  ok: boolean;
+  detail?: string;
+}
+
+export type BackupBackend = "local" | "rclone";
+
 export type NotificationType =
   | "FRIEND_REQUEST_RECEIVED"
   | "FRIEND_REQUEST_ACCEPTED"
