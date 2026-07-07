@@ -67,9 +67,10 @@ secrets**:
 - `MAIN_VITE_API_URL=https://hydra-api-us-east-1.losbroxas.org` — the anonymous
   Hydra API (catalogue, download sources, achievements), used without any auth
   header in accountless mode.
-- `MAIN_VITE_EXTERNAL_RESOURCES_URL` / `RENDERER_VITE_EXTERNAL_RESOURCES_URL=https://cdn.losbroxas.org`
-  — public CDN serving `game-executables.json`, `steam-*.json` and the theme
-  `bundle.js`.
+- `MAIN_VITE_EXTERNAL_RESOURCES_URL` / `RENDERER_VITE_EXTERNAL_RESOURCES_URL=https://assets.hydralauncher.gg`
+  — public CDN serving `game-executables.json` and the `steam-*.json`
+  catalogue filter data. The remote `bundle.js` (support-chat widget) is NOT
+  loaded by this fork.
 
 Account/login-only vars (`MAIN_VITE_AUTH_URL`, `MAIN_VITE_WS_URL`,
 `MAIN_VITE_CHECKOUT_URL`, `MAIN_VITE_LAUNCHER_SUBDOMAIN`) are unused in

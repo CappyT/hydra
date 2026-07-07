@@ -289,15 +289,9 @@ export function App() {
 
     setupWorkWonders(userDetails?.workwondersJwt, userPreferences?.language);
 
-    if (!document.getElementById("external-resources")) {
-      const $script = document.createElement("script");
-      $script.id = "external-resources";
-      $script.src = `${import.meta.env.RENDERER_VITE_EXTERNAL_RESOURCES_URL}/bundle.js?t=${Date.now()}`;
-      // The external theming bundle is optional; swallow load failures (e.g. a
-      // 403 from an unreachable CDN) so they never surface as an error.
-      $script.onerror = () => {};
-      document.head.appendChild($script);
-    }
+    // Upstream injects a remote support-chat bundle (`bundle.js`, Chatwoot)
+    // from the external resources CDN here. This fork never executes remote
+    // scripts in the renderer, so the injection is intentionally removed.
   }, [fetchUserDetails, updateUserDetails, dispatch, setupWorkWonders]);
 
   useEffect(() => {
