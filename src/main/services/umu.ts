@@ -10,6 +10,7 @@ import type { Game, ProtonVersion, UserPreferences } from "@types";
 import { resolveLaunchCommand } from "@main/helpers/resolve-launch-command";
 import { wrapWithSandbox } from "@main/helpers/sandbox-launch";
 import { resolveSystemBinary } from "@main/helpers/resolve-system-binary";
+import { isWaylandSessionAvailable } from "@main/helpers/is-gamescope-available";
 import { Sandbox } from "./sandbox";
 
 const isValidProtonDirectory = (directoryPath: string) => {
@@ -221,6 +222,7 @@ export class Umu {
       launchOptions?: string | null;
       useMangohud?: boolean;
       useGamemode?: boolean;
+      useGamescope?: boolean;
       userPreferences?: UserPreferences | null;
       sandboxGame?: Pick<
         Game,
@@ -251,7 +253,12 @@ export class Umu {
         baseCommand: executableToSpawn,
         baseArgs: executableArgs,
         launchOptions: options?.launchOptions,
-        wrapperCommands: [...(options?.useGamemode ? ["gamemoderun"] : [])],
+        // MangoHud is applied via the MANGOHUD=1 env var below (not a wrapper),
+        // so only gamemode and gamescope wrap the command here.
+        wrapperCommands: [
+          ...(options?.useGamemode ? ["gamemoderun"] : []),
+          ...(options?.useGamescope ? [["gamescope", "-f", "--"]] : []),
+        ],
       }),
       {
         userPreferences: options?.userPreferences,
@@ -264,6 +271,7 @@ export class Umu {
         // (or the repo checkout under /home in dev), both hidden by the
         // sandbox tmpfs mounts — re-expose it read-only.
         additionalRoBinds: [umuBinaryPath],
+        hideX11: Boolean(options?.useGamescope) && isWaylandSessionAvailable(),
       }
     );
 

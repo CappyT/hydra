@@ -15,6 +15,10 @@ import type {
 } from "@types";
 import { isGamemodeAvailable } from "./is-gamemode-available";
 import { isMangohudAvailable } from "./is-mangohud-available";
+import {
+  isGamescopeAvailable,
+  isWaylandSessionAvailable,
+} from "./is-gamescope-available";
 import { resolveLaunchCommand } from "./resolve-launch-command";
 
 export class EmulatorNotConfiguredError extends Error {
@@ -144,7 +148,7 @@ const assertBiosInstalled = async (
 const resolveEmulatorWrappers = (
   preferences: UserPreferences | null,
   game: Game | undefined
-): string[] => {
+): { wrapperCommands: (string | string[])[]; useGamescope: boolean } => {
   const useMangohud =
     (preferences?.autoRunMangohud === true || game?.autoRunMangohud === true) &&
     isMangohudAvailable();
@@ -153,10 +157,21 @@ const resolveEmulatorWrappers = (
     (preferences?.autoRunGamemode === true || game?.autoRunGamemode === true) &&
     isGamemodeAvailable();
 
-  return [
-    ...(useGamemode ? ["gamemoderun"] : []),
-    ...(useMangohud ? ["mangohud"] : []),
-  ];
+  // Tri-state: explicit per-game choice wins; AUTO (null/undefined) falls back
+  // to "gamescope detected", ANDed with availability so a stale explicit true
+  // never wraps with a missing binary.
+  const gamescopeAvailable = isGamescopeAvailable();
+  const useGamescope =
+    (game?.useGamescope ?? gamescopeAvailable) && gamescopeAvailable;
+
+  return {
+    wrapperCommands: [
+      ...(useGamemode ? ["gamemoderun"] : []),
+      ...(useGamescope ? [["gamescope", "-f", "--"]] : []),
+      ...(useMangohud ? ["mangohud"] : []),
+    ],
+    useGamescope,
+  };
 };
 
 const resolveEmulatorDataDirs = (binary: EmulatorBinary): string[] => {
@@ -205,7 +220,10 @@ export const launchClassicsGame = async (
     })
     .catch(() => null);
 
-  const wrapperCommands = resolveEmulatorWrappers(userPreferences, game);
+  const { wrapperCommands, useGamescope } = resolveEmulatorWrappers(
+    userPreferences,
+    game
+  );
 
   const selectedDisc = game?.discs?.find((d) => d.path === discPath) ?? null;
 
@@ -259,6 +277,7 @@ export const launchClassicsGame = async (
       gameKey,
       gameDir: workingDirectory,
       additionalBinds: emulatorAdditionalBinds,
+      hideX11: useGamescope && isWaylandSessionAvailable(),
     }
   );
 

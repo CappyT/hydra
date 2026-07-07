@@ -18,10 +18,12 @@ interface CompatibilitySettingsSectionProps {
   selectedProtonPath: string;
   autoRunGamemode: boolean;
   autoRunMangohud: boolean;
+  useGamescope: boolean;
   globalAutoRunGamemode: boolean;
   globalAutoRunMangohud: boolean;
   gamemodeAvailable: boolean;
   mangohudAvailable: boolean;
+  gamescopeAvailable: boolean;
   winetricksAvailable: boolean;
   sandboxAvailable: boolean;
   sandboxEnabled: boolean;
@@ -34,6 +36,7 @@ interface CompatibilitySettingsSectionProps {
   onOpenWinetricks: () => Promise<void>;
   onChangeGamemodeState: (value: boolean) => Promise<void>;
   onChangeMangohudState: (value: boolean) => Promise<void>;
+  onChangeGamescopeState: (value: boolean) => Promise<void>;
   onChangeSandboxState: (value: boolean) => Promise<void>;
   onChangeSandboxShareIpc: (value: boolean) => Promise<void>;
   onAddSandboxPath: () => Promise<void>;
@@ -48,10 +51,12 @@ export function CompatibilitySettingsSection({
   selectedProtonPath,
   autoRunGamemode,
   autoRunMangohud,
+  useGamescope,
   globalAutoRunGamemode,
   globalAutoRunMangohud,
   gamemodeAvailable,
   mangohudAvailable,
+  gamescopeAvailable,
   winetricksAvailable,
   sandboxAvailable,
   sandboxEnabled,
@@ -64,6 +69,7 @@ export function CompatibilitySettingsSection({
   onOpenWinetricks,
   onChangeGamemodeState,
   onChangeMangohudState,
+  onChangeGamescopeState,
   onChangeSandboxState,
   onChangeSandboxShareIpc,
   onAddSandboxPath,
@@ -269,6 +275,45 @@ export function CompatibilitySettingsSection({
           {mangohudToggleDisabled && mangohudTooltipId && (
             <Tooltip id={mangohudTooltipId} />
           )}
+        </div>
+
+        <div className="game-options-modal__gamescope-toggle">
+          <CheckboxField
+            label={
+              <span
+                className={`game-options-modal__gamescope-label ${
+                  !gamescopeAvailable
+                    ? "game-options-modal__gamescope-label--disabled"
+                    : ""
+                }`}
+                data-tooltip-id={
+                  !gamescopeAvailable
+                    ? "gamescope-unavailable-tooltip"
+                    : undefined
+                }
+                data-tooltip-content={
+                  !gamescopeAvailable
+                    ? t("gamescope_not_available_tooltip")
+                    : undefined
+                }
+              >
+                {t("run_with_gamescope")}
+              </span>
+            }
+            checked={useGamescope && gamescopeAvailable}
+            disabled={!gamescopeAvailable}
+            onChange={(event) => onChangeGamescopeState(event.target.checked)}
+          />
+
+          {!gamescopeAvailable && (
+            <Tooltip id="gamescope-unavailable-tooltip" />
+          )}
+
+          <h4 className="game-options-modal__header-description">
+            {gamescopeAvailable
+              ? t("gamescope_description")
+              : t("gamescope_unavailable_description")}
+          </h4>
         </div>
 
         <div className="game-options-modal__sandbox-toggle">

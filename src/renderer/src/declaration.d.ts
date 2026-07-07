@@ -178,7 +178,13 @@ declare global {
       objectId: string,
       autoRunGamemode: boolean
     ) => Promise<void>;
+    toggleGameGamescope: (
+      shop: GameShop,
+      objectId: string,
+      useGamescope: boolean
+    ) => Promise<void>;
     isGamemodeAvailable: () => Promise<boolean>;
+    isGamescopeAvailable: () => Promise<boolean>;
     isMangohudAvailable: () => Promise<boolean>;
     isSandboxAvailable: () => Promise<boolean>;
     isWinetricksAvailable: () => Promise<boolean>;

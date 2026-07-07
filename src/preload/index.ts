@@ -508,7 +508,14 @@ contextBridge.exposeInMainWorld("electron", {
     autoRunGamemode: boolean
   ) =>
     ipcRenderer.invoke("toggleGameGamemode", shop, objectId, autoRunGamemode),
+  toggleGameGamescope: (
+    shop: GameShop,
+    objectId: string,
+    useGamescope: boolean
+  ) =>
+    ipcRenderer.invoke("toggleGameGamescope", shop, objectId, useGamescope),
   isGamemodeAvailable: () => ipcRenderer.invoke("isGamemodeAvailable"),
+  isGamescopeAvailable: () => ipcRenderer.invoke("isGamescopeAvailable"),
   isMangohudAvailable: () => ipcRenderer.invoke("isMangohudAvailable"),
   isSandboxAvailable: () => ipcRenderer.invoke("isSandboxAvailable"),
   isWinetricksAvailable: () => ipcRenderer.invoke("isWinetricksAvailable"),

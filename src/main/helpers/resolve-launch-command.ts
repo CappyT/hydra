@@ -1,5 +1,5 @@
-import { parseLaunchOptions } from "@main/events/helpers/parse-launch-options";
 import path from "node:path";
+import stringArgv from "string-argv";
 
 const commandPlaceholder = "%command%";
 const envVariableNameRegex = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -9,7 +9,14 @@ export interface ResolveLaunchCommandOptions {
   baseArgs?: string[];
   launchOptions?: string | null;
   wrapperCommand?: string | null;
-  wrapperCommands?: string[];
+  /**
+   * Ordered list of wrappers applied around the base command (outermost first).
+   * Each entry is either a single-token wrapper (e.g. `"gamemoderun"`) or a
+   * multi-token wrapper whose first element is the command and the rest are
+   * fixed arguments inserted before the wrapped command (e.g.
+   * `["gamescope", "-f", "--"]` → `gamescope -f -- <command> <args>`).
+   */
+  wrapperCommands?: (string | string[])[];
 }
 
 export interface ResolvedLaunchCommand {
@@ -52,7 +59,7 @@ export const resolveLaunchCommand = ({
   wrapperCommand,
   wrapperCommands,
 }: ResolveLaunchCommandOptions): ResolvedLaunchCommand => {
-  let wrappers: string[];
+  let wrappers: (string | string[])[];
 
   if (wrapperCommands && wrapperCommands.length > 0) {
     wrappers = wrapperCommands;
@@ -62,7 +69,9 @@ export const resolveLaunchCommand = ({
     wrappers = [];
   }
 
-  wrappers = wrappers.filter(Boolean);
+  wrappers = wrappers.filter((wrapper) =>
+    Array.isArray(wrapper) ? wrapper.length > 0 : Boolean(wrapper)
+  );
 
   const applyWrappers = (
     resolved: ResolvedLaunchCommand
@@ -72,21 +81,27 @@ export const resolveLaunchCommand = ({
     }
 
     return wrappers.reduceRight<ResolvedLaunchCommand>((current, wrapper) => {
+      const wrapperCommandToken = Array.isArray(wrapper) ? wrapper[0] : wrapper;
+      const wrapperArgs = Array.isArray(wrapper) ? wrapper.slice(1) : [];
+
       if (
-        path.basename(current.command).toLowerCase() === wrapper.toLowerCase()
+        path.basename(current.command).toLowerCase() ===
+        wrapperCommandToken.toLowerCase()
       ) {
         return current;
       }
 
       return {
-        command: wrapper,
-        args: [current.command, ...current.args],
+        command: wrapperCommandToken,
+        args: [...wrapperArgs, current.command, ...current.args],
         env: current.env,
       };
     }, resolved);
   };
 
-  const launchOptionTokens = parseLaunchOptions(launchOptions);
+  // Equivalent to the shared parseLaunchOptions helper; inlined so this pure
+  // module has no local runtime imports and stays unit-testable in isolation.
+  const launchOptionTokens = launchOptions ? stringArgv(launchOptions) : [];
 
   if (launchOptionTokens.length === 0) {
     const resolved = {

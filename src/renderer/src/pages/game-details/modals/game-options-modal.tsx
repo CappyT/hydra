@@ -125,6 +125,7 @@ export function GameOptionsModal({
   );
   const [gamemodeAvailable, setGamemodeAvailable] = useState(false);
   const [mangohudAvailable, setMangohudAvailable] = useState(false);
+  const [gamescopeAvailable, setGamescopeAvailable] = useState(false);
   const [winetricksAvailable, setWinetricksAvailable] = useState(false);
   const [sandboxAvailable, setSandboxAvailable] = useState(false);
   const [selectedCategory, setSelectedCategory] =
@@ -149,6 +150,9 @@ export function GameOptionsModal({
 
   const globalAutoRunGamemode = userPreferences?.autoRunGamemode === true;
   const globalAutoRunMangohud = userPreferences?.autoRunMangohud === true;
+  // Tri-state: explicit per-game choice wins; AUTO (null/undefined) reflects
+  // whether gamescope is detected on the host.
+  const gamescopeEffective = game.useGamescope ?? gamescopeAvailable;
   const sandboxEnabled =
     game.sandboxDisabled === true
       ? false
@@ -241,6 +245,17 @@ export function GameOptionsModal({
       .isMangohudAvailable()
       .then(setMangohudAvailable)
       .catch(() => setMangohudAvailable(false));
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible || globalThis.window.electron.platform !== "linux") {
+      setGamescopeAvailable(false);
+      return;
+    }
+    globalThis.window.electron
+      .isGamescopeAvailable()
+      .then(setGamescopeAvailable)
+      .catch(() => setGamescopeAvailable(false));
   }, [visible]);
 
   useEffect(() => {
@@ -616,6 +631,15 @@ export function GameOptionsModal({
   const handleChangeGamemodeState = async (value: boolean) => {
     setAutoRunGamemode(value);
     await globalThis.window.electron.toggleGameGamemode(
+      game.shop,
+      game.objectId,
+      value
+    );
+    updateGame();
+  };
+
+  const handleChangeGamescopeState = async (value: boolean) => {
+    await globalThis.window.electron.toggleGameGamescope(
       game.shop,
       game.objectId,
       value
@@ -1074,10 +1098,12 @@ export function GameOptionsModal({
                   selectedProtonPath={selectedProtonPath}
                   autoRunGamemode={autoRunGamemode}
                   autoRunMangohud={autoRunMangohud}
+                  useGamescope={gamescopeEffective}
                   globalAutoRunGamemode={globalAutoRunGamemode}
                   globalAutoRunMangohud={globalAutoRunMangohud}
                   gamemodeAvailable={gamemodeAvailable}
                   mangohudAvailable={mangohudAvailable}
+                  gamescopeAvailable={gamescopeAvailable}
                   winetricksAvailable={winetricksAvailable}
                   sandboxAvailable={sandboxAvailable}
                   sandboxEnabled={sandboxEnabled}
@@ -1090,6 +1116,7 @@ export function GameOptionsModal({
                   onOpenWinetricks={handleOpenWinetricks}
                   onChangeGamemodeState={handleChangeGamemodeState}
                   onChangeMangohudState={handleChangeMangohudState}
+                  onChangeGamescopeState={handleChangeGamescopeState}
                   onChangeSandboxState={handleChangeSandboxState}
                   onChangeSandboxShareIpc={handleChangeSandboxShareIpc}
                   onAddSandboxPath={handleAddSandboxPath}

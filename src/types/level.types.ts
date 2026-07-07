@@ -64,6 +64,12 @@ export interface Game {
   launchOptions?: string | null;
   autoRunMangohud?: boolean | null;
   autoRunGamemode?: boolean | null;
+  /**
+   * Per-game gamescope launch preference (tri-state): `null`/`undefined` means
+   * AUTO (effective value is "gamescope binary detected on host"); an explicit
+   * `true`/`false` is the user's choice and is always honored.
+   */
+  useGamescope?: boolean | null;
   sandboxDisabled?: boolean;
   sandboxExtraPaths?: string[];
   sandboxShareIpc?: boolean;

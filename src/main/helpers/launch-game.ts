@@ -20,6 +20,10 @@ import { CommonRedistManager } from "@main/services/common-redist-manager";
 import { parseExecutablePath } from "../events/helpers/parse-executable-path";
 import { isGamemodeAvailable } from "./is-gamemode-available";
 import { isMangohudAvailable } from "./is-mangohud-available";
+import {
+  isGamescopeAvailable,
+  isWaylandSessionAvailable,
+} from "./is-gamescope-available";
 import { resolveLaunchCommand } from "./resolve-launch-command";
 import { wrapWithSandbox } from "./sandbox-launch";
 import {
@@ -64,6 +68,7 @@ const launchNatively = (
   launchOptions?: string | null,
   useMangohud = false,
   useGamemode = false,
+  useGamescope = false,
   sandbox?: SandboxLaunchInput
 ): number | null => {
   const workingDirectory = path.dirname(executablePath);
@@ -73,6 +78,7 @@ const launchNatively = (
       launchOptions,
       wrapperCommands: [
         ...(useGamemode ? ["gamemoderun"] : []),
+        ...(useGamescope ? [["gamescope", "-f", "--"]] : []),
         ...(useMangohud ? ["mangohud"] : []),
       ],
     }),
@@ -81,6 +87,7 @@ const launchNatively = (
       game: sandbox?.game,
       gameKey: sandbox?.gameKey,
       gameDir: workingDirectory,
+      hideX11: useGamescope && isWaylandSessionAvailable(),
     }
   );
 
@@ -154,6 +161,7 @@ const launchWithWine = async (
   launchOptions?: string | null,
   useMangohud = false,
   useGamemode = false,
+  useGamescope = false,
   sandbox?: SandboxLaunchInput & {
     winePrefix?: string | null;
     gameKey?: string;
@@ -176,6 +184,7 @@ const launchWithWine = async (
       launchOptions,
       wrapperCommands: [
         ...(useGamemode ? ["gamemoderun"] : []),
+        ...(useGamescope ? [["gamescope", "-f", "--"]] : []),
         ...(useMangohud ? ["mangohud"] : []),
       ],
     }),
@@ -185,6 +194,7 @@ const launchWithWine = async (
       gameKey: sandbox?.gameKey,
       gameDir: workingDirectory,
       winePrefix,
+      hideX11: useGamescope && isWaylandSessionAvailable(),
     }
   );
 
@@ -300,6 +310,7 @@ const launchWindowsBinaryOnLinux = async (
   launchOptions: string | null | undefined,
   useMangohud: boolean,
   useGamemode: boolean,
+  useGamescope: boolean,
   userPreferences: UserPreferences | null
 ): Promise<boolean> => {
   const protonPath = await resolveProtonPathForLaunch(game?.protonPath);
@@ -318,6 +329,7 @@ const launchWindowsBinaryOnLinux = async (
       launchOptions,
       useGamemode,
       useMangohud,
+      useGamescope,
       userPreferences,
       sandboxGame: game,
       sandboxGameKey: gameKey,
@@ -339,6 +351,7 @@ const launchWindowsBinaryOnLinux = async (
     launchOptions,
     useMangohud,
     useGamemode,
+    useGamescope,
     {
       userPreferences,
       game,
@@ -385,6 +398,13 @@ export const launchGame = async (
       game?.autoRunGamemode === true) &&
     isGamemodeAvailable();
 
+  // Tri-state: explicit per-game choice wins; AUTO (null/undefined) falls back
+  // to "gamescope detected". ANDed with availability so an explicit true never
+  // wraps the launch with a missing binary (mirrors mangohud/gamemode).
+  const gamescopeAvailable = isGamescopeAvailable();
+  const useGamescope =
+    (game?.useGamescope ?? gamescopeAvailable) && gamescopeAvailable;
+
   if (game) {
     await gamesSublevel.put(gameKey, {
       ...updateGameExecutablePath(game, parsedPath),
@@ -424,6 +444,7 @@ export const launchGame = async (
         launchOptions,
         useMangohud,
         useGamemode,
+        useGamescope,
         userPreferences
       );
 
@@ -435,6 +456,7 @@ export const launchGame = async (
       launchOptions,
       useMangohud,
       useGamemode,
+      useGamescope,
       { userPreferences, game, gameKey }
     );
 
@@ -448,5 +470,11 @@ export const launchGame = async (
     return pid;
   }
 
-  return launchNatively(parsedPath, launchOptions, useMangohud, useGamemode);
+  return launchNatively(
+    parsedPath,
+    launchOptions,
+    useMangohud,
+    useGamemode,
+    useGamescope
+  );
 };
