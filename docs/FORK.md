@@ -57,3 +57,24 @@ yarn lint
 
 Resolve conflicts favoring **upstream for product code and dependencies**, and **the fork for
 CI, packaging, and platform-gating**. Commit the merge only once typecheck and lint are green.
+
+## Sandbox selftest
+
+The game sandbox (bubblewrap) ships with an adversarial verifier that runs the
+real profile end-to-end. It lives in the sibling repo
+[`hydra-sandbox-probe`](https://github.com/CappyT/hydra-sandbox-probe) and is
+driven by `yarn sandbox:selftest`, which builds the exact bwrap profile the app
+uses for real games (via the unmodified `buildSandboxArgs`) and runs the probe
+inside it, so there is zero drift between what is tested and what ships.
+
+```bash
+# 1. build the probe once (sibling checkout, next to this repo)
+cd ../hydra-sandbox-probe && cargo build --release && cd -
+
+# 2. run the selftest against the real profile
+yarn sandbox:selftest
+```
+
+Every check must report `PASS` and the runner must exit 0. Point
+`SANDBOX_PROBE_BIN` at a prebuilt binary to skip the local cargo build. This is
+a manual, Linux-only check and is intentionally kept out of CI.
