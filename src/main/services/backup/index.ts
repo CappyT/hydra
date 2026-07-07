@@ -7,6 +7,7 @@ import { RcloneBackend } from "./rclone-backend";
 export * from "./artifact-storage-backend";
 export * from "./local-directory-backend";
 export * from "./rclone-backend";
+export * from "./restore-scratch";
 
 /**
  * Resolves the artifact storage backend selected in the user's preferences.

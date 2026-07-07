@@ -10,6 +10,7 @@ import type {
 import { backupsPath } from "@main/constants";
 import { logger } from "../logger";
 import type { ArtifactStorageBackend } from "./artifact-storage-backend";
+import { isBackupStorageDir } from "./restore-scratch";
 
 /**
  * Stores save-game backups on the local filesystem under a user-configured root
@@ -35,6 +36,10 @@ export class LocalDirectoryBackend implements ArtifactStorageBackend {
 
     for (const entry of fs.readdirSync(this.root, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
+      // Skip reserved scratch/cache dot-directories (`.restore-tmp`,
+      // `.rclone-tmp`, `.rclone-cache`, …) that share the backups root but are
+      // never game storage folders.
+      if (!isBackupStorageDir(entry.name)) continue;
 
       const sidecar = path.join(this.root, entry.name, `${artifactId}.json`);
       if (fs.existsSync(sidecar)) return sidecar;

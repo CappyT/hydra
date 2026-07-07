@@ -2,11 +2,11 @@ import {
   CloudSync,
   getArtifactBackend,
   logger,
+  restoreFromArtifactTar,
   WindowManager,
   Wine,
 } from "@main/services";
 import fs from "node:fs";
-import * as tar from "tar";
 import { registerEvent } from "../register-event";
 import path from "node:path";
 import { backupsPath, publicProfilePath } from "@main/constants";
@@ -120,29 +120,21 @@ const downloadGameArtifact = async (
     const artifactWinePrefixPath = artifact.winePrefixPath;
 
     const tarLocation = await backend.download(gameArtifactId);
-    const backupPath = path.join(backupsPath, `${shop}-${objectId}`);
 
-    if (fs.existsSync(backupPath)) {
-      fs.rmSync(backupPath, {
-        recursive: true,
-        force: true,
-      });
-    }
-
-    fs.mkdirSync(backupPath, { recursive: true });
-
-    await tar.x({
-      file: tarLocation,
-      cwd: backupPath,
-    });
-
-    restoreLudusaviBackup(
-      backupPath,
+    await restoreFromArtifactTar({
+      backupsRoot: backupsPath,
+      shop,
       objectId,
-      normalizePath(homeDir),
-      effectiveWinePrefixPath,
-      artifactWinePrefixPath
-    );
+      tarLocation,
+      restore: (scratchDir) =>
+        restoreLudusaviBackup(
+          scratchDir,
+          objectId,
+          normalizePath(homeDir),
+          effectiveWinePrefixPath,
+          artifactWinePrefixPath
+        ),
+    });
 
     WindowManager.sendToAppWindows(
       `on-backup-download-complete-${objectId}-${shop}`,
