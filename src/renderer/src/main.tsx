@@ -21,7 +21,6 @@ import resources from "@locales";
 
 import { logger } from "./logger";
 import { addCookieInterceptor } from "./cookies";
-import * as Sentry from "@sentry/react";
 import { ErrorBoundary } from "./components/error-boundary/error-boundary";
 import { GlobalErrorOverlay } from "./components/error-boundary/global-error-overlay";
 import { levelDBService } from "./services/leveldb.service";
@@ -52,18 +51,6 @@ import BigPictureGameAchievements from "../../big-picture/src/pages/game-achieve
 import BigPictureProfile from "../../big-picture/src/pages/profile/profile";
 
 console.log = logger.log;
-
-Sentry.init({
-  dsn: import.meta.env.RENDERER_VITE_SENTRY_DSN,
-  integrations: [
-    Sentry.browserTracingIntegration(),
-    Sentry.replayIntegration(),
-  ],
-  tracesSampleRate: 0.5,
-  replaysSessionSampleRate: 0,
-  replaysOnErrorSampleRate: 0,
-  release: "hydra-launcher@" + (await globalThis.electron.getVersion()),
-});
 
 globalThis.addEventListener("unhandledrejection", (event) => {
   logger.error("Unhandled promise rejection", event.reason);
