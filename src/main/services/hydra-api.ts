@@ -4,7 +4,11 @@ import url from "url";
 import { uploadGamesBatch } from "./library-sync";
 import { clearGamesRemoteIds } from "./library-sync/clear-games-remote-id";
 import { networkLogger as logger } from "./logger";
-import { UserNotLoggedInError, SubscriptionRequiredError } from "@shared";
+import {
+  UserNotLoggedInError,
+  SubscriptionRequiredError,
+  ACCOUNTLESS,
+} from "@shared";
 import { omit } from "lodash-es";
 import { appVersion } from "@main/constants";
 import { getUserData } from "./user/get-user-data";
@@ -55,6 +59,8 @@ export class HydraApi {
   }
 
   static async handleExternalAuth(uri: string) {
+    if (ACCOUNTLESS) return;
+
     const { payload } = url.parse(uri, true).query;
 
     const decodedBase64 = atob(payload as string);
@@ -206,6 +212,11 @@ export class HydraApi {
         }
       );
     }
+
+    // In accountless mode the client stays permanently logged-out: skip the
+    // token load/refresh and the /profile/me fetch entirely. The axios instance
+    // above is still created so anonymous (needsAuth:false) calls keep working.
+    if (ACCOUNTLESS) return;
 
     const result = await db.getMany<string>([levelKeys.auth, levelKeys.user], {
       valueEncoding: "json",

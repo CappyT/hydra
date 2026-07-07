@@ -10,7 +10,7 @@ import { WindowManager } from "../window-manager";
 import { HydraApi } from "../hydra-api";
 import { getUnlockedAchievements } from "@main/events/user/get-unlocked-achievements";
 import { publishNewAchievementNotification } from "../notifications";
-import { SubscriptionRequiredError } from "@shared";
+import { SubscriptionRequiredError, ACCOUNTLESS } from "@shared";
 import { achievementsLogger } from "../logger";
 import { db, gameAchievementsSublevel, levelKeys } from "@main/level";
 import { getGameAchievementData } from "./get-game-achievement-data";
@@ -187,6 +187,7 @@ export const mergeAchievements = async (
   }
 
   const shouldSyncWithRemote =
+    !ACCOUNTLESS &&
     game.remoteId &&
     (newAchievements.length || AchievementWatcherManager.hasFinishedPreSearch);
 

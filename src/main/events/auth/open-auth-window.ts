@@ -1,12 +1,14 @@
 import i18next from "i18next";
 import { registerEvent } from "../register-event";
 import { HydraApi, WindowManager } from "@main/services";
-import { AuthPage } from "@shared";
+import { AuthPage, ACCOUNTLESS } from "@shared";
 
 const openAuthWindow = async (
   _event: Electron.IpcMainInvokeEvent,
   page: AuthPage
 ) => {
+  if (ACCOUNTLESS) return;
+
   const searchParams = new URLSearchParams({
     lng: i18next.language,
   });

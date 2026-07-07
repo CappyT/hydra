@@ -1,11 +1,14 @@
 import type { Game } from "@types";
 import { HydraApi } from "../hydra-api";
+import { ACCOUNTLESS } from "@shared";
 
 export const trackGamePlaytime = async (
   game: Game,
   deltaInMillis: number,
   lastTimePlayed: Date
 ) => {
+  if (ACCOUNTLESS) return;
+
   if (game.shop === "custom") {
     return;
   }

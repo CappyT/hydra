@@ -10,6 +10,7 @@ import {
 } from "@main/level";
 import { logger } from "./logger";
 import { WindowManager } from "./window-manager";
+import { ACCOUNTLESS } from "@shared";
 import type { Game, UserPreferences } from "@types";
 
 interface DownloadSourcesChangeResponse {
@@ -100,6 +101,8 @@ export class DownloadSourcesChecker {
   }
 
   static async checkForChanges(): Promise<void> {
+    if (ACCOUNTLESS) return;
+
     logger.info("DownloadSourcesChecker.checkForChanges() called");
 
     try {

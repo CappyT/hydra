@@ -9,6 +9,7 @@ import {
   levelKeys,
 } from "@main/level";
 import type { GameShop } from "@types";
+import { ACCOUNTLESS } from "@shared";
 
 const resetGameAchievements = async (
   _event: Electron.IpcMainInvokeEvent,
@@ -41,12 +42,15 @@ const resetGameAchievements = async (
         }
       });
 
-    await HydraApi.delete(`/profile/games/achievements/${game.remoteId}`).then(
-      () =>
+    if (!ACCOUNTLESS) {
+      await HydraApi.delete(
+        `/profile/games/achievements/${game.remoteId}`
+      ).then(() =>
         achievementsLogger.log(
           `Deleted achievements from ${game.remoteId} - ${game.objectId} - ${game.title}`
         )
-    );
+      );
+    }
 
     const gameAchievements = await getUnlockedAchievements(
       game.objectId,

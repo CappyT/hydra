@@ -4,37 +4,43 @@ import { mergeWithRemoteGames } from "./merge-with-remote-games";
 import { WindowManager } from "../window-manager";
 import { AchievementWatcherManager } from "../achievements/achievement-watcher-manager";
 import { gamesSublevel } from "@main/level";
+import { ACCOUNTLESS } from "@shared";
 
 export const uploadGamesBatch = async () => {
-  const games = await gamesSublevel
-    .values()
-    .all()
-    .then((results) => {
-      return results.filter(
-        (game) =>
-          !game.isDeleted && game.remoteId === null && game.shop !== "custom"
-      );
-    });
+  // The remote upload/merge is skipped in accountless mode; the local
+  // achievement pre-search and the "library ready" event still run so the
+  // renderer library keeps loading normally.
+  if (!ACCOUNTLESS) {
+    const games = await gamesSublevel
+      .values()
+      .all()
+      .then((results) => {
+        return results.filter(
+          (game) =>
+            !game.isDeleted && game.remoteId === null && game.shop !== "custom"
+        );
+      });
 
-  const gamesChunks = chunk(games, 30);
+    const gamesChunks = chunk(games, 30);
 
-  for (const chunk of gamesChunks) {
-    await HydraApi.post(
-      "/profile/games/batch",
-      chunk.map((game) => {
-        return {
-          objectId: game.objectId,
-          playTimeInMilliseconds: Math.trunc(game.playTimeInMilliseconds),
-          shop: game.shop,
-          lastTimePlayed: game.lastTimePlayed,
-          isFavorite: game.favorite,
-          isPinned: game.isPinned ?? false,
-        };
-      })
-    ).catch(() => {});
+    for (const chunk of gamesChunks) {
+      await HydraApi.post(
+        "/profile/games/batch",
+        chunk.map((game) => {
+          return {
+            objectId: game.objectId,
+            playTimeInMilliseconds: Math.trunc(game.playTimeInMilliseconds),
+            shop: game.shop,
+            lastTimePlayed: game.lastTimePlayed,
+            isFavorite: game.favorite,
+            isPinned: game.isPinned ?? false,
+          };
+        })
+      ).catch(() => {});
+    }
+
+    await mergeWithRemoteGames();
   }
-
-  await mergeWithRemoteGames();
 
   AchievementWatcherManager.preSearchAchievements();
 

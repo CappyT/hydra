@@ -1,6 +1,7 @@
 import { ShopAssets } from "@types";
 import { HydraApi } from "../hydra-api";
 import { gamesShopAssetsSublevel, gamesSublevel, levelKeys } from "@main/level";
+import { ACCOUNTLESS } from "@shared";
 
 type ProfileGame = {
   id: string;
@@ -67,6 +68,8 @@ const fetchAllGamesForShop = async (
 };
 
 export const mergeWithRemoteGames = async () => {
+  if (ACCOUNTLESS) return;
+
   const fetchGames = Promise.all([
     fetchAllGamesForShop(),
     fetchAllGamesForShop({ shop: "launchbox" }).catch(

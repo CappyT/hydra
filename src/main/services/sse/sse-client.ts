@@ -1,5 +1,5 @@
 import { createParser } from "eventsource-parser";
-import { UserNotLoggedInError } from "@shared";
+import { UserNotLoggedInError, ACCOUNTLESS } from "@shared";
 import { HydraApi } from "../hydra-api";
 import { logger } from "../logger";
 import { friendRequestEvent } from "./events/friend-request";
@@ -34,6 +34,8 @@ export class SSEClient {
   private static forceReconnectRequested = false;
 
   static connect() {
+    if (ACCOUNTLESS) return;
+
     this.close();
 
     this.masterAbort = new AbortController();

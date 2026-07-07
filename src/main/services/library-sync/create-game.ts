@@ -1,8 +1,11 @@
 import type { Game } from "@types";
 import { HydraApi } from "../hydra-api";
 import { gamesSublevel, levelKeys } from "@main/level";
+import { ACCOUNTLESS } from "@shared";
 
 export const createGame = async (game: Game) => {
+  if (ACCOUNTLESS) return;
+
   if (game.shop === "custom") {
     return;
   }
