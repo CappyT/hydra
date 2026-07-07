@@ -25,11 +25,7 @@ import {
   VerticalFocusGroup,
 } from "../../../components";
 import { ConfirmationModal } from "../../../components/modals";
-import {
-  useBigPictureToast,
-  useNavigation,
-  useUserDetails,
-} from "../../../hooks";
+import { useBigPictureToast, useNavigation } from "../../../hooks";
 import {
   EMULATION_DETAIL_CLOUD_REFRESH_BUTTON_ID,
   EMULATION_DETAIL_CLOUD_SAVES_REGION_ID,
@@ -205,7 +201,6 @@ export function CloudSavesSection({
   upTargetId,
 }: Readonly<CloudSavesSectionProps>) {
   const { t } = useTranslation("settings");
-  const { hasActiveSubscription } = useUserDetails();
   const { showSuccessToast } = useBigPictureToast();
   const platform = config.system as EmulationSavePlatform;
   const [saves, setSaves] = useState<EmulationCloudSave[]>([]);
@@ -227,11 +222,6 @@ export function CloudSavesSection({
   const { stageRef, consoleRef, gridRef, connector } = useCloudConnector(saves);
 
   const loadSaves = useCallback(async () => {
-    if (!hasActiveSubscription) {
-      setSaves([]);
-      return;
-    }
-
     setIsRefreshing(true);
 
     try {
@@ -239,7 +229,7 @@ export function CloudSavesSection({
     } finally {
       setIsRefreshing(false);
     }
-  }, [hasActiveSubscription, platform]);
+  }, [platform]);
 
   useEffect(() => {
     void loadSaves();
@@ -254,7 +244,7 @@ export function CloudSavesSection({
     await loadSaves();
   }, [deleteTarget, loadSaves, showSuccessToast]);
 
-  if (!hasActiveSubscription || saves.length === 0) {
+  if (saves.length === 0) {
     return null;
   }
 

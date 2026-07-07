@@ -20,7 +20,7 @@ import {
   getSkuRegionFlag,
   getSkuRegionFromSaveIdentity,
 } from "@renderer/helpers";
-import { useToast, useUserDetails } from "@renderer/hooks";
+import { useToast } from "@renderer/hooks";
 import type {
   EmulationCloudSave,
   EmulationSavePlatform,
@@ -51,9 +51,7 @@ export function GameEmulationSaves({
   objectId,
 }: Readonly<GameEmulationSavesProps>) {
   const { t } = useTranslation("settings");
-  const { t: tHydraCloud } = useTranslation("hydra_cloud");
   const { showSuccessToast, showErrorToast } = useToast();
-  const { hasActiveSubscription } = useUserDetails();
   const navigate = useNavigate();
 
   const [cloudSaves, setCloudSaves] = useState<EmulationCloudSave[]>([]);
@@ -65,11 +63,6 @@ export function GameEmulationSaves({
   const [deleteFor, setDeleteFor] = useState<EmulationCloudSave | null>(null);
 
   const load = useCallback(async () => {
-    if (!hasActiveSubscription) {
-      setCloudSaves([]);
-      setRecords([]);
-      return;
-    }
     setLoading(true);
     try {
       const localPromise =
@@ -85,7 +78,7 @@ export function GameEmulationSaves({
     } finally {
       setLoading(false);
     }
-  }, [hasActiveSubscription, platform, objectId]);
+  }, [platform, objectId]);
 
   useEffect(() => {
     load();
@@ -129,17 +122,6 @@ export function GameEmulationSaves({
     showSuccessToast(t("cloud_delete_success"));
     load();
   }, [deleteFor, showSuccessToast, t, load]);
-
-  if (!hasActiveSubscription) {
-    return (
-      <div className="game-emulation-saves__upgrade">
-        <p>{tHydraCloud("hydra_cloud_feature_found")}</p>
-        <Button onClick={() => window.electron.openCheckout()}>
-          {tHydraCloud("learn_more")}
-        </Button>
-      </div>
-    );
-  }
 
   return (
     <>

@@ -30,11 +30,7 @@ import {
   VerticalFocusGroup,
 } from "../../../components";
 import { ConfirmationModal } from "../../../components/modals";
-import {
-  useBigPictureToast,
-  useNavigation,
-  useUserDetails,
-} from "../../../hooks";
+import { useBigPictureToast, useNavigation } from "../../../hooks";
 import { getSkuRegion, getSkuRegionFlag } from "@renderer/helpers";
 import {
   resolveCardBackupProgress,
@@ -365,7 +361,6 @@ export function MemoryCardsSection({
   onUploaded,
 }: Readonly<MemoryCardsSectionProps>) {
   const { t } = useTranslation("settings");
-  const { hasActiveSubscription } = useUserDetails();
   const { showSuccessToast, showErrorToast } = useBigPictureToast();
   const isPs1 = config.system === "ps1";
   const api = isPs1 ? ps1Api : ps2Api;
@@ -610,15 +605,10 @@ export function MemoryCardsSection({
                       id={collapseId}
                       navigationOverrides={{
                         left: { type: "block" },
-                        right: hasActiveSubscription
-                          ? {
-                              type: "item",
-                              itemId: backupAllId,
-                            }
-                          : {
-                              type: "item",
-                              itemId: removeCardId,
-                            },
+                        right: {
+                          type: "item",
+                          itemId: backupAllId,
+                        },
                         up: previousGroup
                           ? {
                               type: "item",
@@ -685,84 +675,80 @@ export function MemoryCardsSection({
                       </button>
                     </FocusItem>
 
-                    {hasActiveSubscription ? (
-                      <FocusItem
-                        id={backupAllId}
-                        navigationOverrides={{
-                          left: {
-                            type: "item",
-                            itemId: collapseId,
-                          },
-                          right: {
-                            type: "item",
-                            itemId: removeCardId,
-                          },
-                          up: previousGroup
+                    <FocusItem
+                      id={backupAllId}
+                      navigationOverrides={{
+                        left: {
+                          type: "item",
+                          itemId: collapseId,
+                        },
+                        right: {
+                          type: "item",
+                          itemId: removeCardId,
+                        },
+                        up: previousGroup
+                          ? {
+                              type: "item",
+                              itemId: getEmulationMemcardBackupAllFocusId(
+                                previousGroup.cardFilePath
+                              ),
+                            }
+                          : {
+                              type: "item",
+                              itemId:
+                                EMULATION_DETAIL_MEMORY_CARDS_DETECT_BUTTON_ID,
+                            },
+                        down:
+                          !isCollapsed && firstRecordMenuId
                             ? {
                                 type: "item",
-                                itemId: getEmulationMemcardBackupAllFocusId(
-                                  previousGroup.cardFilePath
-                                ),
+                                itemId: firstRecordMenuId,
                               }
-                            : {
-                                type: "item",
-                                itemId:
-                                  EMULATION_DETAIL_MEMORY_CARDS_DETECT_BUTTON_ID,
-                              },
-                          down:
-                            !isCollapsed && firstRecordMenuId
+                            : nextGroup
                               ? {
                                   type: "item",
-                                  itemId: firstRecordMenuId,
+                                  itemId: getEmulationMemcardBackupAllFocusId(
+                                    nextGroup.cardFilePath
+                                  ),
                                 }
-                              : nextGroup
-                                ? {
-                                    type: "item",
-                                    itemId: getEmulationMemcardBackupAllFocusId(
-                                      nextGroup.cardFilePath
-                                    ),
-                                  }
-                                : {
-                                    type: "item",
-                                    itemId: downTargetId,
-                                  },
+                              : {
+                                  type: "item",
+                                  itemId: downTargetId,
+                                },
+                      }}
+                      asChild
+                    >
+                      <button
+                        type="button"
+                        className="emulator-detail__memcard-backup-all"
+                        onClick={() => {
+                          handleBackupAll(cardFilePath, records.length).catch(
+                            () => {}
+                          );
                         }}
-                        asChild
+                        disabled={isBackingUp}
                       >
-                        <button
-                          type="button"
-                          className="emulator-detail__memcard-backup-all"
-                          onClick={() => {
-                            handleBackupAll(cardFilePath, records.length).catch(
-                              () => {}
-                            );
-                          }}
-                          disabled={isBackingUp}
-                        >
-                          <UploadIcon size={13} />
-                          <span>
-                            {isBackingUp
-                              ? `${t("cloud_backing_up")} ${t(
-                                  "setup_scan_count",
-                                  {
-                                    processed: progressDone,
-                                    total: progressTotal,
-                                  }
-                                )}`
-                              : t("cloud_backup_all")}
-                          </span>
-                        </button>
-                      </FocusItem>
-                    ) : null}
+                        <UploadIcon size={13} />
+                        <span>
+                          {isBackingUp
+                            ? `${t("cloud_backing_up")} ${t(
+                                "setup_scan_count",
+                                {
+                                  processed: progressDone,
+                                  total: progressTotal,
+                                }
+                              )}`
+                            : t("cloud_backup_all")}
+                        </span>
+                      </button>
+                    </FocusItem>
 
                     <Button
                       focusId={removeCardId}
                       focusNavigationOverrides={{
                         left: {
                           type: "item",
-                          itemId: hasActiveSubscription
-                            ? backupAllId
-                            : collapseId,
+                          itemId: backupAllId,
                         },
                         right: { type: "block" },
                         up: previousGroup
@@ -962,9 +948,7 @@ export function MemoryCardsSection({
                                     backingUpKey === currentKey
                                       ? t("cloud_backing_up")
                                       : t("cloud_backup"),
-                                  disabled:
-                                    !hasActiveSubscription ||
-                                    backingUpKey === currentKey,
+                                  disabled: backingUpKey === currentKey,
                                   onSelect: () => handleBackup(save),
                                 },
                               ]}

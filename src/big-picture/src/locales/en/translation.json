@@ -688,7 +688,7 @@
     "No backups": "No backups",
     "cloud_saves_section_title": "Cloud saves",
     "cloud_saves_section_description": "Save your progress in the cloud and continue playing on any device",
-    "cloud_saves_section_description_memory": "Save your memory card progress in the cloud and continue playing on any device",
+    "cloud_saves_section_description_memory": "Back up your memory card saves locally and restore them anytime",
     "enable_automatic_cloud_sync": "Enable automatic cloud sync",
     "create_backup": "New Backup",
     "no_backups": "You haven't created any backups for this game yet",

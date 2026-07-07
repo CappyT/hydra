@@ -5,7 +5,6 @@ import {
   DeviceDesktopIcon,
   HistoryIcon,
   KebabHorizontalIcon,
-  LockIcon,
   PencilIcon,
   SyncIcon,
   TrashIcon,
@@ -17,9 +16,8 @@ import {
   getSkuRegionFlag,
   getSkuRegionFromSaveIdentity,
 } from "@renderer/helpers";
-import { useToast, useUserDetails } from "@renderer/hooks";
+import { useToast } from "@renderer/hooks";
 import { useCloudConnector } from "@renderer/hooks/use-cloud-connector";
-import { useSubscription } from "@renderer/hooks/use-subscription";
 import type {
   EmulationCloudSave,
   EmulationSavePlatform,
@@ -28,7 +26,6 @@ import type {
 
 import ConsoleBackside from "@renderer/assets/emulation/console-backside.svg?react";
 import hydraSaveCard from "@renderer/assets/emulation/icons/hydra-save-card.png";
-import HydraIcon from "@renderer/assets/icons/hydra.svg?react";
 
 import { RenameModal, RestoreModal, formatDate } from "./emulation-save-modals";
 
@@ -39,10 +36,7 @@ interface Props {
 
 export function CloudSavesSection({ config, refreshKey }: Readonly<Props>) {
   const { t } = useTranslation("settings");
-  const { t: tHydraCloud } = useTranslation("hydra_cloud");
   const { showSuccessToast } = useToast();
-  const { hasActiveSubscription } = useUserDetails();
-  const { showHydraCloudModal } = useSubscription();
   const platform = config.system as EmulationSavePlatform;
 
   const [saves, setSaves] = useState<EmulationCloudSave[]>([]);
@@ -54,17 +48,13 @@ export function CloudSavesSection({ config, refreshKey }: Readonly<Props>) {
   const { stageRef, consoleRef, gridRef, connector } = useCloudConnector(saves);
 
   const load = useCallback(async () => {
-    if (!hasActiveSubscription) {
-      setSaves([]);
-      return;
-    }
     setRefreshing(true);
     try {
       setSaves(await window.electron.listEmulationSaves(platform));
     } finally {
       setRefreshing(false);
     }
-  }, [hasActiveSubscription, platform]);
+  }, [platform]);
 
   useEffect(() => {
     load();
@@ -77,65 +67,6 @@ export function CloudSavesSection({ config, refreshKey }: Readonly<Props>) {
     showSuccessToast(t("cloud_delete_success"));
     load();
   }, [deleteFor, showSuccessToast, t, load]);
-
-  if (!hasActiveSubscription) {
-    return (
-      <section className="emulator-detail__section emulator-detail__cloud-section">
-        <header className="emulator-detail__section-header">
-          <div className="emulator-detail__section-text">
-            <h3>{t("cloud_saves_section_title")}</h3>
-            <p>{t("cloud_saves_section_description")}</p>
-          </div>
-        </header>
-
-        <div className="emulator-detail__cloud-locked">
-          <div
-            className="emulator-detail__cloud-locked-preview"
-            aria-hidden="true"
-          >
-            <div className="emulator-detail__cloud-grid">
-              {Array.from({ length: 4 }).map((_, index) => (
-                <div key={index} className="emulator-detail__cloud-card">
-                  <div className="emulator-detail__cloud-card-top">
-                    <img
-                      className="emulator-detail__cloud-card-art"
-                      src={hydraSaveCard}
-                      alt=""
-                    />
-                  </div>
-                  <span className="emulator-detail__cloud-card-title">—</span>
-                  <div className="emulator-detail__cloud-card-info">
-                    <span>
-                      <DeviceDesktopIcon size={16} />—
-                    </span>
-                    <span>
-                      <ClockIcon size={16} />—
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="emulator-detail__cloud-locked-overlay">
-            <span className="emulator-detail__cloud-locked-icon">
-              <LockIcon size={24} />
-            </span>
-            <p className="emulator-detail__cloud-locked-title">
-              {tHydraCloud("hydra_cloud_feature_found")}
-            </p>
-            <Button
-              theme="outline"
-              onClick={() => showHydraCloudModal("backup")}
-            >
-              <HydraIcon className="emulator-detail__cloud-locked-hydra" />
-              <span>{tHydraCloud("learn_more")}</span>
-            </Button>
-          </div>
-        </div>
-      </section>
-    );
-  }
 
   if (saves.length === 0) return null;
 

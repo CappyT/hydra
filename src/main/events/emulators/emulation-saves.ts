@@ -15,7 +15,7 @@ const listEmulationSaves = async (
       objectId
     );
   } catch (err) {
-    // No subscription / network / auth — the UI gates on subscription anyway.
+    // Missing emulator config or an unreadable backup directory — return empty.
     logger.log("Could not list emulation saves", err);
     return [];
   }

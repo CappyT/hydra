@@ -14,7 +14,7 @@ import {
 
 import { Button, ConfirmationModal, TextField } from "@renderer/components";
 import { DropdownMenu } from "@renderer/components/dropdown-menu/dropdown-menu";
-import { useToast, useUserDetails } from "@renderer/hooks";
+import { useToast } from "@renderer/hooks";
 import {
   resolveCardBackupProgress,
   useEmulationBackupProgress,
@@ -104,7 +104,6 @@ const countKey = (isPs1: boolean, count: number): string => {
 export function MemoryCardsSection({ config, onUploaded }: Readonly<Props>) {
   const { t } = useTranslation("settings");
   const { showSuccessToast, showErrorToast } = useToast();
-  const { hasActiveSubscription } = useUserDetails();
 
   const isPs1 = config.system === "ps1";
   const api = isPs1 ? ps1Api : ps2Api;
@@ -408,29 +407,27 @@ export function MemoryCardsSection({ config, onUploaded }: Readonly<Props>) {
                             )}
                           </span>
                         </button>
-                        {hasActiveSubscription && (
-                          <button
-                            type="button"
-                            className="emulator-detail__memcard-backup-all"
-                            onClick={() =>
-                              handleBackupAll(cardFilePath, records.length)
-                            }
-                            disabled={isBackingUp}
-                          >
-                            <UploadIcon size={13} />
-                            <span>
-                              {isBackingUp
-                                ? `${t("cloud_backing_up")} ${t(
-                                    "setup_scan_count",
-                                    {
-                                      processed: progressDone,
-                                      total: progressTotal,
-                                    }
-                                  )}`
-                                : t("cloud_backup_all")}
-                            </span>
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          className="emulator-detail__memcard-backup-all"
+                          onClick={() =>
+                            handleBackupAll(cardFilePath, records.length)
+                          }
+                          disabled={isBackingUp}
+                        >
+                          <UploadIcon size={13} />
+                          <span>
+                            {isBackingUp
+                              ? `${t("cloud_backing_up")} ${t(
+                                  "setup_scan_count",
+                                  {
+                                    processed: progressDone,
+                                    total: progressTotal,
+                                  }
+                                )}`
+                              : t("cloud_backup_all")}
+                          </span>
+                        </button>
                         <button
                           type="button"
                           className="emulator-detail__remove"
@@ -537,7 +534,6 @@ export function MemoryCardsSection({ config, onUploaded }: Readonly<Props>) {
                                             : t("cloud_backup"),
                                         disabled:
                                           backingUpKey === saveKey(save),
-                                        show: hasActiveSubscription,
                                         onClick: () => handleBackup(save),
                                       },
                                     ]}
