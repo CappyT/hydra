@@ -65,13 +65,21 @@ const ensureWinePrefixDir = (winePrefix?: string | null) => {
 };
 
 /**
+ * Sanitizes a per-game key (e.g. `levelKeys.game(shop, objectId)`) into a
+ * filesystem-safe directory name. Shared so the sandbox home and any code that
+ * needs to locate that home derive the same path.
+ */
+export const sanitizeSandboxGameKey = (gameKey: string): string =>
+  gameKey.replace(/[^a-zA-Z0-9._-]/g, "_");
+
+/**
  * Resolves (and creates) the persistent per-game sandbox home directory. Real
  * home stays hidden; the game sees this directory bound over $HOME.
  */
 const ensureSandboxHome = (gameKey?: string | null): string | undefined => {
   if (!gameKey) return undefined;
 
-  const sanitized = gameKey.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const sanitized = sanitizeSandboxGameKey(gameKey);
   const homePersistDir = path.join(sandboxHomesPath, sanitized);
 
   try {

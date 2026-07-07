@@ -309,6 +309,7 @@
     "downloader_not_available": "Not available",
     "go_to_settings": "Go to Settings",
     "select_executable": "Select",
+    "executable_found": "Executable found: {{path}}",
     "no_executable_selected": "No executable selected",
     "add_tracking_executable": "Add executable",
     "game_executable": "Game executable",

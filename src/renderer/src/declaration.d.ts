@@ -348,6 +348,14 @@ declare global {
       shop: GameShop,
       objectId: string
     ) => Promise<LibraryGame | null>;
+    locateGameExecutable: (
+      shop: GameShop,
+      objectId: string
+    ) => Promise<string | null>;
+    getExecutablePickerDefaultPath: (
+      shop: GameShop,
+      objectId: string
+    ) => Promise<string | null>;
     getGamesRunning: () => Promise<
       Pick<GameRunning, "id" | "sessionDurationInMillis">[]
     >;

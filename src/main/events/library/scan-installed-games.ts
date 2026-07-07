@@ -1,15 +1,19 @@
-import path from "node:path";
 import fs from "node:fs";
 import { t } from "i18next";
 import { registerEvent } from "../register-event";
 import { updateGameExecutablePath } from "@main/helpers/update-executable-path";
-import { gamesSublevel } from "@main/level";
+import { downloadsSublevel, gamesSublevel } from "@main/level";
 import {
   GameExecutables,
   LocalNotificationManager,
   logger,
   WindowManager,
 } from "@main/services";
+import { getGameCandidateDirectories } from "@main/helpers/locate-game-executable";
+import {
+  findExecutableInFolder,
+  searchCandidateDirectories,
+} from "@main/helpers/locate-game-executable-match";
 
 const SCAN_DIRECTORIES = [
   String.raw`C:\Games`,
@@ -36,7 +40,11 @@ async function searchInDirectories(
   for (const scanDir of directories) {
     if (!fs.existsSync(scanDir)) continue;
 
-    const foundPath = await findExecutableInFolder(scanDir, executableNames);
+    const foundPath = await findExecutableInFolder(
+      scanDir,
+      executableNames,
+      logger
+    );
     if (foundPath) return foundPath;
   }
   return null;
@@ -98,10 +106,30 @@ const scanInstalledGames = async (
       executableNames.map((name) => name.toLowerCase())
     );
 
-    const foundPath = await searchInDirectories(
-      normalizedNames,
-      scanDirectories
-    );
+    let foundPath: string | null = null;
+
+    // On Linux the game lives inside its wine prefix / sandbox home / download
+    // folder, none of which the Windows SCAN_DIRECTORIES cover. Search these
+    // per-game locations first, as they are the most likely hit.
+    if (process.platform === "linux") {
+      const download = await downloadsSublevel.get(key).catch(() => null);
+      const candidates = await getGameCandidateDirectories(
+        game.shop,
+        game.objectId,
+        game,
+        download
+      );
+
+      foundPath = await searchCandidateDirectories(
+        candidates,
+        normalizedNames,
+        logger
+      );
+    }
+
+    if (!foundPath) {
+      foundPath = await searchInDirectories(normalizedNames, scanDirectories);
+    }
 
     if (foundPath) {
       await gamesSublevel.put(key, updateGameExecutablePath(game, foundPath));
@@ -119,37 +147,5 @@ const scanInstalledGames = async (
 
   return { foundGames, total: gamesToScan.length };
 };
-
-async function findExecutableInFolder(
-  folderPath: string,
-  executableNames: Set<string>
-): Promise<string | null> {
-  try {
-    const entries = await fs.promises.readdir(folderPath, {
-      withFileTypes: true,
-      recursive: true,
-    });
-
-    for (const entry of entries) {
-      if (!entry.isFile()) continue;
-
-      const fileName = entry.name.toLowerCase();
-
-      if (executableNames.has(fileName)) {
-        const parentPath =
-          "parentPath" in entry ? entry.parentPath : folderPath;
-
-        return path.join(parentPath, entry.name);
-      }
-    }
-  } catch (err) {
-    logger.error(
-      `[ScanInstalledGames] Error reading folder ${folderPath}:`,
-      err
-    );
-  }
-
-  return null;
-}
 
 registerEvent("scanInstalledGames", scanInstalledGames);

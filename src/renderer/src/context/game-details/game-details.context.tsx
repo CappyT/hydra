@@ -7,6 +7,7 @@ import {
   useAppDispatch,
   useAppSelector,
   useDownload,
+  useToast,
   useUserDetails,
 } from "@renderer/hooks";
 
@@ -104,6 +105,10 @@ export function GameDetailsContextProvider({
 
   const { lastPacket } = useDownload();
   const { userDetails } = useUserDetails();
+  const { showSuccessToast } = useToast();
+
+  // Guards the one-shot Linux auto-locate to a single attempt per page visit.
+  const hasAttemptedLocateRef = useRef(false);
 
   const userPreferences = useAppSelector(
     (state) => state.userPreferences.value
@@ -281,8 +286,38 @@ export function GameDetailsContextProvider({
     setIsGameRunning(false);
     setAchievements(null);
     setGameOptionsInitialCategory("general");
+    hasAttemptedLocateRef.current = false;
     dispatch(setHeaderTitle(gameTitle));
   }, [objectId, gameTitle, dispatch]);
+
+  // On Linux, a game installed by running its Windows installer under
+  // Proton/wine lands inside the per-game wine prefix, so its executablePath is
+  // still unset. Try to locate it once per page visit and refresh on success.
+  useEffect(() => {
+    if (hasAttemptedLocateRef.current) return;
+    if (!game || game.executablePath) return;
+    if (window.electron.platform !== "linux") return;
+    if (isGameDownloading) return;
+
+    hasAttemptedLocateRef.current = true;
+
+    window.electron
+      .locateGameExecutable(shop, objectId)
+      .then((foundPath) => {
+        if (!foundPath) return;
+        updateGame();
+        showSuccessToast(t("executable_found", { path: foundPath }));
+      })
+      .catch(() => {});
+  }, [
+    game,
+    isGameDownloading,
+    shop,
+    objectId,
+    updateGame,
+    showSuccessToast,
+    t,
+  ]);
 
   useEffect(() => {
     const state =
@@ -442,7 +477,9 @@ export function GameDetailsContextProvider({
   };
 
   const selectGameExecutable = async () => {
-    const downloadsPath = await getDownloadsPath();
+    const defaultPath =
+      (await window.electron.getExecutablePickerDefaultPath(shop, objectId)) ??
+      (await getDownloadsPath());
 
     const filters = getGameExecutableFilters(
       globalThis.window.electron.platform,
@@ -455,7 +492,7 @@ export function GameDetailsContextProvider({
     return window.electron
       .showOpenDialog({
         properties: ["openFile"],
-        defaultPath: downloadsPath,
+        defaultPath,
         filters,
       })
       .then(({ filePaths }) => {

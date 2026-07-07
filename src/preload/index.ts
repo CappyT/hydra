@@ -723,6 +723,10 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.invoke("deleteGameFolder", shop, objectId),
   getGameByObjectId: (shop: GameShop, objectId: string) =>
     ipcRenderer.invoke("getGameByObjectId", shop, objectId),
+  locateGameExecutable: (shop: GameShop, objectId: string) =>
+    ipcRenderer.invoke("locateGameExecutable", shop, objectId),
+  getExecutablePickerDefaultPath: (shop: GameShop, objectId: string) =>
+    ipcRenderer.invoke("getExecutablePickerDefaultPath", shop, objectId),
   resetGameAchievements: (shop: GameShop, objectId: string) =>
     ipcRenderer.invoke("resetGameAchievements", shop, objectId),
   changeGamePlayTime: (shop: GameShop, objectId: string, playtime: number) =>

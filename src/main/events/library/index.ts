@@ -24,6 +24,7 @@ import "./get-game-launch-proton-version";
 import "./get-game-save-folder";
 import "./get-games-running";
 import "./get-library";
+import "./locate-game-executable";
 import "./open-game-executable-path";
 import "./open-game-installer-path";
 import "./open-game-installer";

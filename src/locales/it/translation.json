@@ -234,6 +234,7 @@
     "downloader_not_available": "Non disponibile",
     "go_to_settings": "Vai alle impostazioni",
     "select_executable": "Seleziona",
+    "executable_found": "Eseguibile trovato: {{path}}",
     "no_executable_selected": "Nessun eseguibile selezionato",
     "open_folder": "Apri cartella",
     "open_save_folder": "Apri cartella salvataggi",
