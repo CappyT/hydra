@@ -9,6 +9,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { Modal } from "@renderer/components";
 import {
+  ACCOUNTLESS,
   formatBytes,
   GAMEMODE_SITE_URL,
   getGameExecutableFilters,
@@ -848,7 +849,7 @@ export function GameOptionsModal({
     if (!visible) return;
 
     const category = initialCategory ?? "general";
-    if (category === "hydra_cloud" && !hasActiveSubscription) {
+    if (category === "hydra_cloud" && !ACCOUNTLESS && !hasActiveSubscription) {
       setSelectedCategory("general");
       showHydraCloudModal("backup");
       return;
@@ -860,7 +861,7 @@ export function GameOptionsModal({
   // Non-subscribers don't open the cloud-save panel; clicking the menu item
   // presents the Hydra Cloud promo (highlighting cloud saving) instead.
   const handleSelectCategory = (category: typeof selectedCategory) => {
-    if (category === "hydra_cloud" && !hasActiveSubscription) {
+    if (category === "hydra_cloud" && !ACCOUNTLESS && !hasActiveSubscription) {
       showHydraCloudModal("backup");
       return;
     }

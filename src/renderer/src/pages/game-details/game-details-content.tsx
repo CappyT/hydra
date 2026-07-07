@@ -77,7 +77,7 @@ export function GameDetailsContent() {
     setGameOptionsInitialCategory,
   } = useContext(gameDetailsContext);
 
-  const { userDetails, hasActiveSubscription } = useUserDetails();
+  const { userDetails } = useUserDetails();
   const { library } = useLibrary();
 
   const { getGameArtifacts } = useContext(cloudSyncContext);
@@ -151,14 +151,8 @@ export function GameDetailsContent() {
   }, [aboutTheGame]);
 
   const handleCloudSaveButtonClick = () => {
-    if (!userDetails) {
+    if (!ACCOUNTLESS && !userDetails) {
       window.electron.openAuthWindow(AuthPage.SignIn);
-      return;
-    }
-
-    if (!hasActiveSubscription) {
-      setGameOptionsInitialCategory("hydra_cloud");
-      setShowGameOptionsModal(true);
       return;
     }
 
