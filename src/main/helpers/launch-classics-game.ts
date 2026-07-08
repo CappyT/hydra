@@ -25,6 +25,7 @@ import {
   isGamescopeAvailable,
   isWaylandSessionAvailable,
 } from "./is-gamescope-available";
+import { buildGamescopeWrapper } from "./resolve-gamescope-wrapper";
 import { resolveLaunchCommand } from "./resolve-launch-command";
 
 export class EmulatorNotConfiguredError extends Error {
@@ -173,7 +174,7 @@ const resolveEmulatorWrappers = (
   return {
     wrapperCommands: [
       ...(useGamemode ? ["gamemoderun"] : []),
-      ...(useGamescope ? [["gamescope", "-f", "--"]] : []),
+      ...(useGamescope ? [buildGamescopeWrapper()] : []),
       ...(useMangohud ? ["mangohud"] : []),
     ],
     useGamescope,

@@ -17,6 +17,7 @@ import {
 import { buildSandboxEnv } from "@main/helpers/sandbox-env";
 import { resolveSystemBinary } from "@main/helpers/resolve-system-binary";
 import { isWaylandSessionAvailable } from "@main/helpers/is-gamescope-available";
+import { buildGamescopeWrapper } from "@main/helpers/resolve-gamescope-wrapper";
 import { Sandbox } from "./sandbox";
 
 const isValidProtonDirectory = (directoryPath: string) => {
@@ -263,7 +264,7 @@ export class Umu {
         // so only gamemode and gamescope wrap the command here.
         wrapperCommands: [
           ...(options?.useGamemode ? ["gamemoderun"] : []),
-          ...(options?.useGamescope ? [["gamescope", "-f", "--"]] : []),
+          ...(options?.useGamescope ? [buildGamescopeWrapper()] : []),
         ],
       }),
       {
