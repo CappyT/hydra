@@ -11,12 +11,18 @@ interface HydraCloudSettingsSectionProps {
   onToggleAutomaticCloudSync: (
     event: React.ChangeEvent<HTMLInputElement>
   ) => Promise<void>;
+  backupsToKeep: number | null;
+  defaultBackupsToKeep: number;
+  onChangeBackupsToKeep: (value: number | null) => Promise<void>;
 }
 
 export function HydraCloudSettingsSection({
   game,
   automaticCloudSync,
   onToggleAutomaticCloudSync,
+  backupsToKeep,
+  defaultBackupsToKeep,
+  onChangeBackupsToKeep,
 }: Readonly<HydraCloudSettingsSectionProps>) {
   const { t } = useTranslation("game_details");
 
@@ -43,6 +49,9 @@ export function HydraCloudSettingsSection({
       <CloudSyncPanel
         automaticCloudSync={automaticCloudSync}
         onToggleAutomaticCloudSync={onToggleAutomaticCloudSync}
+        backupsToKeep={backupsToKeep}
+        defaultBackupsToKeep={defaultBackupsToKeep}
+        onChangeBackupsToKeep={onChangeBackupsToKeep}
       />
     </div>
   );

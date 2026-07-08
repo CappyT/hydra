@@ -8,6 +8,7 @@ export * from "./artifact-storage-backend";
 export * from "./local-directory-backend";
 export * from "./rclone-backend";
 export * from "./restore-scratch";
+export * from "./sync-planner";
 
 /**
  * Resolves the artifact storage backend selected in the user's preferences.

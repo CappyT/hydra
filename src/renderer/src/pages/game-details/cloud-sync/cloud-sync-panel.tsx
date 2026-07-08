@@ -1,4 +1,4 @@
-import { Button, CheckboxField } from "@renderer/components";
+import { Button, CheckboxField, TextField } from "@renderer/components";
 import { useContext, useEffect, useMemo, useState } from "react";
 import type { ChangeEvent } from "react";
 import { cloudSyncContext, gameDetailsContext } from "@renderer/context";
@@ -30,11 +30,17 @@ import { Tooltip } from "react-tooltip";
 interface CloudSyncPanelProps {
   automaticCloudSync: boolean;
   onToggleAutomaticCloudSync: (event: ChangeEvent<HTMLInputElement>) => void;
+  backupsToKeep: number | null;
+  defaultBackupsToKeep: number;
+  onChangeBackupsToKeep: (value: number | null) => void;
 }
 
 export function CloudSyncPanel({
   automaticCloudSync,
   onToggleAutomaticCloudSync,
+  backupsToKeep,
+  defaultBackupsToKeep,
+  onChangeBackupsToKeep,
 }: Readonly<CloudSyncPanelProps>) {
   const [deletingArtifact, setDeletingArtifact] = useState(false);
   const [backupDownloadProgress, setBackupDownloadProgress] =
@@ -192,6 +198,31 @@ export function CloudSyncPanel({
           checked={automaticCloudSync}
           disabled={!game?.executablePath}
           onChange={onToggleAutomaticCloudSync}
+        />
+      </div>
+
+      <div className="cloud-sync-panel__backups-to-keep">
+        <TextField
+          label={t("backups_to_keep")}
+          type="number"
+          min={1}
+          value={backupsToKeep ?? ""}
+          placeholder={String(defaultBackupsToKeep)}
+          hint={t("backups_to_keep_description", {
+            count: defaultBackupsToKeep,
+          })}
+          onChange={(event) => {
+            const raw = event.target.value.trim();
+            if (raw === "") {
+              onChangeBackupsToKeep(null);
+              return;
+            }
+
+            const parsed = Number.parseInt(raw, 10);
+            if (Number.isFinite(parsed) && parsed > 0) {
+              onChangeBackupsToKeep(parsed);
+            }
+          }}
         />
       </div>
 

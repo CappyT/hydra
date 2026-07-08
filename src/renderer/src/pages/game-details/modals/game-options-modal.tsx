@@ -110,6 +110,9 @@ export function GameOptionsModal({
   const [automaticCloudSync, setAutomaticCloudSync] = useState(
     game.automaticCloudSync ?? false
   );
+  const [backupsToKeep, setBackupsToKeep] = useState<number | null>(
+    game.backupsToKeep ?? null
+  );
   const [creatingSteamShortcut, setCreatingSteamShortcut] = useState(false);
   const [saveFolderPath, setSaveFolderPath] = useState<string | null>(null);
   const [loadingSaveFolder, setLoadingSaveFolder] = useState(false);
@@ -992,6 +995,16 @@ export function GameOptionsModal({
     updateGame();
   };
 
+  const handleChangeBackupsToKeep = async (value: number | null) => {
+    setBackupsToKeep(value);
+    await globalThis.window.electron.updateGameBackupsToKeep(
+      game.shop,
+      game.objectId,
+      value
+    );
+    updateGame();
+  };
+
   const baseGeneralSettingsProps = useMemo(
     () => ({
       game,
@@ -1137,6 +1150,11 @@ export function GameOptionsModal({
                 game={game}
                 automaticCloudSync={automaticCloudSync}
                 onToggleAutomaticCloudSync={handleToggleAutomaticCloudSync}
+                backupsToKeep={backupsToKeep}
+                defaultBackupsToKeep={
+                  userPreferences?.defaultBackupsToKeep ?? 10
+                }
+                onChangeBackupsToKeep={handleChangeBackupsToKeep}
               />
             )}
             {selectedCategory === "compatibility" &&

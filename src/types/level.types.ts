@@ -108,6 +108,23 @@ export interface Game {
   unlockedAchievementCount?: number;
   pinnedDate?: Date | null;
   automaticCloudSync?: boolean;
+  /**
+   * ISO timestamp (an artifact's `createdAt`) of the backup this machine is
+   * currently in sync with — set when this machine last uploaded a backup on
+   * close or restored one on launch. Drives the Steam-Cloud-like
+   * restore-before-launch decision: a strictly newer remote backup than this
+   * marker means another machine has newer progress and should be restored,
+   * while equal-or-older means this machine is in sync (or ahead) and must NOT
+   * be overwritten. Unset means "adopt the current latest as baseline without
+   * restoring" (migration safety for pre-existing games).
+   */
+  lastSyncedBackupAt?: string;
+  /**
+   * Per-game override for how many non-frozen backups to retain after each
+   * successful backup (`undefined` = use the global `defaultBackupsToKeep`).
+   * Frozen backups are always kept regardless of this value.
+   */
+  backupsToKeep?: number;
   hasManuallyUpdatedPlaytime?: boolean;
   newDownloadOptionsCount?: number;
   installedSizeInBytes?: number | null;
@@ -255,6 +272,12 @@ export interface UserPreferences {
   backupLocalPath?: string | null;
   rcloneRemote?: string | null;
   autoBackupNewGames?: boolean;
+  /**
+   * Global default for how many non-frozen backups to retain per game after
+   * each successful backup (defaults to 10 when unset). A per-game
+   * `Game.backupsToKeep` overrides this. Frozen backups are never pruned.
+   */
+  defaultBackupsToKeep?: number;
   ludusaviManifestUrl?: string | null;
 }
 

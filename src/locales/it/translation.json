@@ -1,7 +1,11 @@
 {
   "language_name": "Italiano",
   "app": {
-    "successfully_signed_in": "Accesso effettuato con successo"
+    "successfully_signed_in": "Accesso effettuato con successo",
+    "host_tools_missing_title": "Alcuni strumenti opzionali non sono disponibili",
+    "host_tool_missing_bwrap": "bwrap (bubblewrap) non trovato — la sandbox non può funzionare, quindi i giochi in sandbox non verranno avviati finché non installi bubblewrap o disattivi la sandbox.",
+    "host_tool_missing_pasta": "pasta (passt) non trovato — l'isolamento di rete è disattivato; installa il pacchetto passt per isolare i giochi.",
+    "host_tool_missing_gamescope": "gamescope non trovato — il wrapper gamescope non è disponibile; i giochi vengono eseguiti senza di esso."
   },
   "home": {
     "surprise_me": "Sorprendimi",
@@ -360,6 +364,8 @@
     "backup_from": "Backup del {{date}}",
     "automatic_backup_from": "Backup automatico dal {{date}}",
     "enable_automatic_cloud_sync": "Abilita il backup automatico",
+    "backups_to_keep": "Backup da conservare",
+    "backups_to_keep_description": "Quanti backup conservare per questo gioco prima che i più vecchi vengano eliminati. I backup bloccati vengono sempre mantenuti. Lascia vuoto per usare il valore predefinito globale ({{count}}).",
     "custom_backup_location_set": "Percorso backup personalizzato impostato",
     "no_directory_selected": "Nessuna cartella selezionata",
     "no_write_permission": "Impossibile scaricare in questa cartella. Clicca qui per saperne di più.",

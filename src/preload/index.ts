@@ -512,14 +512,14 @@ contextBridge.exposeInMainWorld("electron", {
     shop: GameShop,
     objectId: string,
     useGamescope: boolean
-  ) =>
-    ipcRenderer.invoke("toggleGameGamescope", shop, objectId, useGamescope),
+  ) => ipcRenderer.invoke("toggleGameGamescope", shop, objectId, useGamescope),
   isGamemodeAvailable: () => ipcRenderer.invoke("isGamemodeAvailable"),
   isGamescopeAvailable: () => ipcRenderer.invoke("isGamescopeAvailable"),
   isMangohudAvailable: () => ipcRenderer.invoke("isMangohudAvailable"),
   isSandboxAvailable: () => ipcRenderer.invoke("isSandboxAvailable"),
   isNetworkIsolationAvailable: () =>
     ipcRenderer.invoke("isNetworkIsolationAvailable"),
+  getMissingHostTools: () => ipcRenderer.invoke("getMissingHostTools"),
   isWinetricksAvailable: () => ipcRenderer.invoke("isWinetricksAvailable"),
   toggleGameSandbox: (
     shop: GameShop,
@@ -565,6 +565,17 @@ contextBridge.exposeInMainWorld("electron", {
       shop,
       objectId,
       sandboxExtraPaths
+    ),
+  updateGameBackupsToKeep: (
+    shop: GameShop,
+    objectId: string,
+    backupsToKeep: number | null
+  ) =>
+    ipcRenderer.invoke(
+      "updateGameBackupsToKeep",
+      shop,
+      objectId,
+      backupsToKeep
     ),
   addGameToLibrary: (
     shop: GameShop,

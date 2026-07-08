@@ -26,6 +26,7 @@ import { PythonRPC } from "./services/python-rpc";
 import { db, gamesSublevel, levelKeys } from "./level";
 import { GameShop, UserPreferences } from "@types";
 import { launchGame } from "./helpers";
+import { logMissingHostToolsOnce } from "./helpers/host-dependencies";
 import { loadState } from "./main";
 
 const { autoUpdater } = updater;
@@ -159,6 +160,11 @@ app.whenReady().then(async () => {
   });
 
   await loadState();
+
+  // One-time startup probe: warn (in the launch log) about any missing optional
+  // host tools (bwrap / pasta / gamescope). The user-facing toast is shown by
+  // the renderer, which pulls the list via `getMissingHostTools` on mount.
+  logMissingHostToolsOnce();
 
   // Suspend can outlive the 60s stall watchdog; reconnect right away instead
   powerMonitor.on("resume", () => {

@@ -336,16 +336,9 @@ function onOpenGame(game: Game) {
     game.objectId
   );
 
-  // Fire the save-game backup regardless of account state. Gated only on
-  // automaticCloudSync, not on remoteId (which is set only for Hydra accounts).
-  if (game.automaticCloudSync) {
-    CloudSync.uploadSaveGame(
-      game.objectId,
-      game.shop,
-      null,
-      CloudSync.getBackupLabel(true)
-    );
-  }
+  // No backup on game-open: the Steam-Cloud-like restore/sync-in happens
+  // pre-launch in launchGame (CloudSync.syncOnLaunch), and the backup is taken
+  // on close. Backing up on open would overwrite a newer cross-machine backup.
 
   if (game.remoteId) {
     const deltaToSync = game.unsyncedDeltaPlayTimeInMilliseconds ?? 0;
@@ -497,15 +490,26 @@ const onCloseGame = (game: Game) => {
   if (game.shop === "custom") return;
 
   // Fire the save-game backup regardless of account state (fresh-close is the
-  // most important moment to back up). Mirrors the game-open path, which is
-  // gated only on automaticCloudSync.
+  // most important moment to back up). Gated only on automaticCloudSync. After a
+  // successful backup, advance this machine's sync marker to the new artifact
+  // and prune old backups under the retention policy.
   if (game.automaticCloudSync) {
     CloudSync.uploadSaveGame(
       game.objectId,
       game.shop,
       null,
       CloudSync.getBackupLabel(true)
-    );
+    )
+      .then((artifact) =>
+        CloudSync.finalizeBackup(game.shop, game.objectId, artifact)
+      )
+      .catch((error) => {
+        logger.error("Automatic close backup failed", {
+          shop: game.shop,
+          objectId: game.objectId,
+          error,
+        });
+      });
   }
 
   if (game.remoteId) {

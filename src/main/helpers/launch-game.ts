@@ -15,6 +15,7 @@ import {
   launchedGamePids,
   sandboxedGamePids,
   Sandbox,
+  CloudSync,
 } from "@main/services";
 import { CommonRedistManager } from "@main/services/common-redist-manager";
 import { parseExecutablePath } from "../events/helpers/parse-executable-path";
@@ -24,6 +25,7 @@ import {
   isGamescopeAvailable,
   isWaylandSessionAvailable,
 } from "./is-gamescope-available";
+import { buildGamescopeWrapper } from "./resolve-gamescope-wrapper";
 import { resolveLaunchCommand } from "./resolve-launch-command";
 import {
   wrapWithSandbox,
@@ -88,7 +90,7 @@ const launchNatively = (
       launchOptions,
       wrapperCommands: [
         ...(useGamemode ? ["gamemoderun"] : []),
-        ...(useGamescope ? [["gamescope", "-f", "--"]] : []),
+        ...(useGamescope ? [buildGamescopeWrapper()] : []),
         ...(useMangohud ? ["mangohud"] : []),
       ],
     }),
@@ -205,7 +207,7 @@ const launchWithWine = async (
       launchOptions,
       wrapperCommands: [
         ...(useGamemode ? ["gamemoderun"] : []),
-        ...(useGamescope ? [["gamescope", "-f", "--"]] : []),
+        ...(useGamescope ? [buildGamescopeWrapper()] : []),
         ...(useMangohud ? ["mangohud"] : []),
       ],
     }),
@@ -459,6 +461,19 @@ export const launchGame = async (
   }
 
   await new Promise((resolve) => setTimeout(resolve, 2000));
+
+  // Steam-Cloud-like restore/sync-in BEFORE any spawn: if another machine has a
+  // newer backup than this one, restore it first. Gated on automaticCloudSync
+  // and awaited so saves are in place before the game starts. syncOnLaunch is
+  // fail-safe (never throws); the extra guard keeps a launch alive even if that
+  // contract ever regresses.
+  if (game?.automaticCloudSync) {
+    try {
+      await CloudSync.syncOnLaunch(shop, objectId);
+    } catch (error) {
+      logger.error("Cloud sync on launch threw unexpectedly", error);
+    }
+  }
 
   if (process.platform === "linux") {
     if (isWindowsExecutable(parsedPath)) {

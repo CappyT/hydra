@@ -8,12 +8,16 @@ const uploadSaveGame = async (
   shop: GameShop,
   downloadOptionTitle: string | null
 ) => {
-  return CloudSync.uploadSaveGame(
+  const artifact = await CloudSync.uploadSaveGame(
     objectId,
     shop,
     downloadOptionTitle,
     CloudSync.getBackupLabel(false)
   );
+
+  // Advance the sync marker to this manual backup and enforce retention so the
+  // list stays bounded regardless of how the backup was triggered.
+  await CloudSync.finalizeBackup(shop, objectId, artifact);
 };
 
 registerEvent("uploadSaveGame", uploadSaveGame);

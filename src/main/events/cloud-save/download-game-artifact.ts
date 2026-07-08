@@ -1,21 +1,15 @@
-import {
-  CloudSync,
-  getArtifactBackend,
-  logger,
-  restoreFromArtifactTar,
-  WindowManager,
-  Wine,
-} from "@main/services";
-import fs from "node:fs";
+import { CloudSync, logger, WindowManager } from "@main/services";
 import { registerEvent } from "../register-event";
 import path from "node:path";
-import { backupsPath, publicProfilePath } from "@main/constants";
-import type { GameShop, LudusaviBackupMapping } from "@types";
+import type { GameShop } from "@types";
 
-import YAML from "yaml";
-import { addTrailingSlash, normalizePath } from "@main/helpers";
-import { gamesSublevel, levelKeys } from "@main/level";
+import { addTrailingSlash } from "@main/helpers";
 
+/**
+ * Retained for upstream mergeability. The canonical restore implementation now
+ * lives in {@link CloudSync.restoreArtifact} (shared with the launch-time
+ * auto-sync); these standalone helpers are superseded and unreferenced.
+ */
 export const transformLudusaviBackupPathIntoWindowsPath = (
   backupPath: string,
   winePrefixPath?: string | null
@@ -36,64 +30,6 @@ export const addWinePrefixToWindowsPath = (
   return path.join(winePrefixPath, windowsPath.replace("C:", "drive_c"));
 };
 
-const restoreLudusaviBackup = (
-  backupPath: string,
-  title: string,
-  homeDir: string,
-  winePrefixPath?: string | null,
-  artifactWinePrefixPath?: string | null
-) => {
-  const gameBackupPath = path.join(backupPath, title);
-  const mappingYamlPath = path.join(gameBackupPath, "mapping.yaml");
-
-  const data = fs.readFileSync(mappingYamlPath, "utf8");
-  const manifest = YAML.parse(data) as {
-    backups: LudusaviBackupMapping[];
-    drives: Record<string, string>;
-  };
-
-  const userProfilePath =
-    CloudSync.getWindowsLikeUserProfilePath(winePrefixPath);
-
-  manifest.backups.forEach((backup) => {
-    Object.keys(backup.files).forEach((key) => {
-      const sourcePathWithDrives = Object.entries(manifest.drives).reduce(
-        (prev, [driveKey, driveValue]) => {
-          return prev.replace(driveValue, driveKey);
-        },
-        key
-      );
-
-      const sourcePath = path.join(gameBackupPath, sourcePathWithDrives);
-
-      logger.info(`Source path: ${sourcePath}`);
-
-      const destinationPath = transformLudusaviBackupPathIntoWindowsPath(
-        key,
-        artifactWinePrefixPath
-      )
-        .replace(
-          homeDir,
-          addWinePrefixToWindowsPath(userProfilePath, winePrefixPath)
-        )
-        .replace(
-          publicProfilePath,
-          addWinePrefixToWindowsPath(publicProfilePath, winePrefixPath)
-        );
-
-      logger.info(`Moving ${sourcePath} to ${destinationPath}`);
-
-      fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
-
-      if (fs.existsSync(destinationPath)) {
-        fs.unlinkSync(destinationPath);
-      }
-
-      fs.renameSync(sourcePath, destinationPath);
-    });
-  });
-};
-
 const downloadGameArtifact = async (
   _event: Electron.IpcMainInvokeEvent,
   objectId: string,
@@ -101,40 +37,7 @@ const downloadGameArtifact = async (
   gameArtifactId: string
 ) => {
   try {
-    const game = await gamesSublevel.get(levelKeys.game(shop, objectId));
-    const effectiveWinePrefixPath = Wine.getEffectivePrefixPath(
-      game?.winePrefixPath,
-      objectId
-    );
-
-    const backend = await getArtifactBackend();
-
-    const artifacts = await backend.list(shop, objectId);
-    const artifact = artifacts.find((item) => item.id === gameArtifactId);
-
-    if (!artifact) {
-      throw new Error(`Artifact not found: ${gameArtifactId}`);
-    }
-
-    const homeDir = artifact.homeDir;
-    const artifactWinePrefixPath = artifact.winePrefixPath;
-
-    const tarLocation = await backend.download(gameArtifactId);
-
-    await restoreFromArtifactTar({
-      backupsRoot: backupsPath,
-      shop,
-      objectId,
-      tarLocation,
-      restore: (scratchDir) =>
-        restoreLudusaviBackup(
-          scratchDir,
-          objectId,
-          normalizePath(homeDir),
-          effectiveWinePrefixPath,
-          artifactWinePrefixPath
-        ),
-    });
+    await CloudSync.restoreArtifact(shop, objectId, gameArtifactId);
 
     WindowManager.sendToAppWindows(
       `on-backup-download-complete-${objectId}-${shop}`,

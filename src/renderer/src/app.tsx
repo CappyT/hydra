@@ -102,7 +102,7 @@ export function App() {
 
   const toast = useAppSelector((state) => state.toast);
 
-  const { showSuccessToast, showErrorToast } = useToast();
+  const { showSuccessToast, showErrorToast, showWarningToast } = useToast();
 
   const [showArchiveDeletionModal, setShowArchiveDeletionModal] =
     useState(false);
@@ -117,6 +117,29 @@ export function App() {
       dispatch(setUserPreferences(preferences as UserPreferences | null));
     });
   }, [navigate, location.pathname, dispatch, updateLibrary]);
+
+  // Startup dependency check: warn once about any missing optional host tools
+  // (bwrap / pasta / gamescope). The main process runs the detection; we pull
+  // the list on mount and surface a single, non-blocking warning toast that
+  // lists only the missing tools and what each disables.
+  useEffect(() => {
+    if (window.electron.platform !== "linux") return;
+
+    window.electron
+      .getMissingHostTools()
+      .then((missing) => {
+        if (!missing.length) return;
+
+        const message = missing
+          .map((tool) => t(`host_tool_missing_${tool}`))
+          .join(" ");
+
+        showWarningToast(t("host_tools_missing_title"), message, 10000);
+      })
+      .catch(() => {
+        // Best-effort only: a failed probe must never disrupt startup.
+      });
+  }, [t, showWarningToast]);
 
   useEffect(() => {
     const unsubscribe = window.electron.onUserPreferencesUpdated(

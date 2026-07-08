@@ -189,6 +189,7 @@ declare global {
     isMangohudAvailable: () => Promise<boolean>;
     isSandboxAvailable: () => Promise<boolean>;
     isNetworkIsolationAvailable: () => Promise<boolean>;
+    getMissingHostTools: () => Promise<("bwrap" | "pasta" | "gamescope")[]>;
     isWinetricksAvailable: () => Promise<boolean>;
     toggleGameSandbox: (
       shop: GameShop,
@@ -219,6 +220,11 @@ declare global {
       shop: GameShop,
       objectId: string,
       sandboxExtraPaths: string[]
+    ) => Promise<void>;
+    updateGameBackupsToKeep: (
+      shop: GameShop,
+      objectId: string,
+      backupsToKeep: number | null
     ) => Promise<void>;
     addGameToLibrary: (
       shop: GameShop,
@@ -290,10 +296,7 @@ declare global {
     ) => Promise<void>;
     getGameCollections: () => Promise<GameCollection[]>;
     createGameCollection: (name: string) => Promise<GameCollection>;
-    renameGameCollection: (
-      collectionId: string,
-      name: string
-    ) => Promise<void>;
+    renameGameCollection: (collectionId: string, name: string) => Promise<void>;
     deleteGameCollection: (collectionId: string) => Promise<void>;
     clearNewDownloadOptions: (
       shop: GameShop,
