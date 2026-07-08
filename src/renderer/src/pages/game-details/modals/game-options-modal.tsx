@@ -128,6 +128,8 @@ export function GameOptionsModal({
   const [gamescopeAvailable, setGamescopeAvailable] = useState(false);
   const [winetricksAvailable, setWinetricksAvailable] = useState(false);
   const [sandboxAvailable, setSandboxAvailable] = useState(false);
+  const [networkIsolationAvailable, setNetworkIsolationAvailable] =
+    useState(false);
   const [selectedCategory, setSelectedCategory] =
     useState<GameSettingsCategoryId>("general");
   const [defaultWinePrefixPath, setDefaultWinePrefixPath] = useState<
@@ -160,6 +162,14 @@ export function GameOptionsModal({
         ? true
         : userPreferences?.disableSandbox !== true;
   const sandboxShareIpc = game.sandboxShareIpc === true;
+  // Tri-state: explicit per-game choice wins; AUTO (null/undefined) follows the
+  // global default (isolation on unless globally disabled).
+  const networkIsolationEnabled =
+    game.networkIsolationDisabled === true
+      ? false
+      : game.networkIsolationDisabled === false
+        ? true
+        : userPreferences?.disableNetworkIsolation !== true;
   const sandboxExtraPaths = game.sandboxExtraPaths ?? [];
   const hasAchievements =
     (achievements?.filter((a) => a.unlocked).length ?? 0) > 0;
@@ -278,6 +288,17 @@ export function GameOptionsModal({
       .isSandboxAvailable()
       .then(setSandboxAvailable)
       .catch(() => setSandboxAvailable(false));
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible || globalThis.window.electron.platform !== "linux") {
+      setNetworkIsolationAvailable(false);
+      return;
+    }
+    globalThis.window.electron
+      .isNetworkIsolationAvailable()
+      .then(setNetworkIsolationAvailable)
+      .catch(() => setNetworkIsolationAvailable(false));
   }, [visible]);
 
   useEffect(() => {
@@ -661,6 +682,15 @@ export function GameOptionsModal({
       game.shop,
       game.objectId,
       value
+    );
+    updateGame();
+  };
+
+  const handleChangeNetworkIsolation = async (value: boolean) => {
+    await globalThis.window.electron.toggleGameNetworkIsolation(
+      game.shop,
+      game.objectId,
+      !value
     );
     updateGame();
   };
@@ -1108,6 +1138,8 @@ export function GameOptionsModal({
                   sandboxAvailable={sandboxAvailable}
                   sandboxEnabled={sandboxEnabled}
                   sandboxShareIpc={sandboxShareIpc}
+                  networkIsolationAvailable={networkIsolationAvailable}
+                  networkIsolationEnabled={networkIsolationEnabled}
                   sandboxExtraPaths={sandboxExtraPaths}
                   gamemodeSiteUrl={GAMEMODE_SITE_URL}
                   mangohudSiteUrl={MANGOHUD_SITE_URL}
@@ -1119,6 +1151,7 @@ export function GameOptionsModal({
                   onChangeGamescopeState={handleChangeGamescopeState}
                   onChangeSandboxState={handleChangeSandboxState}
                   onChangeSandboxShareIpc={handleChangeSandboxShareIpc}
+                  onChangeNetworkIsolation={handleChangeNetworkIsolation}
                   onAddSandboxPath={handleAddSandboxPath}
                   onRemoveSandboxPath={handleRemoveSandboxPath}
                   onChangeProtonVersion={handleChangeProtonVersion}

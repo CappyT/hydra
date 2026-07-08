@@ -1,8 +1,58 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Game, UserPreferences } from "@types";
+// Type-only (erased at runtime) so this pure, unit-testable module keeps no
+// cross-module runtime dependency — the ts-node test runner cannot resolve
+// tsconfig path aliases or extensionless sibling imports at load time.
+import type { SandboxNetworkIsolationOptions } from "./sandbox-network";
 
 export const BWRAP_PATH = "/usr/bin/bwrap";
+
+/**
+ * Wraps a command so it runs inside pasta's isolated network namespace:
+ * `pasta <opts> -- <command> <args>`. Port forwarding is fully disabled in both
+ * directions (`-t/-u/-T/-U none`) so the game's loopback cannot reach any
+ * host-local service and vice-versa; outbound internet/LAN still works via NAT.
+ * When a host resolver is known, DNS is forwarded through pasta.
+ */
+export const buildPastaCommand = (
+  isolation: SandboxNetworkIsolationOptions,
+  command: string,
+  args: string[]
+): { command: string; args: string[] } => {
+  const { pastaPath, dnsForwardAddress, hostResolver } = isolation;
+
+  const pastaArgs: string[] = [
+    // Configure the new namespace: bring up the tap, copy host addresses/routes.
+    "--config-net",
+    // Disable ALL port forwarding both ways so no loopback service is bridged.
+    "-t",
+    "none",
+    "-u",
+    "none",
+    "-T",
+    "none",
+    "-U",
+    "none",
+    // Port forwarding off is NOT enough: pasta also remaps connections to the
+    // gateway ADDRESS onto the host by default, re-exposing every host
+    // loopback service (live-verified: CUPS answered on <gw>:631 with all
+    // forwarding disabled). Traffic THROUGH the gateway (internet/LAN
+    // routing) is unaffected by disabling that remap.
+    "--no-map-gw",
+  ];
+
+  if (dnsForwardAddress) {
+    pastaArgs.push("--dns-forward", dnsForwardAddress);
+  }
+  if (hostResolver) {
+    pastaArgs.push("--dns-host", hostResolver);
+  }
+
+  pastaArgs.push("--", command, ...args);
+
+  return { command: pastaPath, args: pastaArgs };
+};
 
 export class SandboxUnavailableError extends Error {
   code = "SANDBOX_UNAVAILABLE" as const;
@@ -90,6 +140,18 @@ export interface SandboxWrapOptions {
    * the `disableSeccomp` preference, or because the sandbox itself is off).
    */
   seccompFd?: number;
+  /**
+   * When set, the game is network-isolated: bwrap keeps the host network
+   * namespace but execs pasta as the outermost command, which drops the game
+   * into its own fresh network namespace with userspace NAT. This adds a
+   * `/dev/net/tun` bind (pasta needs it to create the tap), binds a generated
+   * resolv.conf, and wraps the payload with `pasta ... --`. bwrap itself is
+   * deliberately NOT given `--unshare-net` (pasta owns the namespace; an
+   * unprivileged bwrap-created netns is not joinable by pasta). Omitted when
+   * isolation is disabled or pasta is unavailable — then the game keeps the
+   * host network namespace, the exact previous behavior.
+   */
+  networkIsolation?: SandboxNetworkIsolationOptions;
 }
 
 const isExistingPath = (
@@ -161,7 +223,9 @@ export const isSandboxEnabled = (
 
 /**
  * Builds a bwrap command that wraps the given command/args inside an isolated
- * filesystem/pid/ipc sandbox. Network access is intentionally left open. The
+ * filesystem/pid/ipc sandbox. When `networkIsolation` is set the game is also
+ * given its own network namespace via pasta (host loopback becomes unreachable,
+ * internet/LAN still work); otherwise the host network namespace is shared. The
  * returned environment is still supplied by the caller's spawn call and
  * inherited by everything inside the sandbox.
  */
@@ -182,6 +246,7 @@ export const buildSandboxArgs = (
     hideX11 = false,
     machineIdFile,
     seccompFd,
+    networkIsolation,
   } = options;
 
   const home = env.HOME || "";
@@ -206,7 +271,12 @@ export const buildSandboxArgs = (
     bwrapArgs.push("--unshare-ipc");
   }
 
-  // Never --unshare-net: the game keeps full network access.
+  // bwrap never gets --unshare-net, even when isolating: an unprivileged
+  // bwrap-created netns is owned by bwrap's user namespace and pasta cannot
+  // join it (EPERM). Instead, when `networkIsolation` is set, pasta runs as the
+  // outermost command below and creates the game's isolated netns itself, so
+  // bwrap keeps the host netns for its own setup. Without isolation the game
+  // simply keeps full host network access (previous behavior).
   bwrapArgs.push("--new-session");
 
   // Install the compiled seccomp cBPF filter, read from the inherited fd the
@@ -284,6 +354,12 @@ export const buildSandboxArgs = (
     bwrapArgs.push("--dev-bind", devicePath, devicePath);
   }
 
+  // pasta creates its userspace tap through /dev/net/tun, which the minimal
+  // --dev /dev does not provide. Bind it only when isolating.
+  if (networkIsolation && isExistingPath("/dev/net/tun")) {
+    bwrapArgs.push("--dev-bind", "/dev/net/tun", "/dev/net/tun");
+  }
+
   // /sys is required for GPU / device discovery. A whole-tree ro bind is
   // acceptable here.
   if (isExistingPath("/sys")) {
@@ -317,6 +393,22 @@ export const buildSandboxArgs = (
   // symlink into /run/NetworkManager; re-expose it after the /run tmpfs too.
   if (isExistingPath("/run/NetworkManager")) {
     bwrapArgs.push("--ro-bind", "/run/NetworkManager", "/run/NetworkManager");
+  }
+
+  // When isolating, the host resolver (usually 127.0.0.53) is unreachable from
+  // the game's fresh netns, so overlay a generated resolv.conf pointing at
+  // pasta's DNS-forward address. Bound at the resolved /etc/resolv.conf symlink
+  // target and LAST, so it wins over the re-exposed host resolver files above.
+  if (
+    networkIsolation?.resolvConfSource &&
+    networkIsolation.resolvConfDest &&
+    isExistingPath(networkIsolation.resolvConfSource)
+  ) {
+    bwrapArgs.push(
+      "--ro-bind",
+      networkIsolation.resolvConfSource,
+      networkIsolation.resolvConfDest
+    );
   }
 
   // Proton's Steam Linux Runtime (pressure-vessel) binds the session D-Bus
@@ -370,7 +462,13 @@ export const buildSandboxArgs = (
     }
   }
 
-  bwrapArgs.push("--", command, ...args);
+  // When isolating, exec pasta as the outermost sandbox command; it owns the
+  // game's network namespace and execs the real payload inside it.
+  const payload = networkIsolation
+    ? buildPastaCommand(networkIsolation, command, args)
+    : { command, args };
+
+  bwrapArgs.push("--", payload.command, ...payload.args);
 
   return { command: BWRAP_PATH, args: bwrapArgs };
 };

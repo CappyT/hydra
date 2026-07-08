@@ -188,6 +188,7 @@ declare global {
     isGamescopeAvailable: () => Promise<boolean>;
     isMangohudAvailable: () => Promise<boolean>;
     isSandboxAvailable: () => Promise<boolean>;
+    isNetworkIsolationAvailable: () => Promise<boolean>;
     isWinetricksAvailable: () => Promise<boolean>;
     toggleGameSandbox: (
       shop: GameShop,
@@ -198,6 +199,11 @@ declare global {
       shop: GameShop,
       objectId: string,
       sandboxShareIpc: boolean
+    ) => Promise<void>;
+    toggleGameNetworkIsolation: (
+      shop: GameShop,
+      objectId: string,
+      networkIsolationDisabled: boolean
     ) => Promise<void>;
     updateGameSandboxPaths: (
       shop: GameShop,

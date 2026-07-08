@@ -28,6 +28,8 @@ interface CompatibilitySettingsSectionProps {
   sandboxAvailable: boolean;
   sandboxEnabled: boolean;
   sandboxShareIpc: boolean;
+  networkIsolationAvailable: boolean;
+  networkIsolationEnabled: boolean;
   sandboxExtraPaths: string[];
   mangohudSiteUrl: string;
   gamemodeSiteUrl: string;
@@ -39,6 +41,7 @@ interface CompatibilitySettingsSectionProps {
   onChangeGamescopeState: (value: boolean) => Promise<void>;
   onChangeSandboxState: (value: boolean) => Promise<void>;
   onChangeSandboxShareIpc: (value: boolean) => Promise<void>;
+  onChangeNetworkIsolation: (value: boolean) => Promise<void>;
   onAddSandboxPath: () => Promise<void>;
   onRemoveSandboxPath: (path: string) => Promise<void>;
   onChangeProtonVersion: (value: string) => void;
@@ -61,6 +64,8 @@ export function CompatibilitySettingsSection({
   sandboxAvailable,
   sandboxEnabled,
   sandboxShareIpc,
+  networkIsolationAvailable,
+  networkIsolationEnabled,
   sandboxExtraPaths,
   mangohudSiteUrl,
   gamemodeSiteUrl,
@@ -72,6 +77,7 @@ export function CompatibilitySettingsSection({
   onChangeGamescopeState,
   onChangeSandboxState,
   onChangeSandboxShareIpc,
+  onChangeNetworkIsolation,
   onAddSandboxPath,
   onRemoveSandboxPath,
   onChangeProtonVersion,
@@ -361,6 +367,45 @@ export function CompatibilitySettingsSection({
               />
               <h4 className="game-options-modal__header-description">
                 {t("sandbox_share_ipc_description")}
+              </h4>
+            </div>
+
+            <div className="game-options-modal__sandbox-ipc-toggle">
+              <CheckboxField
+                label={
+                  <span
+                    className={`game-options-modal__sandbox-label ${
+                      !networkIsolationAvailable
+                        ? "game-options-modal__sandbox-label--disabled"
+                        : ""
+                    }`}
+                    data-tooltip-id={
+                      !networkIsolationAvailable
+                        ? "network-isolation-unavailable-tooltip"
+                        : undefined
+                    }
+                    data-tooltip-content={
+                      !networkIsolationAvailable
+                        ? t("network_isolation_unavailable_tooltip")
+                        : undefined
+                    }
+                  >
+                    {t("enable_network_isolation")}
+                  </span>
+                }
+                checked={networkIsolationEnabled && networkIsolationAvailable}
+                disabled={!networkIsolationAvailable}
+                onChange={(event) =>
+                  onChangeNetworkIsolation(event.target.checked)
+                }
+              />
+
+              {!networkIsolationAvailable && (
+                <Tooltip id="network-isolation-unavailable-tooltip" />
+              )}
+
+              <h4 className="game-options-modal__header-description">
+                {t("network_isolation_description")}
               </h4>
             </div>
 

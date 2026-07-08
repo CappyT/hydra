@@ -45,7 +45,10 @@ export function SettingsContextCompatibility() {
   const [mangohudAvailable, setMangohudAvailable] = useState(false);
   const [enableSandbox, setEnableSandbox] = useState(true);
   const [enableSeccomp, setEnableSeccomp] = useState(true);
+  const [enableNetworkIsolation, setEnableNetworkIsolation] = useState(true);
   const [sandboxAvailable, setSandboxAvailable] = useState(false);
+  const [networkIsolationAvailable, setNetworkIsolationAvailable] =
+    useState(false);
 
   useEffect(() => {
     if (!shouldShowCommonRedist) return;
@@ -87,6 +90,7 @@ export function SettingsContextCompatibility() {
     setAutoRunGamemode(userPreferences.autoRunGamemode ?? false);
     setEnableSandbox(userPreferences.disableSandbox !== true);
     setEnableSeccomp(userPreferences.disableSeccomp !== true);
+    setEnableNetworkIsolation(userPreferences.disableNetworkIsolation !== true);
     setDefaultWinePrefixPath(
       userPreferences.defaultWinePrefixPath ?? defaultWinePrefixBasePath
     );
@@ -113,6 +117,11 @@ export function SettingsContextCompatibility() {
       .isSandboxAvailable()
       .then(setSandboxAvailable)
       .catch(() => setSandboxAvailable(false));
+
+    window.electron
+      .isNetworkIsolationAvailable()
+      .then(setNetworkIsolationAvailable)
+      .catch(() => setNetworkIsolationAvailable(false));
   }, []);
 
   useEffect(() => {
@@ -440,6 +449,59 @@ export function SettingsContextCompatibility() {
 
                 <p className="settings-behavior__proton-description">
                   {t("seccomp_description")}
+                </p>
+              </div>
+
+              <div className="settings-behavior__sandbox-toggle">
+                <CheckboxField
+                  label={
+                    <span
+                      className={`settings-behavior__sandbox-label ${
+                        !networkIsolationAvailable
+                          ? "settings-behavior__sandbox-label--disabled"
+                          : ""
+                      }`}
+                      data-tooltip-id={
+                        !networkIsolationAvailable
+                          ? "settings-network-isolation-unavailable-tooltip"
+                          : undefined
+                      }
+                      data-tooltip-content={
+                        !networkIsolationAvailable
+                          ? t("network_isolation_unavailable_tooltip")
+                          : undefined
+                      }
+                    >
+                      {t("enable_network_isolation")}
+                    </span>
+                  }
+                  checked={
+                    enableNetworkIsolation &&
+                    enableSandbox &&
+                    networkIsolationAvailable
+                  }
+                  disabled={
+                    !sandboxAvailable ||
+                    !enableSandbox ||
+                    !networkIsolationAvailable
+                  }
+                  onChange={() =>
+                    setEnableNetworkIsolation((previousValue) => {
+                      const nextValue = !previousValue;
+                      updateUserPreferences({
+                        disableNetworkIsolation: !nextValue,
+                      });
+                      return nextValue;
+                    })
+                  }
+                />
+
+                {!networkIsolationAvailable && (
+                  <Tooltip id="settings-network-isolation-unavailable-tooltip" />
+                )}
+
+                <p className="settings-behavior__proton-description">
+                  {t("network_isolation_description")}
                 </p>
               </div>
             </div>

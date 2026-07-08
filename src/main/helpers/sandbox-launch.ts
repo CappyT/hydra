@@ -5,10 +5,20 @@ import type { Game, UserPreferences } from "@types";
 import { Sandbox } from "@main/services/sandbox";
 import { assertSandboxAvailable } from "@main/services/sandbox-command-builder";
 import { buildSeccompFilter } from "@main/services/sandbox-seccomp";
+import {
+  DNS_FORWARD_ADDRESS,
+  isNetworkIsolationAvailable,
+  isNetworkIsolationEnabled,
+  resolveHostResolver,
+  resolvePastaPath,
+  resolveSandboxResolvConfDest,
+  type SandboxNetworkIsolationOptions,
+} from "@main/services/sandbox-network";
 import { logger } from "@main/services/logger";
 import {
   sandboxHomesPath,
   sandboxMachineIdsPath,
+  sandboxResolvConfPath,
   sandboxSeccompFilterPath,
 } from "@main/constants";
 import type { ResolvedLaunchCommand } from "./resolve-launch-command";
@@ -33,7 +43,10 @@ type SeccompStdioEntry = "ignore" | "inherit" | "pipe" | number | null;
 
 type SandboxGame = Pick<
   Game,
-  "sandboxDisabled" | "sandboxExtraPaths" | "sandboxShareIpc"
+  | "sandboxDisabled"
+  | "sandboxExtraPaths"
+  | "sandboxShareIpc"
+  | "networkIsolationDisabled"
 >;
 
 export interface SandboxLaunchContext {
@@ -181,6 +194,78 @@ const isSeccompEnabled = (
   userPreferences: UserPreferences | null | undefined
 ): boolean => userPreferences?.disableSeccomp !== true;
 
+let cachedResolvConfPath: string | null = null;
+
+/**
+ * Writes (once per process) the generated resolv.conf bound into isolated
+ * sandboxes and returns its path, or undefined on failure. The single
+ * `nameserver` is pasta's DNS-forward address; pasta relays those queries to
+ * the real host resolver. On failure the caller drops the resolv.conf override
+ * (and the DNS-forward), so pasta falls back to its own DNS handling.
+ */
+const ensureSandboxResolvConf = (): string | undefined => {
+  if (cachedResolvConfPath) return cachedResolvConfPath;
+
+  try {
+    fs.mkdirSync(path.dirname(sandboxResolvConfPath), { recursive: true });
+    fs.writeFileSync(
+      sandboxResolvConfPath,
+      `nameserver ${DNS_FORWARD_ADDRESS}\noptions edns0\n`
+    );
+    cachedResolvConfPath = sandboxResolvConfPath;
+    return cachedResolvConfPath;
+  } catch (error) {
+    logger.warn("Failed to write sandbox resolv.conf", error);
+    return undefined;
+  }
+};
+
+let loggedPastaMissing = false;
+
+/**
+ * Resolves the network-isolation options for a sandboxed launch, or undefined
+ * when the game should keep the host network namespace. Isolation applies when
+ * it is not disabled (globally or per game) AND pasta is available. When pasta
+ * is desired but missing, logs once and returns undefined (the game launches
+ * with the host network, the previous behavior).
+ */
+const resolveNetworkIsolation = (
+  userPreferences: UserPreferences | null | undefined,
+  game: SandboxGame | null | undefined
+): SandboxNetworkIsolationOptions | undefined => {
+  if (!isNetworkIsolationEnabled(userPreferences, game)) return undefined;
+
+  const pastaPath = resolvePastaPath();
+  if (!pastaPath || !isNetworkIsolationAvailable()) {
+    if (!loggedPastaMissing) {
+      loggedPastaMissing = true;
+      logger.warn(
+        "Network isolation is enabled but pasta (passt) is not available; " +
+          "launching with the host network namespace. Install passt to isolate."
+      );
+    }
+    return undefined;
+  }
+
+  // Determine the host resolver up front (before the sandbox overlays its own
+  // resolv.conf). When known, forward DNS through pasta; otherwise fall back to
+  // pasta's default DNS handling with no override.
+  const hostResolver = resolveHostResolver();
+  const resolvConfSource = hostResolver ? ensureSandboxResolvConf() : undefined;
+
+  return {
+    pastaPath,
+    ...(hostResolver && resolvConfSource
+      ? {
+          dnsForwardAddress: DNS_FORWARD_ADDRESS,
+          hostResolver,
+          resolvConfSource,
+          resolvConfDest: resolveSandboxResolvConfDest(),
+        }
+      : {}),
+  };
+};
+
 /**
  * Opens the compiled seccomp filter for a sandboxed spawn. Returns the fd to
  * place at {@link SANDBOX_SECCOMP_FD} (via {@link withSeccompStdio}), or null
@@ -275,6 +360,8 @@ export const wrapWithSandbox = (
     ? ensureSeccompFilterFile()
     : undefined;
 
+  const networkIsolation = resolveNetworkIsolation(userPreferences, game);
+
   const { command, args } = Sandbox.wrapCommand({
     command: resolved.command,
     args: resolved.args,
@@ -292,6 +379,7 @@ export const wrapWithSandbox = (
     hideX11,
     machineIdFile,
     seccompFd: seccompFilterPath ? SANDBOX_SECCOMP_FD : undefined,
+    networkIsolation,
   });
 
   return {

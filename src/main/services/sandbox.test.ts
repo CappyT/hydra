@@ -6,10 +6,15 @@ import { after, before, describe, it } from "node:test";
 
 import {
   assertSandboxAvailable,
+  buildPastaCommand,
   buildSandboxArgs,
   isSandboxEnabled,
   SandboxUnavailableError,
 } from "./sandbox-command-builder.ts";
+import {
+  DNS_FORWARD_ADDRESS,
+  isNetworkIsolationEnabled,
+} from "./sandbox-network.ts";
 
 const BIND_FLAGS = new Set(["--bind", "--ro-bind", "--dev-bind"]);
 
@@ -621,5 +626,214 @@ describe("assertSandboxAvailable", () => {
   it("does not throw when the sandbox is disabled", () => {
     assert.doesNotThrow(() => assertSandboxAvailable(false, false));
     assert.doesNotThrow(() => assertSandboxAvailable(false, true));
+  });
+});
+
+describe("Sandbox network isolation (buildSandboxArgs)", () => {
+  let tmpRoot: string;
+  let gameDir: string;
+  let resolvConf: string;
+  const resolvConfDest = "/run/systemd/resolve/stub-resolv.conf";
+
+  const baseEnv = {
+    HOME: "/home/tester",
+    XDG_RUNTIME_DIR: "/run/user/1000",
+  };
+
+  before(() => {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sbx-net-"));
+    gameDir = path.join(tmpRoot, "game");
+    resolvConf = path.join(tmpRoot, "resolv.conf");
+    fs.mkdirSync(gameDir, { recursive: true });
+    fs.writeFileSync(resolvConf, `nameserver ${DNS_FORWARD_ADDRESS}\n`);
+  });
+
+  after(() => {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  // Built lazily: `resolvConf` is only assigned in before(), so referencing it
+  // at describe-body eval time would be "used before assigned".
+  const isolation = () => ({
+    pastaPath: "/usr/bin/pasta",
+    dnsForwardAddress: DNS_FORWARD_ADDRESS,
+    hostResolver: "127.0.0.53",
+    resolvConfSource: resolvConf,
+    resolvConfDest,
+  });
+
+  const commandAfterSeparator = (args: string[]) =>
+    args.slice(args.indexOf("--") + 1);
+
+  it("does not wrap with pasta and never unshares net without isolation", () => {
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: ["--foo"],
+      env: baseEnv,
+      gameDir,
+    });
+
+    assert.ok(!args.includes("--unshare-net"));
+    assert.deepEqual(commandAfterSeparator(args), ["/usr/bin/game", "--foo"]);
+    assert.ok(
+      !collectBindPairs(args).some((pair) => pair.dest === "/dev/net/tun")
+    );
+    assert.ok(
+      !collectBindPairs(args).some((pair) => pair.dest === resolvConfDest)
+    );
+  });
+
+  it("execs pasta as the outermost command, wrapping the real payload", () => {
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: ["--foo"],
+      env: baseEnv,
+      gameDir,
+      networkIsolation: isolation(),
+    });
+
+    // bwrap still never gets --unshare-net: pasta owns the namespace.
+    assert.ok(!args.includes("--unshare-net"));
+
+    // The bwrap payload is `pasta <opts> -- /usr/bin/game --foo`.
+    assert.deepEqual(commandAfterSeparator(args), [
+      "/usr/bin/pasta",
+      "--config-net",
+      "-t",
+      "none",
+      "-u",
+      "none",
+      "-T",
+      "none",
+      "-U",
+      "none",
+      "--no-map-gw",
+      "--dns-forward",
+      DNS_FORWARD_ADDRESS,
+      "--dns-host",
+      "127.0.0.53",
+      "--",
+      "/usr/bin/game",
+      "--foo",
+    ]);
+  });
+
+  it("binds the generated resolv.conf over the host resolver path", () => {
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: baseEnv,
+      gameDir,
+      networkIsolation: isolation(),
+    });
+
+    const bind = collectBindPairs(args).find(
+      (pair) => pair.dest === resolvConfDest
+    );
+    assert.ok(bind, "expected the resolv.conf override bind");
+    assert.equal(bind.flag, "--ro-bind");
+    assert.equal(bind.source, resolvConf);
+  });
+
+  it("binds /dev/net/tun when the host provides it", () => {
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: baseEnv,
+      gameDir,
+      networkIsolation: isolation(),
+    });
+
+    // Tolerate the node being absent (mirrors how nvidia devices are handled).
+    if (fs.existsSync("/dev/net/tun")) {
+      assert.ok(hasBind(args, "--dev-bind", "/dev/net/tun"));
+    }
+  });
+
+  it("omits DNS flags and the resolv bind when no host resolver is known", () => {
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: baseEnv,
+      gameDir,
+      networkIsolation: { pastaPath: "/usr/bin/pasta" },
+    });
+
+    const payload = commandAfterSeparator(args);
+    assert.equal(payload[0], "/usr/bin/pasta");
+    assert.ok(!payload.includes("--dns-forward"));
+    assert.ok(!payload.includes("--dns-host"));
+    assert.ok(
+      !collectBindPairs(args).some((pair) => pair.dest === resolvConfDest)
+    );
+  });
+});
+
+describe("buildPastaCommand", () => {
+  it("disables all port forwarding both ways and forwards DNS", () => {
+    const { command, args } = buildPastaCommand(
+      {
+        pastaPath: "/usr/bin/pasta",
+        dnsForwardAddress: DNS_FORWARD_ADDRESS,
+        hostResolver: "127.0.0.53",
+      },
+      "/usr/bin/game",
+      ["--foo"]
+    );
+
+    assert.equal(command, "/usr/bin/pasta");
+    for (const flag of ["-t", "-u", "-T", "-U"]) {
+      const index = args.indexOf(flag);
+      assert.ok(index >= 0, `expected ${flag}`);
+      assert.equal(args[index + 1], "none");
+    }
+    // Gateway-address remap must be off or host loopback services stay
+    // reachable via the gateway IP even with all port forwarding disabled.
+    assert.ok(args.includes("--no-map-gw"));
+    assert.deepEqual(args.slice(args.indexOf("--") + 1), [
+      "/usr/bin/game",
+      "--foo",
+    ]);
+  });
+
+  it("omits --dns-host when no host resolver is provided", () => {
+    const { args } = buildPastaCommand(
+      { pastaPath: "/usr/bin/pasta", dnsForwardAddress: DNS_FORWARD_ADDRESS },
+      "/usr/bin/game",
+      []
+    );
+
+    assert.ok(args.includes("--dns-forward"));
+    assert.ok(!args.includes("--dns-host"));
+  });
+});
+
+describe("isNetworkIsolationEnabled", () => {
+  it("defaults to enabled when nothing is configured", () => {
+    assert.equal(isNetworkIsolationEnabled(null, null), true);
+  });
+
+  it("respects the global disable preference", () => {
+    assert.equal(
+      isNetworkIsolationEnabled({ disableNetworkIsolation: true }, null),
+      false
+    );
+  });
+
+  it("lets a per-game override win over the global preference", () => {
+    assert.equal(
+      isNetworkIsolationEnabled(
+        { disableNetworkIsolation: true },
+        { networkIsolationDisabled: false }
+      ),
+      true
+    );
+    assert.equal(
+      isNetworkIsolationEnabled(
+        { disableNetworkIsolation: false },
+        { networkIsolationDisabled: true }
+      ),
+      false
+    );
   });
 });

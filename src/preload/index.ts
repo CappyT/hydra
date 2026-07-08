@@ -518,6 +518,8 @@ contextBridge.exposeInMainWorld("electron", {
   isGamescopeAvailable: () => ipcRenderer.invoke("isGamescopeAvailable"),
   isMangohudAvailable: () => ipcRenderer.invoke("isMangohudAvailable"),
   isSandboxAvailable: () => ipcRenderer.invoke("isSandboxAvailable"),
+  isNetworkIsolationAvailable: () =>
+    ipcRenderer.invoke("isNetworkIsolationAvailable"),
   isWinetricksAvailable: () => ipcRenderer.invoke("isWinetricksAvailable"),
   toggleGameSandbox: (
     shop: GameShop,
@@ -530,6 +532,17 @@ contextBridge.exposeInMainWorld("electron", {
     sandboxShareIpc: boolean
   ) =>
     ipcRenderer.invoke("toggleGameSandboxIpc", shop, objectId, sandboxShareIpc),
+  toggleGameNetworkIsolation: (
+    shop: GameShop,
+    objectId: string,
+    networkIsolationDisabled: boolean
+  ) =>
+    ipcRenderer.invoke(
+      "toggleGameNetworkIsolation",
+      shop,
+      objectId,
+      networkIsolationDisabled
+    ),
   updateGameSandboxPaths: (
     shop: GameShop,
     objectId: string,

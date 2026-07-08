@@ -63,6 +63,15 @@ export const sandboxSeccompFilterPath = path.join(
   "seccomp-filter.bpf"
 );
 
+// Generated resolv.conf ro-bound into network-isolated sandboxes. It points at
+// pasta's DNS-forward address (see sandbox-network.ts) because the host's real
+// resolver usually lives on the loopback (127.0.0.53), which is unreachable
+// from inside the game's fresh network namespace.
+export const sandboxResolvConfPath = path.join(
+  SystemPath.getPath("userData"),
+  "sandbox-resolv.conf"
+);
+
 export const appVersion = app.getVersion() + (isStaging ? "-staging" : "");
 
 export const ASSETS_PATH = path.join(SystemPath.getPath("userData"), "Assets");

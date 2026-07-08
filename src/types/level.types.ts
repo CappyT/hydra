@@ -79,6 +79,14 @@ export interface Game {
   sandboxDisabled?: boolean;
   sandboxExtraPaths?: string[];
   sandboxShareIpc?: boolean;
+  /**
+   * Per-game network-isolation preference (tri-state): `null`/`undefined` means
+   * follow the global default; an explicit `true`/`false` is the user's choice
+   * and always wins over the global `disableNetworkIsolation` preference. When
+   * isolated, the game runs in its own network namespace (pasta userspace NAT):
+   * host loopback services become unreachable and internet/LAN still work.
+   */
+  networkIsolationDisabled?: boolean | null;
   favorite?: boolean;
   isPinned?: boolean;
   achievementCount?: number;
@@ -212,6 +220,13 @@ export interface UserPreferences {
    * (`disableSandbox`) also disables seccomp.
    */
   disableSeccomp?: boolean;
+  /**
+   * Global kill-switch for sandbox network isolation. Default falsy = isolation
+   * ON (when the sandbox is enabled and pasta is available). When true,
+   * sandboxed games keep the host network namespace instead of running in their
+   * own pasta-provided one. A per-game `networkIsolationDisabled` override wins.
+   */
+  disableNetworkIsolation?: boolean;
   hideClassicsBookmark?: boolean;
   classicsUseHeroLayout?: boolean;
   backupBackend?: "local" | "rclone";
