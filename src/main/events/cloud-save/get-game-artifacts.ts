@@ -15,7 +15,17 @@ const getGameArtifacts = async (
   const backend = await getArtifactBackend();
   const artifacts = await backend.list(shop, objectId);
 
-  return artifacts.map(localArtifactToGameArtifact);
+  // The backends list artifacts in filesystem order; sort newest-first so the
+  // UI always shows the most recent backup at the top.
+  const toMs = (iso: string) => {
+    const ms = Date.parse(iso);
+    return Number.isNaN(ms) ? 0 : ms;
+  };
+
+  return artifacts
+    .slice()
+    .sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt))
+    .map(localArtifactToGameArtifact);
 };
 
 registerEvent("getGameArtifacts", getGameArtifacts);
