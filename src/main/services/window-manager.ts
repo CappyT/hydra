@@ -1036,13 +1036,28 @@ export class WindowManager {
         });
 
       const recentlyPlayedGames: Array<MenuItemConstructorOptions | MenuItem> =
-        games.map(({ title, executablePath }) => ({
-          label: title.length > 18 ? `${title.slice(0, 18)}…` : title,
+        games.map((game) => ({
+          label:
+            game.title.length > 18
+              ? `${game.title.slice(0, 18)}…`
+              : game.title,
           type: "normal",
           click: async () => {
-            if (!executablePath) return;
+            if (!game.executablePath) return;
 
-            shell.openPath(executablePath);
+            // Route through the real launch flow (Proton/umu wrapping, the
+            // bwrap sandbox, gamescope, save sync) — the same path the play
+            // button and deep link use. shell.openPath would hand the raw .exe
+            // to the desktop handler (Bottles/wine), bypassing the sandbox and
+            // every launch wrapper. Imported lazily to avoid a load-time cycle
+            // (launch-game imports this service).
+            const { launchGame } = await import("@main/helpers/launch-game");
+            await launchGame({
+              shop: game.shop,
+              objectId: game.objectId,
+              executablePath: game.executablePath,
+              launchOptions: game.launchOptions,
+            });
           },
         }));
 
