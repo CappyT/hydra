@@ -44,8 +44,27 @@ git remote add upstream https://github.com/hydralauncher/hydra.git
   afterwards to regenerate `yarn.lock`.
 - **`.github/workflows/*`** — keep the fork's CI. Upstream's signing/telemetry/publish steps
   are intentionally removed here; do not reintroduce them when resolving.
-- **`electron-builder.yml`** — keep the fork's packaging config (Linux targets, no upstream
-  code signing / auto-update endpoints).
+- **`electron-builder.yml`** — keep the fork's packaging config. The Linux target is
+  **AppImage only** (deb/rpm dropped for build speed — the fork only ships AppImage); no
+  upstream code signing / auto-update endpoints.
+
+### CI workflows
+
+The fork's CI is kept lean for fast release turnaround:
+
+- **`build.yml`** — a single build-smoke job on PRs and `main` pushes (the upstream
+  second `build-production` job was removed; release artifacts come from `release.yml`).
+- **`release.yml`** — triggered by pushing a `release/**` branch; builds the AppImage,
+  derives the tag `v<package.json version>`, and creates a **draft** release with the
+  AppImage + `latest-linux.yml` + `.blockmap` (needed for auto-update). Publish the draft
+  manually, or via `gh release edit v<version> --draft=false --latest`. Redundant steps
+  (rpm tooling, a duplicate Python-RPC build already done by `build:linux`, and the
+  duplicate `upload-artifact`) were removed; Python setup + `build:linux` (which builds the
+  Python RPC and native addon) are retained.
+
+To cut a release: `git push origin main:release/<version>` (fast-forward), let the workflow
+build the draft, then publish it. To replace a bad release, delete the release + tag first
+(`gh release delete v<version> --yes`; `git push origin :refs/tags/v<version>`).
 
 ### After merging
 
@@ -171,16 +190,32 @@ tri-state override in the game options modal (a per-game choice wins over the
 global default). If isolation is wanted but `pasta` is missing, the game
 launches with the host network and a one-time warning is logged.
 
-Because an unprivileged bwrap cannot hand its netns to a pasta running in the
-init user namespace, **pasta runs as the outermost command *inside* bwrap**:
-bwrap sets up every other namespace but keeps the host network, then execs
-`pasta … -- <game>`. pasta creates a fresh user+net namespace and bridges it to
-the host with a userspace tap. All port forwarding is disabled both ways
-(`-t none -u none -T none -U none`) and **`--no-map-gw`** is passed so host
+**Architecture — a single user namespace (podman-rootless style).** The obvious
+design (`bwrap --unshare-net` + pasta attaching from the init user namespace)
+does NOT work unprivileged: pasta gets EPERM joining bwrap's netns. Running pasta
+as the *outermost* command inside bwrap also fails in practice — it creates a
+SECOND user namespace (mapping uid 1000→0), and stacking two user namespaces
+breaks the *nested* unprivileged user namespaces that gamescope's GTK/glycin
+image loaders and Proton's pressure-vessel need (games crash with `code=139`).
+
+The working design keeps ONE user namespace (bwrap's). bwrap is NOT given
+`--unshare-net`; it is granted `CAP_NET_ADMIN` + `CAP_SYS_ADMIN` for the setup
+phase and its payload is an in-sandbox wrapper
+(`NETWORK_ISOLATION_WRAPPER` in `src/main/services/sandbox-command-builder.ts`)
+that: (1) opens a fresh netns in bwrap's own userns via an `unshare --net`
+placeholder, (2) services it with `pasta --config-net --netns <ns>` in ATTACH
+mode (pasta does not exec the game), and (3) runs the game inside that netns with
+ALL capabilities dropped (`nsenter` + `setpriv --inh-caps=-all
+--ambient-caps=-all`), so the game ends up at `CapEff=0`. All port forwarding is
+disabled both ways (`-t/-u/-T/-U none`) and **`--no-map-gw`** is passed so host
 loopback services stay unreachable via the gateway IP; internet and LAN still
 work through pasta's NAT. DNS is forwarded to the host resolver
 (`--dns-forward` / `--dns-host`) via a generated `resolv.conf` bound into the
-sandbox. See `src/main/services/sandbox-network.ts`.
+sandbox. pasta/placeholder die with the sandbox pid namespace (no orphans). The
+game itself runs with zero capabilities, so nested user namespaces work and the
+posture matches the pre-isolation sandbox. See
+`src/main/services/sandbox-network.ts` and the `HYDRA_PASTA_*` env the builder
+sets.
 
 ### Launch logging
 
@@ -188,3 +223,71 @@ Every sandboxed launch logs one concise line each for both hardening layers
 (via the app's `main` logger, `logs.txt`/`info.txt`): the effective seccomp
 state — `level/mode (from game|global)` or `disabled` — and the network state —
 `isolated (pasta)`, `disabled (pasta unavailable)`, or `disabled`.
+
+## Gamescope integration
+
+When `gamescope` is on `PATH` it wraps launched games (per-game `useGamescope`
+tri-state, effectively on when the binary is detected). gamescope in nested mode
+defaults its internal render size to 1280×720 and upscales, so without explicit
+dimensions every game runs at 720p — and at the wrong aspect ratio on a
+non-16:9 monitor. `src/main/helpers/resolve-gamescope-wrapper.ts` sizes it to the
+CURRENT display on every launch: `-W/-H` (output) and `-w/-h` (internal render)
+are both set to the display's physical resolution (`display.size ×
+scaleFactor` from Electron's `screen` API) and `-r` to the refresh rate.
+
+Refresh detection is layered because Electron's `displayFrequency` reports 0 on
+GNOME/KDE Wayland: it tries Electron first (correct on X11), then falls back to
+parsing `xrandr --current` (the `*`-marked mode, correct on X11 and
+XWayland-backed Wayland), then omits `-r` (gamescope's 60 Hz default) as a last
+resort. All four gamescope call sites (native, wine, classics, umu) use the
+shared `buildGamescopeWrapper()`. Note: some engines self-cap (e.g. Hollow
+Knight/Unity is locked to 60 fps regardless of what gamescope advertises).
+
+## Save synchronization (Steam-Cloud-like)
+
+Backups use the local artifact store (`src/main/services/backup/`, local
+directory or rclone backend); each backup is a `.tar` + `.json` sidecar with a
+random `id`, `createdAt`, `hostname`, and a stable per-install `deviceId`.
+Enabled per game via `automaticCloudSync`.
+
+- **Sync-in before launch, back up on exit.** `CloudSync.syncOnLaunch` is
+  awaited at the start of `launchGame` BEFORE the game spawns; the close-backup
+  runs in `process-watcher` on exit. (Backing up on open was a bug — it would
+  overwrite a newer cross-device backup.)
+- **Marker-based, data-safe decisions** (pure logic in
+  `src/main/services/backup/sync-planner.ts`, `decideLaunchSync`). `Game.lastSyncedBackupAt`
+  is the createdAt of the backup this machine is in sync with. On launch: no
+  backups → nothing; marker unset → adopt the latest as baseline WITHOUT
+  restoring (migration safety — never overwrite possibly-newer local saves on
+  first run); latest newer than the marker → restore; otherwise skip (protects a
+  crashed session's local progress from being overwritten).
+- **Retention.** After each close-backup, prune to N (`Game.backupsToKeep` ??
+  `UserPreferences.defaultBackupsToKeep` ?? 10), keeping the newest N non-frozen
+  plus ALL frozen artifacts. The backups list (game options → Backup) is sorted
+  newest-first and shows each backup's `hostname` with a "This PC" badge for this
+  device's own backups; restore any of them manually to roll back.
+- **Cross-device conflict detection.** `Game.unsyncedSince` is set when a play
+  session starts and cleared on a clean close-backup, so it stays set only after
+  a crash (local divergence). If, on launch, a newer backup exists from ANOTHER
+  device AND this device has local divergence, that is a true conflict. It is
+  resolved **keep-both** (no blocking prompt, zero data loss): this device's
+  interrupted saves are backed up FIRST as a **frozen** artifact (retention never
+  auto-deletes it), then the newer remote is restored and the user is warned via
+  a toast. If that safety backup fails, the remote is NOT restored — local saves
+  are kept intact and the conflict is retried next launch.
+
+## Tray launches
+
+The system-tray recent-games menu (`src/main/services/window-manager.ts`) routes
+clicks through `launchGame` — the same path as the library Play button and the
+deep link — so Proton/umu wrapping, the bwrap sandbox, gamescope and save sync
+all apply. It must never `shell.openPath` the raw executable, which would hand
+the `.exe` to the desktop handler and bypass the sandbox entirely.
+
+## Startup dependency check
+
+At startup the main process checks whether `bwrap`, `pasta` and `gamescope` are
+on `PATH` (`src/main/helpers/host-dependencies.ts`) and, if any are missing,
+shows one non-blocking warning toast naming what each absence disables (bwrap →
+sandbox can't run; pasta → network isolation disabled; gamescope → wrapper
+unavailable). Linux-only; silent when all three are present.
