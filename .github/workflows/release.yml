@@ -62,12 +62,6 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      - name: Build Python RPC with cx_Freeze
-        run: python python_rpc/setup.py build
-
-      - name: Install rpm tooling
-        run: sudo apt-get update && sudo apt-get install -y rpm
-
       - name: Cache Electron and electron-builder
         uses: actions/cache@v4
         with:
@@ -94,18 +88,6 @@ jobs:
           RENDERER_VITE_TORBOX_REFERRAL_CODE: ${{ vars.RENDERER_VITE_TORBOX_REFERRAL_CODE }}
           MAIN_VITE_LAUNCHER_SUBDOMAIN: ${{ vars.MAIN_VITE_LAUNCHER_SUBDOMAIN }}
 
-      - name: Create artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Build-${{ matrix.os }}
-          path: |
-            dist/*.AppImage
-            dist/*.deb
-            dist/*.rpm
-            dist/*.tar.gz
-            dist/latest-linux.yml
-            dist/*.blockmap
-
       # The workflow runs on release/** branch pushes, so there is no tag in
       # the ref; gh-release requires one. Derive it from the app version.
       - name: Read app version
@@ -120,9 +102,6 @@ jobs:
           name: v${{ steps.app_version.outputs.version }}
           files: |
             dist/*.AppImage
-            dist/*.deb
-            dist/*.rpm
-            dist/*.tar.gz
             dist/latest-linux.yml
             dist/*.blockmap
         env:

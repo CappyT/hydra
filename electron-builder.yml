@@ -28,8 +28,6 @@ linux:
     - from: binaries/umu/umu-run
   target:
     - AppImage
-    - deb
-    - rpm
   maintainer: electronjs.org
   category: Game
   mimeTypes:
