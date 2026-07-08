@@ -3,25 +3,31 @@
  * package). Self-contained and electron/logger-free so the argv/preference
  * logic stays unit-testable in isolation, mirroring sandbox-seccomp.ts.
  *
- * ## Why pasta wraps bwrap (and not the reverse)
- * The obvious design — `bwrap --unshare-net` creating the namespace and pasta
- * attaching to the sandbox pid — does NOT work with an unprivileged bwrap: the
- * new netns is owned by bwrap's user namespace, and pasta (running in the init
- * user namespace) gets EPERM trying to `setns()` into it. Verified on the host.
+ * ## Single-user-namespace design (podman-rootless style)
+ * The obvious design — `bwrap --unshare-net` plus pasta attaching from outside —
+ * does NOT work: the bwrap-created netns is owned by bwrap's user namespace and
+ * pasta (in the init userns) gets EPERM on `setns()`. The previous fix — running
+ * `pasta ... -- <game>` as the OUTERMOST command — worked for the network but
+ * made pasta create a SECOND user namespace (uid 1000→0), which blocks nested
+ * unprivileged user namespaces and crashes gamescope (glycin's nested bwrap) and
+ * Proton's pressure-vessel. Verified on the host.
  *
- * Instead pasta runs as the OUTERMOST command inside the sandbox: bwrap sets up
- * every other namespace (pid/mount/ipc/...) but keeps the host network
- * namespace, then execs `pasta ... -- <game>`. pasta, running as the mapped
- * root inside bwrap's user namespace, creates a fresh user+net namespace for
- * the game and bridges it to the host with a userspace tap. From the game's
- * point of view: host loopback services (CUPS, Discord RPC, dev servers) are
- * unreachable, the host X11 abstract socket (netns-scoped) is unreachable, and
- * internet + LAN still work through pasta's NAT.
+ * Instead everything stays in bwrap's ONE user namespace. bwrap keeps the host
+ * network namespace but is granted CAP_NET_ADMIN + CAP_SYS_ADMIN and runs an
+ * in-sandbox wrapper (see NETWORK_ISOLATION_WRAPPER) that: opens a fresh netns
+ * in the SAME userns (a placeholder process), services it with pasta in ATTACH
+ * mode (`--netns`), then runs the game inside that netns with all capabilities
+ * dropped. No second userns is ever created, so the game's own nested
+ * unprivileged userns keep working. From the game's point of view: host loopback
+ * services (CUPS, Discord RPC, dev servers) and the host X11 abstract socket
+ * (netns-scoped) are unreachable, while internet + LAN still work through pasta's
+ * NAT.
  *
- * Because pasta lives INSIDE bwrap's pid namespace, the bwrap wrapper stays the
- * tracked process and Sandbox.killSandboxTree reaps pasta together with the
- * game (killing the pid-namespace init tears down the whole tree). No orphan
- * pasta survives.
+ * The wrapper, the placeholder and pasta all live INSIDE bwrap's pid namespace,
+ * so the bwrap wrapper stays the tracked process and Sandbox.killSandboxTree
+ * reaps them together with the game (killing the pid-namespace init tears down
+ * the whole tree); pasta additionally exits when the netns is released. No
+ * orphan survives.
  */
 
 import fs from "node:fs";
@@ -98,6 +104,11 @@ export const isNetworkIsolationAvailable = (): boolean =>
  * Preference logic for network isolation (tri-state, per-game wins over
  * global), mirroring {@link isSandboxEnabled}. This is only the ON/OFF wish:
  * callers AND it with the sandbox being enabled and pasta being available.
+ *
+ * Isolation is ON BY DEFAULT (opt-out, paranoia-first): an absent/unset global
+ * preference means ENABLED; the user must explicitly set `disableNetworkIsolation`
+ * to turn it off globally. A per-game `networkIsolationDisabled` override wins
+ * over the global preference in either direction.
  */
 export const isNetworkIsolationEnabled = (
   userPreferences: UserPreferences | null | undefined,

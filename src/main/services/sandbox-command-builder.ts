@@ -8,51 +8,117 @@ import type { SandboxNetworkIsolationOptions } from "./sandbox-network";
 
 export const BWRAP_PATH = "/usr/bin/bwrap";
 
+/** Shell that runs the in-sandbox network-isolation wrapper. It lives under the
+ *  read-only /usr bind, so it is always present inside the sandbox. */
+export const WRAPPER_SHELL_PATH = "/usr/bin/bash";
+
 /**
- * Wraps a command so it runs inside pasta's isolated network namespace:
- * `pasta <opts> -- <command> <args>`. Port forwarding is fully disabled in both
- * directions (`-t/-u/-T/-U none`) so the game's loopback cannot reach any
- * host-local service and vice-versa; outbound internet/LAN still works via NAT.
- * When a host resolver is known, DNS is forwarded through pasta.
+ * In-sandbox setup script for network isolation (podman-rootless style). It runs
+ * inside bwrap's SINGLE user namespace, in the host network namespace, holding
+ * CAP_NET_ADMIN + CAP_SYS_ADMIN (granted by bwrap `--cap-add`). It then:
+ *   1. opens a fresh network namespace in that SAME userns (a placeholder
+ *      `unshare --net -- sleep infinity`),
+ *   2. hands the netns to pasta in ATTACH mode (`--netns`) for userspace NAT —
+ *      pasta services the namespace and does NOT exec the game,
+ *   3. runs the real game inside the netns with every capability dropped
+ *      (`nsenter` + `setpriv`), so the game ends up at CapEff=CapPrm=0.
+ *
+ * Keeping ONE user namespace (never letting pasta create its own, which the old
+ * outermost `pasta -- <game>` design did) is what lets the game's own nested
+ * unprivileged user namespaces — gamescope's glycin bwrap, Proton's
+ * pressure-vessel — still work. pasta's path and DNS targets arrive via env
+ * (`HYDRA_PASTA_*`, set with bwrap `--setenv`) so nothing is interpolated into
+ * this script; the game command + args arrive as the script's positional
+ * parameters (`"$@"`). On any setup failure it fails OPEN (runs the game in the
+ * host netns) so isolation never turns a launch into a dead one, and every wait
+ * is bounded so it can never hang.
  */
-export const buildPastaCommand = (
-  isolation: SandboxNetworkIsolationOptions,
+export const NETWORK_ISOLATION_WRAPPER = `set -u
+_pasta="\${HYDRA_PASTA_BIN:-/usr/bin/pasta}"
+_ph=""
+_pasta_pid=""
+
+# Fail-open: run the game unisolated (host netns) rather than block the launch.
+_fail_open() {
+  msg="$1"; shift
+  echo "[hydra-net] \${msg}; launching without network isolation" >&2
+  [ -n "$_ph" ] && kill "$_ph" 2>/dev/null
+  [ -n "$_pasta_pid" ] && kill "$_pasta_pid" 2>/dev/null
+  exec "$@"
+}
+
+# 1) Placeholder holding a fresh netns in THIS userns (needs CAP_SYS_ADMIN).
+/usr/bin/unshare --net -- /usr/bin/sleep infinity &
+_ph=$!
+_netns="/proc/\${_ph}/ns/net"
+
+_ready=0
+for ((i = 0; i < 50; i++)); do
+  [ -e "$_netns" ] && { _ready=1; break; }
+  /usr/bin/sleep 0.1
+done
+[ "$_ready" = 1 ] || _fail_open "unshare --net produced no netns" "$@"
+
+# 2) pasta services that netns in ATTACH mode (does NOT exec the game). Run it
+# in the FOREGROUND (-f) so the captured pid is the real, long-lived pasta (by
+# default pasta double-forks into the background and this pid would exit right
+# after setup). Port forwarding is off both ways and the gateway-address remap
+# is disabled, so no host loopback service is reachable; internet/LAN still
+# route through the NAT.
+"$_pasta" --config-net --quiet -f -t none -u none -T none -U none --no-map-gw \\
+  \${HYDRA_PASTA_DNS_FORWARD:+--dns-forward "$HYDRA_PASTA_DNS_FORWARD"} \\
+  \${HYDRA_PASTA_DNS_HOST:+--dns-host "$HYDRA_PASTA_DNS_HOST"} \\
+  --netns "$_netns" &
+_pasta_pid=$!
+
+# Wait (bounded) for pasta. Fail open ONLY if pasta exits during setup (e.g.
+# bad args): as long as it is alive it is servicing the netns. Once a
+# non-loopback interface shows up we proceed immediately (fast path); if the
+# probe stays inconclusive but pasta is alive we still proceed, isolated.
+_alive=0
+for ((i = 0; i < 30; i++)); do
+  kill -0 "$_pasta_pid" 2>/dev/null || { _alive=0; break; }
+  _alive=1
+  if /usr/bin/nsenter --net="$_netns" -- /usr/bin/cat /proc/net/dev 2>/dev/null \\
+      | /usr/bin/grep -qvE '^(Inter-|[[:space:]]*face|[[:space:]]*lo:)'; then
+    break
+  fi
+  /usr/bin/sleep 0.1
+done
+[ "$_alive" = 1 ] || _fail_open "pasta exited during setup" "$@"
+
+# 3) Enter the netns (CAP_SYS_ADMIN), then drop ALL capabilities before the
+# game: clearing the ambient+inheritable sets leaves CapEff=CapPrm=0, which the
+# game's own nested bwrap (gamescope/pressure-vessel) requires.
+/usr/bin/nsenter --net="$_netns" -- \\
+  /usr/bin/setpriv --inh-caps=-all --ambient-caps=-all -- "$@"
+_rc=$?
+
+kill "$_ph" 2>/dev/null
+exit "$_rc"
+`;
+
+/**
+ * Wraps the game so it launches through {@link NETWORK_ISOLATION_WRAPPER}:
+ * `bash -c <script> hydra-net-wrapper <game> <args...>`. The game command and
+ * its args are passed as positional parameters (argv), NOT interpolated into the
+ * script, so game paths/args never need quoting or escaping. The
+ * `hydra-net-wrapper` token becomes `$0` (a label in diagnostics); the game argv
+ * becomes `"$@"`.
+ */
+export const buildNetworkIsolationPayload = (
   command: string,
   args: string[]
-): { command: string; args: string[] } => {
-  const { pastaPath, dnsForwardAddress, hostResolver } = isolation;
-
-  const pastaArgs: string[] = [
-    // Configure the new namespace: bring up the tap, copy host addresses/routes.
-    "--config-net",
-    // Disable ALL port forwarding both ways so no loopback service is bridged.
-    "-t",
-    "none",
-    "-u",
-    "none",
-    "-T",
-    "none",
-    "-U",
-    "none",
-    // Port forwarding off is NOT enough: pasta also remaps connections to the
-    // gateway ADDRESS onto the host by default, re-exposing every host
-    // loopback service (live-verified: CUPS answered on <gw>:631 with all
-    // forwarding disabled). Traffic THROUGH the gateway (internet/LAN
-    // routing) is unaffected by disabling that remap.
-    "--no-map-gw",
-  ];
-
-  if (dnsForwardAddress) {
-    pastaArgs.push("--dns-forward", dnsForwardAddress);
-  }
-  if (hostResolver) {
-    pastaArgs.push("--dns-host", hostResolver);
-  }
-
-  pastaArgs.push("--", command, ...args);
-
-  return { command: pastaPath, args: pastaArgs };
-};
+): { command: string; args: string[] } => ({
+  command: WRAPPER_SHELL_PATH,
+  args: [
+    "-c",
+    NETWORK_ISOLATION_WRAPPER,
+    "hydra-net-wrapper",
+    command,
+    ...args,
+  ],
+});
 
 export class SandboxUnavailableError extends Error {
   code = "SANDBOX_UNAVAILABLE" as const;
@@ -141,15 +207,18 @@ export interface SandboxWrapOptions {
    */
   seccompFd?: number;
   /**
-   * When set, the game is network-isolated: bwrap keeps the host network
-   * namespace but execs pasta as the outermost command, which drops the game
-   * into its own fresh network namespace with userspace NAT. This adds a
-   * `/dev/net/tun` bind (pasta needs it to create the tap), binds a generated
-   * resolv.conf, and wraps the payload with `pasta ... --`. bwrap itself is
-   * deliberately NOT given `--unshare-net` (pasta owns the namespace; an
-   * unprivileged bwrap-created netns is not joinable by pasta). Omitted when
-   * isolation is disabled or pasta is unavailable — then the game keeps the
-   * host network namespace, the exact previous behavior.
+   * When set, the game is network-isolated in podman-rootless style, inside
+   * bwrap's SINGLE user namespace. bwrap keeps the host network namespace but
+   * (1) is granted CAP_NET_ADMIN + CAP_SYS_ADMIN, (2) binds `/dev/net/tun` and a
+   * generated resolv.conf, (3) is handed pasta's path + DNS targets via
+   * `--setenv HYDRA_PASTA_*`, and (4) runs {@link NETWORK_ISOLATION_WRAPPER} as
+   * its payload. That wrapper opens a fresh netns in the SAME userns, services
+   * it with pasta in attach mode, and runs the game inside it with all
+   * capabilities dropped. bwrap is deliberately NOT given `--unshare-net`. Unlike
+   * the old outermost-`pasta` design, no second user namespace is ever created,
+   * so the game's own nested unprivileged userns (gamescope/pressure-vessel)
+   * keeps working. Omitted when isolation is disabled or pasta is unavailable —
+   * then the game keeps the host network namespace, the exact previous behavior.
    */
   networkIsolation?: SandboxNetworkIsolationOptions;
 }
@@ -271,13 +340,41 @@ export const buildSandboxArgs = (
     bwrapArgs.push("--unshare-ipc");
   }
 
-  // bwrap never gets --unshare-net, even when isolating: an unprivileged
-  // bwrap-created netns is owned by bwrap's user namespace and pasta cannot
-  // join it (EPERM). Instead, when `networkIsolation` is set, pasta runs as the
-  // outermost command below and creates the game's isolated netns itself, so
-  // bwrap keeps the host netns for its own setup. Without isolation the game
-  // simply keeps full host network access (previous behavior).
+  // bwrap never gets --unshare-net, even when isolating: the isolated netns is
+  // created INSIDE the sandbox by the wrapper (see NETWORK_ISOLATION_WRAPPER),
+  // in bwrap's own single user namespace, and pasta attaches to it there. bwrap
+  // keeps the host netns for its setup. Without isolation the game simply keeps
+  // full host network access (previous behavior).
   bwrapArgs.push("--new-session");
+
+  // Network isolation setup phase (podman-rootless style, single userns). Grant
+  // only the two capabilities the in-sandbox wrapper needs: CAP_SYS_ADMIN to
+  // create/join the placeholder netns (unshare --net / nsenter) and
+  // CAP_NET_ADMIN for pasta to configure the tap. The wrapper drops ALL caps
+  // (setpriv) before the game runs, so the game itself ends up with none. Both
+  // are retained within bwrap's SINGLE user namespace; pasta runs in attach mode
+  // and never spawns its own userns, which keeps nested unprivileged userns
+  // (gamescope/pressure-vessel) working. The HYDRA_PASTA_* env carries pasta's
+  // path and DNS targets to the wrapper (avoids interpolating them into the
+  // script text).
+  if (networkIsolation) {
+    bwrapArgs.push("--cap-add", "CAP_NET_ADMIN", "--cap-add", "CAP_SYS_ADMIN");
+    bwrapArgs.push("--setenv", "HYDRA_PASTA_BIN", networkIsolation.pastaPath);
+    if (networkIsolation.dnsForwardAddress) {
+      bwrapArgs.push(
+        "--setenv",
+        "HYDRA_PASTA_DNS_FORWARD",
+        networkIsolation.dnsForwardAddress
+      );
+    }
+    if (networkIsolation.hostResolver) {
+      bwrapArgs.push(
+        "--setenv",
+        "HYDRA_PASTA_DNS_HOST",
+        networkIsolation.hostResolver
+      );
+    }
+  }
 
   // Install the compiled seccomp cBPF filter, read from the inherited fd the
   // caller places at this stdio index. Blocks a small Tier-A set of kernel-LPE /
@@ -462,10 +559,11 @@ export const buildSandboxArgs = (
     }
   }
 
-  // When isolating, exec pasta as the outermost sandbox command; it owns the
-  // game's network namespace and execs the real payload inside it.
+  // When isolating, the bwrap payload is the network-isolation wrapper (it sets
+  // up the netns + pasta in bwrap's own userns, then runs the game inside it
+  // with caps dropped); otherwise the game runs directly.
   const payload = networkIsolation
-    ? buildPastaCommand(networkIsolation, command, args)
+    ? buildNetworkIsolationPayload(command, args)
     : { command, args };
 
   bwrapArgs.push("--", payload.command, ...payload.args);

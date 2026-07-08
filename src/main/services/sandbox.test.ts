@@ -6,9 +6,10 @@ import { after, before, describe, it } from "node:test";
 
 import {
   assertSandboxAvailable,
-  buildPastaCommand,
   buildSandboxArgs,
   isSandboxEnabled,
+  NETWORK_ISOLATION_WRAPPER,
+  WRAPPER_SHELL_PATH,
   SandboxUnavailableError,
 } from "./sandbox-command-builder.ts";
 import {
@@ -665,7 +666,18 @@ describe("Sandbox network isolation (buildSandboxArgs)", () => {
   const commandAfterSeparator = (args: string[]) =>
     args.slice(args.indexOf("--") + 1);
 
-  it("does not wrap with pasta and never unshares net without isolation", () => {
+  // Collects the `--setenv NAME VALUE` triples bwrap emits.
+  const collectSetenv = (args: string[]) => {
+    const env: Record<string, string> = {};
+    for (let index = 0; index < args.length; index += 1) {
+      if (args[index] === "--setenv") {
+        env[args[index + 1]] = args[index + 2];
+      }
+    }
+    return env;
+  };
+
+  it("does not isolate and never unshares net without isolation", () => {
     const { args } = buildSandboxArgs({
       command: "/usr/bin/game",
       args: ["--foo"],
@@ -674,7 +686,11 @@ describe("Sandbox network isolation (buildSandboxArgs)", () => {
     });
 
     assert.ok(!args.includes("--unshare-net"));
+    // The bwrap payload is the raw game, unchanged from the non-isolated path.
     assert.deepEqual(commandAfterSeparator(args), ["/usr/bin/game", "--foo"]);
+    // None of the isolation-only additions are present.
+    assert.ok(!args.includes("--cap-add"));
+    assert.ok(!args.includes("--setenv"));
     assert.ok(
       !collectBindPairs(args).some((pair) => pair.dest === "/dev/net/tun")
     );
@@ -683,7 +699,7 @@ describe("Sandbox network isolation (buildSandboxArgs)", () => {
     );
   });
 
-  it("execs pasta as the outermost command, wrapping the real payload", () => {
+  it("grants the setup caps and never unshares net when isolating", () => {
     const { args } = buildSandboxArgs({
       command: "/usr/bin/game",
       args: ["--foo"],
@@ -692,30 +708,68 @@ describe("Sandbox network isolation (buildSandboxArgs)", () => {
       networkIsolation: isolation(),
     });
 
-    // bwrap still never gets --unshare-net: pasta owns the namespace.
+    // bwrap keeps the host netns; the wrapper creates the isolated one inside.
     assert.ok(!args.includes("--unshare-net"));
 
-    // The bwrap payload is `pasta <opts> -- /usr/bin/game --foo`.
+    // Exactly the two setup capabilities are added (CapEff 0x201000 in-sandbox);
+    // the wrapper drops all caps before the game runs.
+    const capAdds = args
+      .map((arg, index) => (arg === "--cap-add" ? args[index + 1] : null))
+      .filter((value): value is string => value !== null);
+    assert.deepEqual(capAdds.sort(), ["CAP_NET_ADMIN", "CAP_SYS_ADMIN"]);
+  });
+
+  it("runs the isolation wrapper as the payload, passing the game as argv", () => {
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: ["--foo"],
+      env: baseEnv,
+      gameDir,
+      networkIsolation: isolation(),
+    });
+
+    // The bwrap payload is `bash -c <wrapper> hydra-net-wrapper <game> <args>`;
+    // the game command + args are positional argv, never interpolated.
     assert.deepEqual(commandAfterSeparator(args), [
-      "/usr/bin/pasta",
-      "--config-net",
-      "-t",
-      "none",
-      "-u",
-      "none",
-      "-T",
-      "none",
-      "-U",
-      "none",
-      "--no-map-gw",
-      "--dns-forward",
-      DNS_FORWARD_ADDRESS,
-      "--dns-host",
-      "127.0.0.53",
-      "--",
+      WRAPPER_SHELL_PATH,
+      "-c",
+      NETWORK_ISOLATION_WRAPPER,
+      "hydra-net-wrapper",
       "/usr/bin/game",
       "--foo",
     ]);
+
+    // The wrapper text carries the exact pasta attach-mode flags (DNS arrives
+    // via env, not baked into the script).
+    for (const flag of [
+      "--config-net",
+      "-t none",
+      "-u none",
+      "-T none",
+      "-U none",
+      "--no-map-gw",
+      "--netns",
+    ]) {
+      assert.ok(
+        NETWORK_ISOLATION_WRAPPER.includes(flag),
+        `expected wrapper to contain ${flag}`
+      );
+    }
+  });
+
+  it("passes pasta path and DNS targets to the wrapper via --setenv", () => {
+    const { args } = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: baseEnv,
+      gameDir,
+      networkIsolation: isolation(),
+    });
+
+    const setenv = collectSetenv(args);
+    assert.equal(setenv.HYDRA_PASTA_BIN, "/usr/bin/pasta");
+    assert.equal(setenv.HYDRA_PASTA_DNS_FORWARD, DNS_FORWARD_ADDRESS);
+    assert.equal(setenv.HYDRA_PASTA_DNS_HOST, "127.0.0.53");
   });
 
   it("binds the generated resolv.conf over the host resolver path", () => {
@@ -750,7 +804,7 @@ describe("Sandbox network isolation (buildSandboxArgs)", () => {
     }
   });
 
-  it("omits DNS flags and the resolv bind when no host resolver is known", () => {
+  it("omits the DNS setenv/resolv bind when no host resolver is known", () => {
     const { args } = buildSandboxArgs({
       command: "/usr/bin/game",
       args: [],
@@ -759,58 +813,25 @@ describe("Sandbox network isolation (buildSandboxArgs)", () => {
       networkIsolation: { pastaPath: "/usr/bin/pasta" },
     });
 
-    const payload = commandAfterSeparator(args);
-    assert.equal(payload[0], "/usr/bin/pasta");
-    assert.ok(!payload.includes("--dns-forward"));
-    assert.ok(!payload.includes("--dns-host"));
+    // Still isolates (wrapper payload + pasta path), just without DNS forwarding.
+    assert.deepEqual(commandAfterSeparator(args)[0], WRAPPER_SHELL_PATH);
+    const setenv = collectSetenv(args);
+    assert.equal(setenv.HYDRA_PASTA_BIN, "/usr/bin/pasta");
+    assert.ok(!("HYDRA_PASTA_DNS_FORWARD" in setenv));
+    assert.ok(!("HYDRA_PASTA_DNS_HOST" in setenv));
     assert.ok(
       !collectBindPairs(args).some((pair) => pair.dest === resolvConfDest)
     );
   });
 });
 
-describe("buildPastaCommand", () => {
-  it("disables all port forwarding both ways and forwards DNS", () => {
-    const { command, args } = buildPastaCommand(
-      {
-        pastaPath: "/usr/bin/pasta",
-        dnsForwardAddress: DNS_FORWARD_ADDRESS,
-        hostResolver: "127.0.0.53",
-      },
-      "/usr/bin/game",
-      ["--foo"]
-    );
-
-    assert.equal(command, "/usr/bin/pasta");
-    for (const flag of ["-t", "-u", "-T", "-U"]) {
-      const index = args.indexOf(flag);
-      assert.ok(index >= 0, `expected ${flag}`);
-      assert.equal(args[index + 1], "none");
-    }
-    // Gateway-address remap must be off or host loopback services stay
-    // reachable via the gateway IP even with all port forwarding disabled.
-    assert.ok(args.includes("--no-map-gw"));
-    assert.deepEqual(args.slice(args.indexOf("--") + 1), [
-      "/usr/bin/game",
-      "--foo",
-    ]);
-  });
-
-  it("omits --dns-host when no host resolver is provided", () => {
-    const { args } = buildPastaCommand(
-      { pastaPath: "/usr/bin/pasta", dnsForwardAddress: DNS_FORWARD_ADDRESS },
-      "/usr/bin/game",
-      []
-    );
-
-    assert.ok(args.includes("--dns-forward"));
-    assert.ok(!args.includes("--dns-host"));
-  });
-});
-
 describe("isNetworkIsolationEnabled", () => {
-  it("defaults to enabled when nothing is configured", () => {
+  it("defaults to ENABLED (opt-out) when nothing is configured", () => {
+    // Paranoia-first: isolation is on by default (subject to the caller also
+    // requiring the sandbox enabled and pasta available).
     assert.equal(isNetworkIsolationEnabled(null, null), true);
+    assert.equal(isNetworkIsolationEnabled({}, null), true);
+    assert.equal(isNetworkIsolationEnabled({}, {}), true);
   });
 
   it("respects the global disable preference", () => {
