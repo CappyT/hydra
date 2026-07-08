@@ -9,11 +9,22 @@
  * and electron-free/testable.
  *
  * The program is a BLOCKLIST with a default-ALLOW: only a small set of
- * kernel-LPE / sandbox-escape primitive syscalls (Tier A) are turned into
- * `ENOSYS`; everything else — including the namespace/mount/prctl/seccomp calls
- * our nested pressure-vessel and wine need — is allowed automatically. Blocked
- * calls return `SECCOMP_RET_ERRNO(ENOSYS)` (not KILL) so a probing game gets a
- * clean "not implemented" and degrades gracefully instead of dying on SIGSYS.
+ * kernel-LPE / sandbox-escape primitive syscalls (Tier A + Tier B) are turned
+ * into an errno; everything else — including the namespace/mount/prctl/seccomp
+ * calls our nested pressure-vessel and wine need — is allowed automatically.
+ * Blocked calls return `SECCOMP_RET_ERRNO` (not KILL) with a per-syscall errno:
+ * ENOSYS so a probing game gets a clean "not implemented" and degrades, or
+ * EPERM where a permission-denied is the honest failure (NUMA/userfaultfd/perf).
+ *
+ * Three protection LEVELS select how much is blocked (cumulative, low ⊂ medium
+ * ⊂ high):
+ *   low    — the Tier-A kernel-LPE / escape primitives only (all ENOSYS).
+ *   medium — low + the NUMA memory-policy family, userfaultfd, perf_event_open
+ *            (EPERM) and the io_uring trio (ENOSYS). This is the DEFAULT.
+ *   high   — medium + calls that may genuinely break some titles: ptrace,
+ *            name_to_handle_at, pidfd_getfd, process_madvise and
+ *            set_mempolicy_home_node (EPERM); clone3 and memfd_secret (ENOSYS);
+ *            plus an argument-filtered personality (only benign personas pass).
  */
 
 // --- BPF opcode fields (classic BPF, as used by seccomp). ---
@@ -34,6 +45,10 @@ const OP_RET_K = BPF_RET | BPF_K; //             0x06 — return k
 // --- seccomp_data layout: { int nr; u32 arch; u64 ip; u64 args[6]; }. ---
 const SECCOMP_DATA_NR_OFFSET = 0;
 const SECCOMP_DATA_ARCH_OFFSET = 4;
+// args[0] is a u64 at offset 16; cBPF only loads 32-bit words, so its low and
+// high halves are read separately when a syscall needs argument filtering.
+const SECCOMP_DATA_ARG0_LOW_OFFSET = 16;
+const SECCOMP_DATA_ARG0_HIGH_OFFSET = 20;
 
 // --- Audit arch tokens (uapi/linux/audit.h). ---
 export const AUDIT_ARCH_X86_64 = 0xc000003e;
@@ -43,29 +58,82 @@ export const AUDIT_ARCH_I386 = 0x40000003;
 export const SECCOMP_RET_ALLOW = 0x7fff0000;
 const SECCOMP_RET_ERRNO = 0x00050000;
 const SECCOMP_RET_DATA = 0x0000ffff;
-const ENOSYS = 38;
+
+// errno values a blocked syscall can be made to return. ENOSYS makes a probing
+// game see "not implemented" and degrade; EPERM mimics a kernel/LSM denial
+// (e.g. vm.unprivileged_userfaultfd=0) where "permission denied" is the honest,
+// expected failure.
+export const ENOSYS = 38;
+export const EPERM = 1;
+
 /** SECCOMP_RET_ERRNO | (ENOSYS & SECCOMP_RET_DATA) = 0x00050026. */
 export const SECCOMP_RET_ERRNO_ENOSYS =
   (SECCOMP_RET_ERRNO | (ENOSYS & SECCOMP_RET_DATA)) >>> 0;
+/** SECCOMP_RET_ERRNO | (EPERM & SECCOMP_RET_DATA) = 0x00050001. */
+export const SECCOMP_RET_ERRNO_EPERM =
+  (SECCOMP_RET_ERRNO | (EPERM & SECCOMP_RET_DATA)) >>> 0;
+/** SECCOMP_RET_LOG — allow the syscall but log it (kernel audit / dmesg line
+ *  carries the arch + syscall nr). Audit mode swaps every block action to this
+ *  so a game runs unfiltered while each would-be block is recorded. */
+export const SECCOMP_RET_LOG = 0x7ffc0000;
 
-/** Per-arch syscall numbers for a blocked call. `i386` is null when that arch
- *  has no such syscall (nothing to block there). */
+// --- Protection levels. ---
+
+/** Sandbox seccomp protection levels; cumulative (low ⊂ medium ⊂ high). */
+export type ProtectionLevel = "low" | "medium" | "high";
+
+/** Weakest→strongest; also the settings-UI dropdown order. */
+export const PROTECTION_LEVELS: ProtectionLevel[] = ["low", "medium", "high"];
+
+/** Level used when a caller passes none. Wired through to callers in a later
+ *  pass (settings dropdown + per-game override); the build API defaults here. */
+export const DEFAULT_PROTECTION_LEVEL: ProtectionLevel = "medium";
+
+const LEVEL_RANK: Record<ProtectionLevel, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+};
+
+/** How the filter reacts to a matched syscall. `enforce` returns the per-rule
+ *  errno (ENOSYS/EPERM); `audit` allows the call but logs it via SECCOMP_RET_LOG
+ *  so breakage can be diagnosed without changing behavior. */
+export type FilterMode = "enforce" | "audit";
+
+/** Mode used when a caller passes none. */
+export const DEFAULT_FILTER_MODE: FilterMode = "enforce";
+
+/** Per-arch syscall numbers, the errno a blocked call returns, and the lowest
+ *  protection level that blocks it. `i386` is null when that arch has no such
+ *  syscall (nothing to block there). `level` omitted = "low"; `errno` omitted =
+ *  ENOSYS — so Tier-A entries stay bare and unchanged. */
 export interface SyscallNumbers {
   x86_64: number;
   i386: number | null;
+  /** Lowest level that blocks this call; omitted = "low" (Tier-A default). */
+  level?: ProtectionLevel;
+  /** errno via SECCOMP_RET_ERRNO; omitted = ENOSYS (Tier-A default). */
+  errno?: number;
+  /**
+   * When set, matching this syscall number does not deny outright but jumps to
+   * a dedicated argument-filter block; only "personality" exists today (see the
+   * PERSONALITY_* values). `errno` is then the fallback for rejected arguments.
+   */
+  argFilter?: "personality";
 }
 
 /**
- * Tier-A blocklist — never legitimately needed by games, all real LPE / escape
- * primitives. Numbers VERIFIED against the host uapi headers on 2026-07-07:
+ * The blocklist — single source of truth for both arches, errnos and levels.
+ * Numbers VERIFIED against the host uapi headers on 2026-07-08:
  *   - x86_64: /usr/include/asm/unistd_64.h
  *   - i386:   /usr/include/asm/unistd_32.h
  * `kexec_file_load` has no `__NR_` on i386 (x86_64-only), so its i386 entry is
- * null. The sandbox-seccomp.test.ts host-header cross-check re-derives these
- * from the headers so a wrong number is caught in CI on hosts that ship them.
+ * null. The sandbox-seccomp.test.ts host-header cross-check re-derives every
+ * entry from the headers so a wrong number is caught in CI on hosts that ship
+ * them. Everything unlisted is ALLOWED.
  *
- * Deliberately NOT here (Tier B, held out of v1): perf_event_open, userfaultfd,
- * move_pages/migrate_pages/mbind, io_uring_*. Everything unlisted is ALLOWED.
+ * Tier A (level "low", ENOSYS): kernel-LPE / sandbox-escape primitives never
+ * legitimately needed by games. Tier B extends this at higher levels.
  */
 export const BLOCKED_SYSCALLS: Record<string, SyscallNumbers> = {
   // Kernel keyring — credential/keyring escape surface.
@@ -114,11 +182,81 @@ export const BLOCKED_SYSCALLS: Record<string, SyscallNumbers> = {
   ustat: { x86_64: 136, i386: 62 },
   nfsservctl: { x86_64: 180, i386: 169 },
   _sysctl: { x86_64: 156, i386: 149 },
+
+  // --- Tier B, level "medium". ---
+  // NUMA memory-policy family (EPERM) — flatpak blocks the whole set in its base
+  // filter applied to every app incl. Steam; not needed by games and a
+  // kernel-attack surface. EPERM matches flatpak's semantics.
+  mbind: { x86_64: 237, i386: 274, level: "medium", errno: EPERM },
+  set_mempolicy: { x86_64: 238, i386: 276, level: "medium", errno: EPERM },
+  get_mempolicy: { x86_64: 239, i386: 275, level: "medium", errno: EPERM },
+  migrate_pages: { x86_64: 256, i386: 294, level: "medium", errno: EPERM },
+  move_pages: { x86_64: 279, i386: 317, level: "medium", errno: EPERM },
+  // userfaultfd (EPERM) — userspace page-fault handling, a classic
+  // exploit-timing primitive. Mimics the kernel's vm.unprivileged_userfaultfd=0.
+  userfaultfd: { x86_64: 323, i386: 374, level: "medium", errno: EPERM },
+  // perf_event_open (EPERM) — perf subsystem; flatpak's nondevel filter denies
+  // it as a recurring LPE surface.
+  perf_event_open: { x86_64: 298, i386: 336, level: "medium", errno: EPERM },
+  // io_uring (ENOSYS) — powerful async-I/O ring, disabled on hardened kernels
+  // (e.g. RHEL default). ENOSYS mimics a kernel built without it so games fall
+  // back. The trio lives in the unified >=425 range: same numbers on both.
+  io_uring_setup: { x86_64: 425, i386: 425, level: "medium" },
+  io_uring_enter: { x86_64: 426, i386: 426, level: "medium" },
+  io_uring_register: { x86_64: 427, i386: 427, level: "medium" },
+
+  // --- Tier B, level "high" (may genuinely break some titles). ---
+  // ptrace (EPERM) — anti-cheat/overlays sometimes trace; denying can break a
+  // few, hence high-only.
+  ptrace: { x86_64: 101, i386: 26, level: "high", errno: EPERM },
+  // clone3 (ENOSYS) — glibc transparently falls back to clone() on ENOSYS;
+  // flatpak precedent.
+  clone3: { x86_64: 435, i386: 435, level: "high" },
+  // personality (EPERM fallback) — ARGUMENT-FILTERED: only PER_LINUX,
+  // ADDR_NO_RANDOMIZE and the read-only query pass (see PERSONALITY_*); any
+  // other persona is EPERM.
+  personality: {
+    x86_64: 135,
+    i386: 136,
+    level: "high",
+    errno: EPERM,
+    argFilter: "personality",
+  },
+  // name_to_handle_at (EPERM) — pairs with open_by_handle_at to escape
+  // path-based sandboxing.
+  name_to_handle_at: { x86_64: 303, i386: 341, level: "high", errno: EPERM },
+  // pidfd_getfd (EPERM) — steal an fd from another process by pidfd.
+  pidfd_getfd: { x86_64: 438, i386: 438, level: "high", errno: EPERM },
+  // process_madvise (EPERM) — advise/manipulate another process's memory.
+  process_madvise: { x86_64: 440, i386: 440, level: "high", errno: EPERM },
+  // set_mempolicy_home_node (EPERM) — NUMA policy tail; completes the family.
+  set_mempolicy_home_node: {
+    x86_64: 450,
+    i386: 450,
+    level: "high",
+    errno: EPERM,
+  },
+  // memfd_secret (ENOSYS) — secret memory not mapped in the kernel direct map;
+  // ENOSYS mimics a kernel without CONFIG_SECRETMEM.
+  memfd_secret: { x86_64: 447, i386: 447, level: "high" },
 };
 
 const BLOCKED_SYSCALL_LIST = Object.entries(BLOCKED_SYSCALLS).map(
   ([name, numbers]) => ({ name, ...numbers })
 );
+
+/** Entries blocked at `level`, in table order (cumulative: an entry is included
+ *  when its own level is at or below the requested level). */
+const includedForLevel = (level: ProtectionLevel) =>
+  BLOCKED_SYSCALL_LIST.filter(
+    (entry) => LEVEL_RANK[entry.level ?? "low"] <= LEVEL_RANK[level]
+  );
+
+/** Names of every syscall blocked at `level` (cumulative). Handy for a settings
+ *  UI that lists what each level denies. */
+export const blockedSyscallNamesForLevel = (
+  level: ProtectionLevel
+): string[] => includedForLevel(level).map((entry) => entry.name);
 
 // --- Tiny label-resolving cBPF assembler. ---
 
@@ -246,27 +384,75 @@ const assemble = (program: Instruction[]): Buffer => {
 
 const LABEL_X86_64 = "x86_64_block";
 const LABEL_I386 = "i386_block";
-const LABEL_DENY = "deny";
+const LABEL_DENY_ENOSYS = "deny_enosys";
+const LABEL_DENY_EPERM = "deny_eperm";
 const LABEL_ALLOW = "allow";
+const LABEL_PERSONALITY = "personality_block";
+const LABEL_PERSONALITY_HIGH = "personality_high";
+
+// personality(2) personas the "high" arg-filter lets through; every other value
+// falls to EPERM. PER_LINUX(0x0) is the default persona; ADDR_NO_RANDOMIZE
+// (0x0040000) is commonly set by loaders / pressure-vessel; 0xffffffff is the
+// read-only query that returns the current persona without changing it and is
+// allowed regardless of the args[0] high word (userspace may sign-extend it).
+const PERSONALITY_PER_LINUX = 0x00000000;
+const PERSONALITY_ADDR_NO_RANDOMIZE = 0x00040000;
+const PERSONALITY_QUERY = 0xffffffff;
+
+/** Deny label an entry's errno routes to. Unset errno → the Tier-A ENOSYS. */
+const denyLabelFor = (errno: number | undefined): string =>
+  (errno ?? ENOSYS) === EPERM ? LABEL_DENY_EPERM : LABEL_DENY_ENOSYS;
+
+/** Jump target for a matched syscall number: the personality argument-filter
+ *  sub-block for arg-filtered entries, otherwise the deny return for its errno.
+ *  (In audit mode the deny returns are RET_LOG, so this routing is unchanged.) */
+const matchTargetFor = (entry: SyscallNumbers): string =>
+  entry.argFilter === "personality"
+    ? LABEL_PERSONALITY
+    : denyLabelFor(entry.errno);
 
 /**
- * Builds the compiled Tier-A seccomp cBPF filter as a Buffer ready to hand to
- * bwrap's `--seccomp <fd>`.
+ * Builds the compiled seccomp cBPF filter for `level` as a Buffer ready to hand
+ * to bwrap's `--seccomp <fd>`. Defaults to {@link DEFAULT_PROTECTION_LEVEL} and
+ * {@link DEFAULT_FILTER_MODE} so the historical zero-arg call site keeps working
+ * unchanged. In `audit` mode the program is structurally identical but every
+ * deny return becomes SECCOMP_RET_LOG (allow-and-log) instead of an errno.
  *
  * Layout (default ALLOW, unknown arch ALLOW so non-native arches are never
  * mis-filtered):
  *   load arch
  *   if arch == x86_64  -> x86_64 block
  *   if arch == i386    -> i386 block   else -> allow
- *   [x86_64 block] load nr; for each n: if nr == n -> deny; else -> allow
- *   [i386 block]   load nr; for each n: if nr == n -> deny; else -> allow
- *   deny:  return ERRNO(ENOSYS)
- *   allow: return ALLOW
+ *   [x86_64 block] load nr; for each n: if nr == n -> deny(n.errno)/personality
+ *   [i386 block]   load nr; for each n: if nr == n -> deny(n.errno)/personality
+ *   [personality]  load args[0]; allow benign personas, else -> deny_eperm
+ *   deny_enosys: return ERRNO(ENOSYS)
+ *   deny_eperm:  return ERRNO(EPERM)   (emitted only when some entry needs it)
+ *   allow:       return ALLOW
  * Each arch block jumps to `allow` on no-match instead of falling into the next
  * block, so an x86_64 syscall whose number collides with an i386 blocklist
- * entry is never wrongly denied.
+ * entry is never wrongly denied. Argument-filtered entries (personality) jump
+ * to a shared sub-block instead of a deny return. The EPERM return and the
+ * personality block are emitted only when a selected entry needs them, so `low`
+ * stays byte-identical to the flat Tier-A filter.
  */
-export const buildSeccompFilter = (): Buffer => {
+export const buildSeccompFilter = (
+  level: ProtectionLevel = DEFAULT_PROTECTION_LEVEL,
+  mode: FilterMode = DEFAULT_FILTER_MODE
+): Buffer => {
+  const entries = includedForLevel(level);
+  const usesEperm = entries.some((entry) => (entry.errno ?? ENOSYS) === EPERM);
+  const usesPersonality = entries.some(
+    (entry) => entry.argFilter === "personality"
+  );
+  // Audit mode keeps the exact same structure but turns every block action into
+  // RET_LOG: the call is allowed and logged, never errored. Only the two deny
+  // return constants change, so audit vs enforce differ solely in those slots.
+  const denyEnosysAction =
+    mode === "audit" ? SECCOMP_RET_LOG : SECCOMP_RET_ERRNO_ENOSYS;
+  const denyEpermAction =
+    mode === "audit" ? SECCOMP_RET_LOG : SECCOMP_RET_ERRNO_EPERM;
+
   const program: Instruction[] = [];
 
   // Arch dispatch.
@@ -276,21 +462,49 @@ export const buildSeccompFilter = (): Buffer => {
 
   // x86_64 block.
   program.push(load(SECCOMP_DATA_NR_OFFSET, LABEL_X86_64));
-  for (const entry of BLOCKED_SYSCALL_LIST) {
-    program.push(jeq(entry.x86_64, LABEL_DENY, 0));
+  for (const entry of entries) {
+    program.push(jeq(entry.x86_64, matchTargetFor(entry), 0));
   }
   program.push(ja(LABEL_ALLOW));
 
   // i386 block.
   program.push(load(SECCOMP_DATA_NR_OFFSET, LABEL_I386));
-  for (const entry of BLOCKED_SYSCALL_LIST) {
+  for (const entry of entries) {
     if (entry.i386 === null) continue;
-    program.push(jeq(entry.i386, LABEL_DENY, 0));
+    program.push(jeq(entry.i386, matchTargetFor(entry), 0));
   }
   program.push(ja(LABEL_ALLOW));
 
-  // Shared returns.
-  program.push(ret(SECCOMP_RET_ERRNO_ENOSYS, LABEL_DENY));
+  // Argument-filtered personality handler, shared by both arches (args[0] offset
+  // and semantics are identical across arch; i386 zero-extends the high word).
+  // Emitted only when personality is in the selected set. Benign personas jump
+  // straight to `allow` so they are never logged; every other value falls to
+  // deny_eperm (RET_LOG in audit mode). See PERSONALITY_* for the accepted set.
+  if (usesPersonality) {
+    program.push(load(SECCOMP_DATA_ARG0_LOW_OFFSET, LABEL_PERSONALITY));
+    // Read-only query (0xffffffff): allow regardless of the high word.
+    program.push(jeq(PERSONALITY_QUERY, LABEL_ALLOW, 0));
+    // PER_LINUX (0x0) / ADDR_NO_RANDOMIZE (0x0040000): allow only if high == 0.
+    program.push(jeq(PERSONALITY_PER_LINUX, LABEL_PERSONALITY_HIGH, 0));
+    program.push(
+      jeq(
+        PERSONALITY_ADDR_NO_RANDOMIZE,
+        LABEL_PERSONALITY_HIGH,
+        LABEL_DENY_EPERM
+      )
+    );
+    program.push(load(SECCOMP_DATA_ARG0_HIGH_OFFSET, LABEL_PERSONALITY_HIGH));
+    program.push(jeq(0x00000000, LABEL_ALLOW, LABEL_DENY_EPERM));
+  }
+
+  // Shared returns. The ENOSYS deny is always present (Tier-A is in every
+  // level); the EPERM deny is emitted only when a selected entry routes to it
+  // (an EPERM syscall or the personality fallback), so a level with no EPERM
+  // entry (low) stays byte-identical to the flat Tier-A filter.
+  program.push(ret(denyEnosysAction, LABEL_DENY_ENOSYS));
+  if (usesEperm) {
+    program.push(ret(denyEpermAction, LABEL_DENY_EPERM));
+  }
   program.push(ret(SECCOMP_RET_ALLOW, LABEL_ALLOW));
 
   return assemble(program);
