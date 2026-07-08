@@ -54,6 +54,8 @@ import "./toggle-game-mangohud";
 import "./toggle-game-sandbox";
 import "./toggle-game-sandbox-ipc";
 import "./toggle-game-network-isolation";
+import "./update-game-seccomp-level";
+import "./toggle-game-seccomp-audit";
 import "./update-game-sandbox-paths";
 import "./toggle-game-pin";
 import "./update-custom-game";

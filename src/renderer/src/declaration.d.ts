@@ -205,6 +205,16 @@ declare global {
       objectId: string,
       networkIsolationDisabled: boolean
     ) => Promise<void>;
+    updateGameSeccompLevel: (
+      shop: GameShop,
+      objectId: string,
+      seccompLevel: "off" | "low" | "medium" | "high" | null
+    ) => Promise<void>;
+    toggleGameSeccompAudit: (
+      shop: GameShop,
+      objectId: string,
+      seccompAudit: boolean
+    ) => Promise<void>;
     updateGameSandboxPaths: (
       shop: GameShop,
       objectId: string,

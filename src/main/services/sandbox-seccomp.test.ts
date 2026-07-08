@@ -15,6 +15,7 @@ import {
   SECCOMP_RET_LOG,
   blockedSyscallNamesForLevel,
   buildSeccompFilter,
+  resolveSeccomp,
 } from "./sandbox-seccomp.ts";
 
 const UNISTD_64 = "/usr/include/asm/unistd_64.h";
@@ -613,4 +614,78 @@ describe("BLOCKED_SYSCALLS host-header cross-check", () => {
       }
     }
   );
+});
+
+// The pure effective-level resolution that sandbox-launch.ts drives: per-game
+// override wins over the global preference (both directions), "off" and the
+// global kill-switch disable the filter, and the diagnostic flag selects audit
+// mode whenever a filter is attached.
+describe("resolveSeccomp", () => {
+  it("defaults to enabled at medium/enforce when nothing is configured", () => {
+    assert.deepEqual(resolveSeccomp(null, null), {
+      enabled: true,
+      level: "medium",
+      mode: "enforce",
+      source: "global",
+    });
+  });
+
+  it("uses the global level when set and no per-game override exists", () => {
+    assert.deepEqual(resolveSeccomp({ seccompLevel: "high" }, null), {
+      enabled: true,
+      level: "high",
+      mode: "enforce",
+      source: "global",
+    });
+  });
+
+  it("disables the filter when the global kill-switch is set", () => {
+    const resolution = resolveSeccomp({ disableSeccomp: true }, null);
+    assert.equal(resolution.enabled, false);
+    assert.equal(resolution.source, "global");
+  });
+
+  it("lets a per-game level win over the global level", () => {
+    assert.deepEqual(
+      resolveSeccomp({ seccompLevel: "medium" }, { seccompLevel: "high" }),
+      { enabled: true, level: "high", mode: "enforce", source: "game" }
+    );
+  });
+
+  it("lets a per-game level re-enable over the global kill-switch", () => {
+    assert.deepEqual(
+      resolveSeccomp({ disableSeccomp: true }, { seccompLevel: "low" }),
+      { enabled: true, level: "low", mode: "enforce", source: "game" }
+    );
+  });
+
+  it("disables the filter for a per-game 'off' even when global is on", () => {
+    const resolution = resolveSeccomp(
+      { disableSeccomp: false, seccompLevel: "high" },
+      { seccompLevel: "off" }
+    );
+    assert.equal(resolution.enabled, false);
+    assert.equal(resolution.source, "game");
+  });
+
+  it("selects audit mode from the per-game diagnostic flag", () => {
+    assert.equal(resolveSeccomp(null, { seccompAudit: true }).mode, "audit");
+
+    const overridden = resolveSeccomp(
+      { seccompLevel: "high" },
+      { seccompLevel: "low", seccompAudit: true }
+    );
+    assert.equal(overridden.mode, "audit");
+    assert.equal(overridden.level, "low");
+  });
+
+  it("keeps the resolved mode/level reportable even when disabled", () => {
+    const resolution = resolveSeccomp(
+      { disableSeccomp: true, seccompLevel: "high" },
+      { seccompAudit: true }
+    );
+    assert.equal(resolution.enabled, false);
+    assert.equal(resolution.mode, "audit");
+    assert.equal(resolution.level, "high");
+  });
 });

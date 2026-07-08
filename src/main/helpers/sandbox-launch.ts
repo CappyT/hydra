@@ -4,7 +4,13 @@ import path from "node:path";
 import type { Game, UserPreferences } from "@types";
 import { Sandbox } from "@main/services/sandbox";
 import { assertSandboxAvailable } from "@main/services/sandbox-command-builder";
-import { buildSeccompFilter } from "@main/services/sandbox-seccomp";
+import {
+  buildSeccompFilter,
+  resolveSeccomp,
+  type FilterMode,
+  type ProtectionLevel,
+  type SeccompResolution,
+} from "@main/services/sandbox-seccomp";
 import {
   DNS_FORWARD_ADDRESS,
   isNetworkIsolationAvailable,
@@ -47,6 +53,8 @@ type SandboxGame = Pick<
   | "sandboxExtraPaths"
   | "sandboxShareIpc"
   | "networkIsolationDisabled"
+  | "seccompLevel"
+  | "seccompAudit"
 >;
 
 export interface SandboxLaunchContext {
@@ -164,35 +172,49 @@ const ensureSandboxMachineId = (
   }
 };
 
-let cachedSeccompFilterPath: string | null = null;
+/** Per-variant seccomp filter path: `sandbox-seccomp-<level>-<mode>.bpf` next to
+ *  the legacy single-file location. Each (level, mode) combination gets its own
+ *  precompiled file so switching levels/modes never rewrites a shared file. */
+const seccompFilterVariantPath = (
+  level: ProtectionLevel,
+  mode: FilterMode
+): string =>
+  path.join(
+    path.dirname(sandboxSeccompFilterPath),
+    `sandbox-seccomp-${level}-${mode}.bpf`
+  );
+
+// Memoized per (level, mode) variant: each is written once per process (so an
+// app update always refreshes it) then reused.
+const cachedSeccompFilterPaths = new Map<string, string>();
 
 /**
- * Writes the compiled seccomp cBPF filter to its cached file under userData and
- * returns the path, or undefined on failure. Written once per process so an app
- * update always refreshes the filter, then memoized. On failure the launch
- * proceeds WITHOUT `--seccomp` (the path is undefined, so no fd is wired and no
+ * Writes the compiled seccomp cBPF filter for `level`/`mode` to its per-variant
+ * file under userData and returns the path, or undefined on failure. Written
+ * once per process per variant, then memoized. On failure the launch proceeds
+ * WITHOUT `--seccomp` (the path is undefined, so no fd is wired and no
  * `--seccomp` flag is emitted): seccomp is a hardening layer, not the sandbox
  * boundary, so a write failure must not block launches.
  */
-const ensureSeccompFilterFile = (): string | undefined => {
-  if (cachedSeccompFilterPath) return cachedSeccompFilterPath;
+const ensureSeccompFilterFile = (
+  level: ProtectionLevel,
+  mode: FilterMode
+): string | undefined => {
+  const variantKey = `${level}-${mode}`;
+  const cached = cachedSeccompFilterPaths.get(variantKey);
+  if (cached) return cached;
 
   try {
-    fs.mkdirSync(path.dirname(sandboxSeccompFilterPath), { recursive: true });
-    fs.writeFileSync(sandboxSeccompFilterPath, buildSeccompFilter());
-    cachedSeccompFilterPath = sandboxSeccompFilterPath;
-    return cachedSeccompFilterPath;
+    const filterPath = seccompFilterVariantPath(level, mode);
+    fs.mkdirSync(path.dirname(filterPath), { recursive: true });
+    fs.writeFileSync(filterPath, buildSeccompFilter(level, mode));
+    cachedSeccompFilterPaths.set(variantKey, filterPath);
+    return filterPath;
   } catch (error) {
     logger.warn("Failed to write seccomp filter, launching without it", error);
     return undefined;
   }
 };
-
-/** The seccomp filter is attached only when the global kill-switch is unset.
- *  (Gated together with the sandbox being enabled at the call site.) */
-const isSeccompEnabled = (
-  userPreferences: UserPreferences | null | undefined
-): boolean => userPreferences?.disableSeccomp !== true;
 
 let cachedResolvConfPath: string | null = null;
 
@@ -264,6 +286,33 @@ const resolveNetworkIsolation = (
         }
       : {}),
   };
+};
+
+/**
+ * Logs one concise line each for the two hardening layers at every sandboxed
+ * launch (into the app's existing launch log): the effective seccomp state
+ * (level + mode + whether it came from the per-game override or the global
+ * preference, or "disabled") and the network-isolation state (isolated via
+ * pasta / disabled / pasta missing). Read-only — never affects the launch.
+ */
+const logSandboxHardeningState = (
+  seccomp: SeccompResolution,
+  userPreferences: UserPreferences | null | undefined,
+  game: SandboxGame | null | undefined,
+  networkIsolation: SandboxNetworkIsolationOptions | undefined
+): void => {
+  logger.info(
+    seccomp.enabled
+      ? `Sandbox seccomp: ${seccomp.level}/${seccomp.mode} (from ${seccomp.source})`
+      : `Sandbox seccomp: disabled (from ${seccomp.source})`
+  );
+
+  const networkState = networkIsolation
+    ? "isolated (pasta)"
+    : isNetworkIsolationEnabled(userPreferences, game)
+      ? "disabled (pasta unavailable)"
+      : "disabled";
+  logger.info(`Sandbox network isolation: ${networkState}`);
 };
 
 /**
@@ -353,14 +402,19 @@ export const wrapWithSandbox = (
   const homePersistDir = ensureSandboxHome(gameKey);
   const machineIdFile = ensureSandboxMachineId(gameKey);
 
-  // Attach the seccomp filter unless the global kill-switch is set. Build the
-  // filter file first so the `--seccomp` flag is only emitted when the fd will
-  // actually be available at spawn time (args and fd stay in agreement).
-  const seccompFilterPath = isSeccompEnabled(userPreferences)
-    ? ensureSeccompFilterFile()
+  // Resolve the effective seccomp state (per-game override wins over the global
+  // preference; per-game "off" or the global kill-switch disables it) and build
+  // the matching filter variant first, so the `--seccomp` flag is only emitted
+  // when the fd will actually be available at spawn time (args and fd stay in
+  // agreement).
+  const seccomp = resolveSeccomp(userPreferences, game);
+  const seccompFilterPath = seccomp.enabled
+    ? ensureSeccompFilterFile(seccomp.level, seccomp.mode)
     : undefined;
 
   const networkIsolation = resolveNetworkIsolation(userPreferences, game);
+
+  logSandboxHardeningState(seccomp, userPreferences, game, networkIsolation);
 
   const { command, args } = Sandbox.wrapCommand({
     command: resolved.command,

@@ -27,6 +27,8 @@
  *            plus an argument-filtered personality (only benign personas pass).
  */
 
+import type { Game, UserPreferences } from "@types";
+
 // --- BPF opcode fields (classic BPF, as used by seccomp). ---
 const BPF_LD = 0x00;
 const BPF_W = 0x00;
@@ -102,6 +104,65 @@ export type FilterMode = "enforce" | "audit";
 
 /** Mode used when a caller passes none. */
 export const DEFAULT_FILTER_MODE: FilterMode = "enforce";
+
+/** Per-game seccomp override value. `"off"` disables the filter for that game;
+ *  a {@link ProtectionLevel} overrides the global level. `null`/`undefined`
+ *  (handled by {@link resolveSeccomp}) means "follow the global preference". */
+export type GameSeccompLevel = "off" | ProtectionLevel;
+
+/** Fully-resolved seccomp decision for one sandboxed launch. */
+export interface SeccompResolution {
+  /** False when no `--seccomp` filter must be attached to the launch. */
+  enabled: boolean;
+  /** Effective protection level (meaningful only when `enabled`). */
+  level: ProtectionLevel;
+  /** Effective filter mode; `"audit"` only via the per-game diagnostic flag. */
+  mode: FilterMode;
+  /** Whether the ON/OFF + level decision came from the per-game override or the
+   *  global preference. For launch logging only. */
+  source: "game" | "global";
+}
+
+/**
+ * Resolves the effective seccomp state for a launch from the global preference
+ * and the per-game override, mirroring {@link isNetworkIsolationEnabled}'s
+ * tri-state precedence (per-game wins over global, in both directions):
+ *   - per-game `"off"`               → disabled (this game only)
+ *   - per-game `"low"/"medium"/"high"` → enabled at that level (wins over the
+ *                                        global level AND the global kill-switch)
+ *   - no per-game level + global `disableSeccomp` → disabled
+ *   - otherwise                      → enabled at the global level
+ *                                      ({@link DEFAULT_PROTECTION_LEVEL} default)
+ * The per-game diagnostic flag (`seccompAudit`) independently selects AUDIT mode
+ * whenever a filter is attached — it never turns the filter on by itself. Kept
+ * pure (electron-free, `@types` is a type-only import) so it stays unit-testable
+ * alongside {@link buildSeccompFilter}.
+ */
+export const resolveSeccomp = (
+  userPreferences:
+    | Pick<UserPreferences, "disableSeccomp" | "seccompLevel">
+    | null
+    | undefined,
+  game: Pick<Game, "seccompLevel" | "seccompAudit"> | null | undefined
+): SeccompResolution => {
+  const globalLevel = userPreferences?.seccompLevel ?? DEFAULT_PROTECTION_LEVEL;
+  const mode: FilterMode = game?.seccompAudit === true ? "audit" : "enforce";
+  const gameLevel = game?.seccompLevel;
+
+  if (gameLevel === "off") {
+    return { enabled: false, level: globalLevel, mode, source: "game" };
+  }
+
+  if (gameLevel === "low" || gameLevel === "medium" || gameLevel === "high") {
+    return { enabled: true, level: gameLevel, mode, source: "game" };
+  }
+
+  if (userPreferences?.disableSeccomp === true) {
+    return { enabled: false, level: globalLevel, mode, source: "global" };
+  }
+
+  return { enabled: true, level: globalLevel, mode, source: "global" };
+};
 
 /** Per-arch syscall numbers, the errno a blocked call returns, and the lowest
  *  protection level that blocks it. `i386` is null when that arch has no such

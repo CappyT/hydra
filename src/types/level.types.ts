@@ -87,6 +87,21 @@ export interface Game {
    * host loopback services become unreachable and internet/LAN still work.
    */
   networkIsolationDisabled?: boolean | null;
+  /**
+   * Per-game seccomp override. `null`/`undefined` follows the global level;
+   * `"off"` disables the syscall filter for this game only; an explicit
+   * `"low"`/`"medium"`/`"high"` overrides the global protection level (and wins
+   * over the global `disableSeccomp` kill-switch, mirroring the per-game network
+   * and sandbox overrides).
+   */
+  seccompLevel?: "off" | "low" | "medium" | "high" | null;
+  /**
+   * Per-game diagnostic flag. When true the seccomp filter is built in AUDIT
+   * mode (SECCOMP_RET_LOG): every would-be-blocked syscall is allowed but logged
+   * by the kernel, so breakage can be diagnosed WITHOUT enforcing the filter.
+   * Enforcement is suspended for the game while this is on.
+   */
+  seccompAudit?: boolean;
   favorite?: boolean;
   isPinned?: boolean;
   achievementCount?: number;
@@ -220,6 +235,13 @@ export interface UserPreferences {
    * (`disableSandbox`) also disables seccomp.
    */
   disableSeccomp?: boolean;
+  /**
+   * Global sandbox seccomp protection level. Absent = `"medium"` (the default).
+   * Selects how much the syscall filter blocks (cumulative: low ⊂ medium ⊂
+   * high). Ignored when `disableSeccomp` is set. A per-game `seccompLevel`
+   * override wins over this.
+   */
+  seccompLevel?: "low" | "medium" | "high";
   /**
    * Global kill-switch for sandbox network isolation. Default falsy = isolation
    * ON (when the sandbox is enabled and pasta is available). When true,

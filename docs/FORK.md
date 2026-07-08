@@ -101,3 +101,90 @@ yarn sandbox:selftest
 Every check must report `PASS` and the runner must exit 0. Point
 `SANDBOX_PROBE_BIN` at a prebuilt binary to skip the local cargo build. This is
 a manual, Linux-only check and is intentionally kept out of CI.
+
+## Seccomp syscall filter
+
+On top of the bwrap sandbox, sandboxed launches install a seccomp classic-BPF
+filter (`--seccomp <fd>`) built in pure Node by `src/main/services/sandbox-seccomp.ts`
+(no native addon, deterministic, unit-decodable). It is a **blocklist with a
+default-ALLOW**: only a small set of kernel-LPE / sandbox-escape syscalls are
+turned into an errno (`ENOSYS` so a probing game degrades, or `EPERM` where a
+permission-denied is the honest failure); everything else — including the
+namespace/mount/prctl/seccomp calls the nested pressure-vessel and wine need —
+is allowed automatically. A write failure is fail-open (the game launches
+without the filter): seccomp is a hardening layer, not the sandbox boundary.
+
+### Protection levels (cumulative, low ⊂ medium ⊂ high)
+
+Set globally in **Settings → Compatibility** (default **medium**) and overridable
+per game in the game options modal (`follow global / off / low / medium / high`).
+A per-game level wins over the global level **and** over the global kill-switch;
+per-game `off` disables the filter for that game only.
+
+- **low** — Tier-A kernel-LPE / escape primitives only, all `ENOSYS`:
+  `add_key` `request_key` `keyctl`, `bpf`, `kexec_load` `kexec_file_load`,
+  `init_module` `finit_module` `delete_module`, `iopl` `ioperm`,
+  `swapon` `swapoff`, `acct`, `quotactl`, `reboot`, `syslog`,
+  `settimeofday` `clock_settime` `clock_adjtime` `adjtimex`,
+  `open_by_handle_at`, the new mount API (`open_tree` `move_mount` `fsopen`
+  `fsconfig` `fsmount`), and legacy admin calls (`uselib` `ustat` `nfsservctl`
+  `_sysctl`).
+- **medium** (default) — low **plus** the NUMA memory-policy family
+  (`mbind` `set_mempolicy` `get_mempolicy` `migrate_pages` `move_pages`, `EPERM`),
+  `userfaultfd` (`EPERM`), `perf_event_open` (`EPERM`) and the io_uring trio
+  (`io_uring_setup` `io_uring_enter` `io_uring_register`, `ENOSYS`). Mirrors
+  flatpak's base filter applied to Steam.
+- **high** — medium **plus** calls that may genuinely break some titles:
+  `ptrace`, `name_to_handle_at`, `pidfd_getfd`, `process_madvise`,
+  `set_mempolicy_home_node` (`EPERM`), `clone3` and `memfd_secret` (`ENOSYS`),
+  plus an argument-filtered `personality` (only `PER_LINUX` /
+  `ADDR_NO_RANDOMIZE` / the read-only query pass; other personas → `EPERM`).
+
+### Audit / diagnosis flow
+
+A game may break with the filter on. To find the culprit without turning
+protection off, enable the **per-game diagnostic** checkbox ("Log blocked
+syscalls instead of blocking them"). It rebuilds the filter at the same
+effective level but in **audit mode**: every would-be block becomes
+`SECCOMP_RET_LOG` (`0x7ffc0000`) — the syscall is **allowed** and logged by the
+kernel instead of erroring. Enforcement is suspended for that game while it is
+on.
+
+Read the kernel log to see what fired:
+
+```bash
+sudo journalctl -k --grep=SECCOMP
+```
+
+Each line carries the audit **arch** token (`0xc000003e` = x86_64,
+`0x40000003` = i386), the **syscall nr**, and `code=0x7ffc0000` (the RET_LOG
+action). Map the nr back to a name with the level tables above (or
+`ausyscall <arch> <nr>`), then either drop to a lower level or leave audit off
+once the offending call is identified.
+
+## Network isolation (pasta)
+
+When the sandbox is enabled and `pasta` (the `passt` package) is on `PATH`,
+sandboxed games run in their own network namespace instead of the host's.
+Global toggle in **Settings → Compatibility** (default **on**), per-game
+tri-state override in the game options modal (a per-game choice wins over the
+global default). If isolation is wanted but `pasta` is missing, the game
+launches with the host network and a one-time warning is logged.
+
+Because an unprivileged bwrap cannot hand its netns to a pasta running in the
+init user namespace, **pasta runs as the outermost command *inside* bwrap**:
+bwrap sets up every other namespace but keeps the host network, then execs
+`pasta … -- <game>`. pasta creates a fresh user+net namespace and bridges it to
+the host with a userspace tap. All port forwarding is disabled both ways
+(`-t none -u none -T none -U none`) and **`--no-map-gw`** is passed so host
+loopback services stay unreachable via the gateway IP; internet and LAN still
+work through pasta's NAT. DNS is forwarded to the host resolver
+(`--dns-forward` / `--dns-host`) via a generated `resolv.conf` bound into the
+sandbox. See `src/main/services/sandbox-network.ts`.
+
+### Launch logging
+
+Every sandboxed launch logs one concise line each for both hardening layers
+(via the app's `main` logger, `logs.txt`/`info.txt`): the effective seccomp
+state — `level/mode (from game|global)` or `disabled` — and the network state —
+`isolated (pasta)`, `disabled (pasta unavailable)`, or `disabled`.

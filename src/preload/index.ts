@@ -543,6 +543,18 @@ contextBridge.exposeInMainWorld("electron", {
       objectId,
       networkIsolationDisabled
     ),
+  updateGameSeccompLevel: (
+    shop: GameShop,
+    objectId: string,
+    seccompLevel: "off" | "low" | "medium" | "high" | null
+  ) =>
+    ipcRenderer.invoke("updateGameSeccompLevel", shop, objectId, seccompLevel),
+  toggleGameSeccompAudit: (
+    shop: GameShop,
+    objectId: string,
+    seccompAudit: boolean
+  ) =>
+    ipcRenderer.invoke("toggleGameSeccompAudit", shop, objectId, seccompAudit),
   updateGameSandboxPaths: (
     shop: GameShop,
     objectId: string,

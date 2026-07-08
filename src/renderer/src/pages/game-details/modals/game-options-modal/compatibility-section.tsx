@@ -5,9 +5,10 @@ import {
   CheckboxField,
   Link,
   ProtonPathPicker,
+  SelectField,
   TextField,
 } from "@renderer/components";
-import type { LibraryGame, ProtonVersion } from "@types";
+import type { Game, LibraryGame, ProtonVersion } from "@types";
 import { FileDirectoryIcon, LinkExternalIcon } from "@primer/octicons-react";
 import { Tooltip } from "react-tooltip";
 
@@ -30,6 +31,8 @@ interface CompatibilitySettingsSectionProps {
   sandboxShareIpc: boolean;
   networkIsolationAvailable: boolean;
   networkIsolationEnabled: boolean;
+  seccompLevel: Game["seccompLevel"];
+  seccompAudit: boolean;
   sandboxExtraPaths: string[];
   mangohudSiteUrl: string;
   gamemodeSiteUrl: string;
@@ -42,6 +45,10 @@ interface CompatibilitySettingsSectionProps {
   onChangeSandboxState: (value: boolean) => Promise<void>;
   onChangeSandboxShareIpc: (value: boolean) => Promise<void>;
   onChangeNetworkIsolation: (value: boolean) => Promise<void>;
+  onChangeSeccompLevel: (
+    value: "off" | "low" | "medium" | "high" | null
+  ) => Promise<void>;
+  onChangeSeccompAudit: (value: boolean) => Promise<void>;
   onAddSandboxPath: () => Promise<void>;
   onRemoveSandboxPath: (path: string) => Promise<void>;
   onChangeProtonVersion: (value: string) => void;
@@ -66,6 +73,8 @@ export function CompatibilitySettingsSection({
   sandboxShareIpc,
   networkIsolationAvailable,
   networkIsolationEnabled,
+  seccompLevel,
+  seccompAudit,
   sandboxExtraPaths,
   mangohudSiteUrl,
   gamemodeSiteUrl,
@@ -78,6 +87,8 @@ export function CompatibilitySettingsSection({
   onChangeSandboxState,
   onChangeSandboxShareIpc,
   onChangeNetworkIsolation,
+  onChangeSeccompLevel,
+  onChangeSeccompAudit,
   onAddSandboxPath,
   onRemoveSandboxPath,
   onChangeProtonVersion,
@@ -406,6 +417,54 @@ export function CompatibilitySettingsSection({
 
               <h4 className="game-options-modal__header-description">
                 {t("network_isolation_description")}
+              </h4>
+            </div>
+
+            <div className="game-options-modal__sandbox-ipc-toggle">
+              <SelectField
+                label={t("seccomp_level")}
+                value={seccompLevel ?? ""}
+                options={[
+                  {
+                    key: "follow-global",
+                    value: "",
+                    label: t("seccomp_level_follow_global"),
+                  },
+                  { key: "off", value: "off", label: t("seccomp_level_off") },
+                  { key: "low", value: "low", label: t("seccomp_level_low") },
+                  {
+                    key: "medium",
+                    value: "medium",
+                    label: t("seccomp_level_medium"),
+                  },
+                  {
+                    key: "high",
+                    value: "high",
+                    label: t("seccomp_level_high"),
+                  },
+                ]}
+                onChange={(event) => {
+                  const raw = event.target.value;
+                  onChangeSeccompLevel(
+                    raw === ""
+                      ? null
+                      : (raw as "off" | "low" | "medium" | "high")
+                  );
+                }}
+              />
+
+              <h4 className="game-options-modal__header-description">
+                {t("seccomp_level_description")}
+              </h4>
+
+              <CheckboxField
+                label={t("seccomp_audit")}
+                checked={seccompAudit}
+                disabled={seccompLevel === "off"}
+                onChange={(event) => onChangeSeccompAudit(event.target.checked)}
+              />
+              <h4 className="game-options-modal__header-description">
+                {t("seccomp_audit_description")}
               </h4>
             </div>
 

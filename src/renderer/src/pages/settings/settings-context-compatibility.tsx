@@ -7,6 +7,7 @@ import {
   CheckboxField,
   Link,
   ProtonPathPicker,
+  SelectField,
   TextField,
 } from "@renderer/components";
 import { settingsContext } from "@renderer/context";
@@ -45,6 +46,9 @@ export function SettingsContextCompatibility() {
   const [mangohudAvailable, setMangohudAvailable] = useState(false);
   const [enableSandbox, setEnableSandbox] = useState(true);
   const [enableSeccomp, setEnableSeccomp] = useState(true);
+  const [seccompLevel, setSeccompLevel] = useState<"low" | "medium" | "high">(
+    "medium"
+  );
   const [enableNetworkIsolation, setEnableNetworkIsolation] = useState(true);
   const [sandboxAvailable, setSandboxAvailable] = useState(false);
   const [networkIsolationAvailable, setNetworkIsolationAvailable] =
@@ -90,6 +94,7 @@ export function SettingsContextCompatibility() {
     setAutoRunGamemode(userPreferences.autoRunGamemode ?? false);
     setEnableSandbox(userPreferences.disableSandbox !== true);
     setEnableSeccomp(userPreferences.disableSeccomp !== true);
+    setSeccompLevel(userPreferences.seccompLevel ?? "medium");
     setEnableNetworkIsolation(userPreferences.disableNetworkIsolation !== true);
     setDefaultWinePrefixPath(
       userPreferences.defaultWinePrefixPath ?? defaultWinePrefixBasePath
@@ -449,6 +454,39 @@ export function SettingsContextCompatibility() {
 
                 <p className="settings-behavior__proton-description">
                   {t("seccomp_description")}
+                </p>
+
+                <SelectField
+                  label={t("seccomp_level")}
+                  value={seccompLevel}
+                  disabled={
+                    !sandboxAvailable || !enableSandbox || !enableSeccomp
+                  }
+                  options={[
+                    { key: "low", value: "low", label: t("seccomp_level_low") },
+                    {
+                      key: "medium",
+                      value: "medium",
+                      label: t("seccomp_level_medium"),
+                    },
+                    {
+                      key: "high",
+                      value: "high",
+                      label: t("seccomp_level_high"),
+                    },
+                  ]}
+                  onChange={(event) => {
+                    const nextLevel = event.target.value as
+                      | "low"
+                      | "medium"
+                      | "high";
+                    setSeccompLevel(nextLevel);
+                    updateUserPreferences({ seccompLevel: nextLevel });
+                  }}
+                />
+
+                <p className="settings-behavior__proton-description">
+                  {t("seccomp_level_description")}
                 </p>
               </div>
 

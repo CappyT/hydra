@@ -695,6 +695,26 @@ export function GameOptionsModal({
     updateGame();
   };
 
+  const handleChangeSeccompLevel = async (
+    value: "off" | "low" | "medium" | "high" | null
+  ) => {
+    await globalThis.window.electron.updateGameSeccompLevel(
+      game.shop,
+      game.objectId,
+      value
+    );
+    updateGame();
+  };
+
+  const handleChangeSeccompAudit = async (value: boolean) => {
+    await globalThis.window.electron.toggleGameSeccompAudit(
+      game.shop,
+      game.objectId,
+      value
+    );
+    updateGame();
+  };
+
   const handleAddSandboxPath = async () => {
     const { filePaths } = await globalThis.window.electron.showOpenDialog({
       properties: ["openDirectory"],
@@ -1140,6 +1160,8 @@ export function GameOptionsModal({
                   sandboxShareIpc={sandboxShareIpc}
                   networkIsolationAvailable={networkIsolationAvailable}
                   networkIsolationEnabled={networkIsolationEnabled}
+                  seccompLevel={game.seccompLevel}
+                  seccompAudit={game.seccompAudit === true}
                   sandboxExtraPaths={sandboxExtraPaths}
                   gamemodeSiteUrl={GAMEMODE_SITE_URL}
                   mangohudSiteUrl={MANGOHUD_SITE_URL}
@@ -1152,6 +1174,8 @@ export function GameOptionsModal({
                   onChangeSandboxState={handleChangeSandboxState}
                   onChangeSandboxShareIpc={handleChangeSandboxShareIpc}
                   onChangeNetworkIsolation={handleChangeNetworkIsolation}
+                  onChangeSeccompLevel={handleChangeSeccompLevel}
+                  onChangeSeccompAudit={handleChangeSeccompAudit}
                   onAddSandboxPath={handleAddSandboxPath}
                   onRemoveSandboxPath={handleRemoveSandboxPath}
                   onChangeProtonVersion={handleChangeProtonVersion}
