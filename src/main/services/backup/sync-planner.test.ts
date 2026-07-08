@@ -12,14 +12,19 @@ import {
 const artifact = (
   id: string,
   createdAt: string,
-  isFrozen = false
-): PlannerArtifact => ({ id, createdAt, isFrozen });
+  isFrozen = false,
+  deviceId = "this-device"
+): PlannerArtifact => ({ id, createdAt, isFrozen, deviceId });
+
+const OUR_DEVICE = "this-device";
+const OTHER_DEVICE = "other-device";
 
 describe("decideLaunchSync (marker decision — the data-safety crux)", () => {
   it("does nothing when there are no backups (first run)", () => {
     const plan = decideLaunchSync({
       lastSyncedBackupAt: undefined,
       artifacts: [],
+      ourDeviceId: OUR_DEVICE,
     });
 
     assert.deepEqual(plan, { action: "none" });
@@ -34,6 +39,7 @@ describe("decideLaunchSync (marker decision — the data-safety crux)", () => {
         artifact("a", "2026-07-01T10:00:00.000Z"),
         artifact("b", "2026-07-05T10:00:00.000Z"),
       ],
+      ourDeviceId: OUR_DEVICE,
     });
 
     assert.equal(plan.action, "adopt-baseline");
@@ -48,6 +54,7 @@ describe("decideLaunchSync (marker decision — the data-safety crux)", () => {
         artifact("old", "2026-07-01T10:00:00.000Z"),
         artifact("new", "2026-07-06T12:00:00.000Z"),
       ],
+      ourDeviceId: OUR_DEVICE,
     });
 
     assert.equal(plan.action, "restore");
@@ -59,6 +66,7 @@ describe("decideLaunchSync (marker decision — the data-safety crux)", () => {
     const plan = decideLaunchSync({
       lastSyncedBackupAt: "2026-07-06T12:00:00.000Z",
       artifacts: [artifact("new", "2026-07-06T12:00:00.000Z")],
+      ourDeviceId: OUR_DEVICE,
     });
 
     assert.deepEqual(plan, { action: "none" });
@@ -70,6 +78,7 @@ describe("decideLaunchSync (marker decision — the data-safety crux)", () => {
     const plan = decideLaunchSync({
       lastSyncedBackupAt: "2026-07-10T00:00:00.000Z",
       artifacts: [artifact("old", "2026-07-06T12:00:00.000Z")],
+      ourDeviceId: OUR_DEVICE,
     });
 
     assert.deepEqual(plan, { action: "none" });
@@ -82,9 +91,59 @@ describe("decideLaunchSync (marker decision — the data-safety crux)", () => {
     const plan = decideLaunchSync({
       lastSyncedBackupAt: marker,
       artifacts: [artifact("z", latest)],
+      ourDeviceId: OUR_DEVICE,
     });
 
     assert.equal(plan.action, "none");
+  });
+
+  it("restores our OWN newer backup even when this device has local divergence", () => {
+    // The newer remote came from THIS device, so there is nothing to conflict
+    // with — a straight restore is safe.
+    const plan = decideLaunchSync({
+      lastSyncedBackupAt: "2026-07-01T10:00:00.000Z",
+      artifacts: [artifact("mine", "2026-07-06T12:00:00.000Z", false, OUR_DEVICE)],
+      ourDeviceId: OUR_DEVICE,
+      unsyncedSince: "2026-07-05T00:00:00.000Z",
+    });
+
+    assert.equal(plan.action, "restore");
+    assert.equal(plan.artifactId, "mine");
+    assert.equal(plan.createdAt, "2026-07-06T12:00:00.000Z");
+  });
+
+  it("restores another device's newer backup when there is NO local divergence", () => {
+    // Another device advanced, but this device closed cleanly last time
+    // (no un-backed-up changes), so downloading it loses nothing.
+    const plan = decideLaunchSync({
+      lastSyncedBackupAt: "2026-07-01T10:00:00.000Z",
+      artifacts: [
+        artifact("theirs", "2026-07-06T12:00:00.000Z", false, OTHER_DEVICE),
+      ],
+      ourDeviceId: OUR_DEVICE,
+      unsyncedSince: null,
+    });
+
+    assert.equal(plan.action, "restore");
+    assert.equal(plan.artifactId, "theirs");
+    assert.equal(plan.createdAt, "2026-07-06T12:00:00.000Z");
+  });
+
+  it("reports a conflict when another device advanced AND this device has local divergence", () => {
+    // Both sides diverged: another device produced a newer backup while this
+    // device still has un-backed-up local changes (e.g. a crashed session).
+    const plan = decideLaunchSync({
+      lastSyncedBackupAt: "2026-07-01T10:00:00.000Z",
+      artifacts: [
+        artifact("theirs", "2026-07-06T12:00:00.000Z", false, OTHER_DEVICE),
+      ],
+      ourDeviceId: OUR_DEVICE,
+      unsyncedSince: "2026-07-05T00:00:00.000Z",
+    });
+
+    assert.equal(plan.action, "conflict");
+    assert.equal(plan.artifactId, "theirs");
+    assert.equal(plan.createdAt, "2026-07-06T12:00:00.000Z");
   });
 });
 
@@ -151,6 +210,23 @@ describe("selectArtifactsToPrune (retention)", () => {
     ];
 
     assert.deepEqual(selectArtifactsToPrune(artifacts, 5), []);
+  });
+
+  it("never prunes a frozen conflict safety-backup even under many newer backups", () => {
+    // The keep-both conflict resolution freezes this device's interrupted local
+    // saves; a later close-backup's prune must never delete that safety copy.
+    const artifacts = [
+      artifact("conflict-safety", "2026-07-01T00:00:00.000Z", true),
+      artifact("n1", "2026-07-02T00:00:00.000Z"),
+      artifact("n2", "2026-07-03T00:00:00.000Z"),
+      artifact("n3", "2026-07-04T00:00:00.000Z"),
+      artifact("n4", "2026-07-05T00:00:00.000Z"),
+    ];
+
+    const toDelete = selectArtifactsToPrune(artifacts, 1);
+
+    assert.ok(!toDelete.includes("conflict-safety"));
+    assert.deepEqual(toDelete.sort(), ["n1", "n2", "n3"]);
   });
 
   it("returns nothing when all artifacts are frozen", () => {

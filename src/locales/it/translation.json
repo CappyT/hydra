@@ -3,6 +3,9 @@
   "app": {
     "successfully_signed_in": "Accesso effettuato con successo",
     "host_tools_missing_title": "Alcuni strumenti opzionali non sono disponibili",
+    "cloud_sync_conflict_title": "Conflitto dei salvataggi risolto",
+    "cloud_sync_conflict_message": "Conflitto rilevato: i salvataggi di questo PC sono stati conservati come backup ed è stato caricato il backup più recente da {{hostname}}; se preferisci, ripristina quello di questo PC dall'elenco dei backup.",
+    "cloud_sync_conflict_kept_local_message": "Conflitto rilevato col backup da {{hostname}}, ma non è stato possibile fare il backup dei salvataggi di questo PC — sono stati mantenuti come sono e il remoto NON è stato caricato. Libera spazio e riavvia per riprovare.",
     "host_tool_missing_bwrap": "bwrap (bubblewrap) non trovato — la sandbox non può funzionare, quindi i giochi in sandbox non verranno avviati finché non installi bubblewrap o disattivi la sandbox.",
     "host_tool_missing_pasta": "pasta (passt) non trovato — l'isolamento di rete è disattivato; installa il pacchetto passt per isolare i giochi.",
     "host_tool_missing_gamescope": "gamescope non trovato — il wrapper gamescope non è disponibile; i giochi vengono eseguiti senza di esso."
@@ -363,6 +366,8 @@
     "select_folder": "Seleziona cartella",
     "backup_from": "Backup del {{date}}",
     "automatic_backup_from": "Backup automatico dal {{date}}",
+    "conflict_backup_from": "Backup del conflitto da {{device}} ({{date}})",
+    "this_device": "Questo PC",
     "enable_automatic_cloud_sync": "Abilita il backup automatico",
     "backups_to_keep": "Backup da conservare",
     "backups_to_keep_description": "Quanti backup conservare per questo gioco prima che i più vecchi vengano eliminati. I backup bloccati vengono sempre mantenuti. Lascia vuoto per usare il valore predefinito globale ({{count}}).",

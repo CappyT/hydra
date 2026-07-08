@@ -49,7 +49,13 @@ export class LocalDirectoryBackend implements ArtifactStorageBackend {
   }
 
   private readSidecar(sidecarPath: string): LocalArtifact {
-    return JSON.parse(fs.readFileSync(sidecarPath, "utf8")) as LocalArtifact;
+    const artifact = JSON.parse(
+      fs.readFileSync(sidecarPath, "utf8")
+    ) as LocalArtifact;
+
+    // Legacy sidecars predate the device id; default to "" so they never crash
+    // and simply compare unequal to any real device id.
+    return { ...artifact, deviceId: artifact.deviceId ?? "" };
   }
 
   async list(shop: GameShop, objectId: string): Promise<LocalArtifact[]> {
@@ -86,6 +92,7 @@ export class LocalDirectoryBackend implements ArtifactStorageBackend {
       objectId: meta.objectId,
       label: meta.label,
       hostname: meta.hostname,
+      deviceId: meta.deviceId,
       platform: meta.platform,
       homeDir: meta.homeDir,
       winePrefixPath: meta.winePrefixPath,

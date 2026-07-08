@@ -58,6 +58,7 @@ function emulationSaveToArtifact(save: EmulationCloudSave): GameArtifact {
     createdAt: save.createdAt,
     updatedAt: save.updatedAt,
     hostname: save.hostname ?? "—",
+    deviceId: "",
     downloadCount: 0,
     label: save.label ?? undefined,
     isFrozen: false,

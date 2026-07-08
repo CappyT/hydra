@@ -48,6 +48,8 @@ export function CloudSyncPanel({
   const [artifactToRename, setArtifactToRename] = useState<GameArtifact | null>(
     null
   );
+  // This installation's stable device id, to mark backups made on THIS PC.
+  const [thisDeviceId, setThisDeviceId] = useState<string | null>(null);
 
   const { t } = useTranslation("game_details");
   const { formatDate, formatDateTime } = useDate();
@@ -105,6 +107,10 @@ export function CloudSyncPanel({
     getGameBackupPreview();
     getGameArtifacts();
   }, [getGameArtifacts, getGameBackupPreview]);
+
+  useEffect(() => {
+    window.electron.getDeviceId().then(setThisDeviceId);
+  }, []);
 
   const handleBackupInstallClick = async (artifactId: string) => {
     setBackupDownloadProgress(null);
@@ -291,6 +297,13 @@ export function CloudSyncPanel({
                   <span className="cloud-sync-panel__artifact-meta">
                     <DeviceDesktopIcon size={14} />
                     {artifact.hostname}
+                    {thisDeviceId &&
+                      artifact.deviceId &&
+                      artifact.deviceId === thisDeviceId && (
+                        <span className="cloud-sync-panel__this-device-badge">
+                          {t("this_device")}
+                        </span>
+                      )}
                   </span>
 
                   <span className="cloud-sync-panel__artifact-meta">

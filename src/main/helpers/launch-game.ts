@@ -473,6 +473,23 @@ export const launchGame = async (
     } catch (error) {
       logger.error("Cloud sync on launch threw unexpectedly", error);
     }
+
+    // Mark the start of a play session as local divergence: from now on this
+    // device has (potentially) un-backed-up save changes. A clean close-backup
+    // clears this; if the session crashes/is killed it stays set, so the next
+    // launch can detect a true cross-device conflict. Re-read first because
+    // syncOnLaunch may have just written the record.
+    try {
+      const currentGame = await gamesSublevel.get(gameKey);
+      if (currentGame) {
+        await gamesSublevel.put(gameKey, {
+          ...currentGame,
+          unsyncedSince: new Date().toISOString(),
+        });
+      }
+    } catch (error) {
+      logger.error("Failed to mark play session start for cloud sync", error);
+    }
   }
 
   if (process.platform === "linux") {

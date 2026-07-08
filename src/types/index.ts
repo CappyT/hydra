@@ -380,6 +380,12 @@ export interface GameArtifact {
   createdAt: string;
   updatedAt: string;
   hostname: string;
+  /**
+   * Stable, random id of the device that produced this backup (Steam-Cloud-like
+   * device identity). Empty string for legacy artifacts whose sidecar predates
+   * this field. Used to tell "our own newer backup" apart from another device's.
+   */
+  deviceId: string;
   downloadCount: number;
   label?: string;
   isFrozen: boolean;
@@ -398,6 +404,8 @@ export interface LocalArtifact {
   objectId: string;
   label?: string;
   hostname: string;
+  /** Stable, random id of the device that produced this backup (see above). */
+  deviceId: string;
   platform: string;
   homeDir: string;
   winePrefixPath: string | null;
@@ -412,6 +420,8 @@ export interface ArtifactUploadMeta {
   objectId: string;
   label?: string;
   hostname: string;
+  /** Stable, random id of the device producing this backup (see above). */
+  deviceId: string;
   platform: string;
   homeDir: string;
   winePrefixPath: string | null;

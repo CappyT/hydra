@@ -120,6 +120,16 @@ export interface Game {
    */
   lastSyncedBackupAt?: string;
   /**
+   * ISO timestamp marking that THIS device has local save changes since its last
+   * sync that are NOT yet backed up. Set when a play session starts (in
+   * `launchGame`, right before the game spawns) and cleared on a clean
+   * close-backup (`CloudSync.finalizeBackup`). It therefore stays set only when
+   * a session ended WITHOUT its close-backup (crash/kill). Unset/null means "no
+   * local divergence": combined with a newer remote backup from another device
+   * it is what distinguishes a safe download from a true two-sided conflict.
+   */
+  unsyncedSince?: string | null;
+  /**
    * Per-game override for how many non-frozen backups to retain after each
    * successful backup (`undefined` = use the global `defaultBackupsToKeep`).
    * Frozen backups are always kept regardless of this value.

@@ -12,7 +12,12 @@ import type {
   UserPreferences,
 } from "@types";
 import { backupsPath, publicProfilePath } from "@main/constants";
-import { addTrailingSlash, normalizePath, parseRegFile } from "@main/helpers";
+import {
+  addTrailingSlash,
+  getDeviceId,
+  normalizePath,
+  parseRegFile,
+} from "@main/helpers";
 import { logger } from "./logger";
 import { WindowManager } from "./window-manager";
 import { Ludusavi } from "./ludusavi";
@@ -76,6 +81,21 @@ export class CloudSync {
 
     return t("backup_from", {
       ns: "game_details",
+      date,
+    });
+  }
+
+  /**
+   * Label for the safety backup taken of THIS device's interrupted local state
+   * before a keep-both conflict resolution, so it is easy to spot in history.
+   */
+  public static getConflictBackupLabel() {
+    const language = i18next.language;
+    const date = formatDate(new Date(), language);
+
+    return t("conflict_backup_from", {
+      ns: "game_details",
+      device: os.hostname(),
       date,
     });
   }
@@ -144,6 +164,7 @@ export class CloudSync {
       shop,
       objectId,
       hostname: os.hostname(),
+      deviceId: getDeviceId(),
       winePrefixPath: resolvedWinePrefixPath,
       homeDir: this.getWindowsLikeUserProfilePath(effectiveWinePrefixPath),
       downloadOptionTitle,
@@ -236,6 +257,8 @@ export class CloudSync {
       const plan = decideLaunchSync({
         lastSyncedBackupAt: game.lastSyncedBackupAt,
         artifacts,
+        ourDeviceId: getDeviceId(),
+        unsyncedSince: game.unsyncedSince,
       });
 
       if (plan.action === "none") return;
@@ -244,6 +267,94 @@ export class CloudSync {
         await gamesSublevel.put(gameKey, {
           ...game,
           lastSyncedBackupAt: plan.createdAt,
+        });
+        return;
+      }
+
+      if (plan.action === "conflict") {
+        // Keep-both, zero data loss: FIRST snapshot this device's interrupted
+        // local state into history (never lost), THEN activate the newer remote.
+        // Deliberately NO finalizeBackup/prune here: pruning mid-operation could
+        // race the restore or delete artifacts we still need.
+        let conflictArtifact: LocalArtifact | null = null;
+        try {
+          conflictArtifact = await CloudSync.uploadSaveGame(
+            objectId,
+            shop,
+            null,
+            CloudSync.getConflictBackupLabel()
+          );
+        } catch (error) {
+          logger.error("Failed to back up local state before conflict restore", {
+            shop,
+            objectId,
+            error,
+          });
+        }
+
+        const remoteArtifact = artifacts.find(
+          (item) => item.id === plan.artifactId
+        );
+
+        // DATA-SAFETY GUARD: if we could NOT preserve this device's local saves
+        // (the conflict backup failed), do NOT overwrite them with the remote.
+        // Keep local intact and leave the marker + unsyncedSince flag unchanged
+        // so the conflict is re-detected and retried on the next launch. Warn the
+        // user; never trade an un-backed-up local save for the remote.
+        if (!conflictArtifact) {
+          logger.error(
+            "Conflict backup failed; keeping local saves, not restoring remote",
+            { shop, objectId }
+          );
+
+          WindowManager.sendToAppWindows("on-cloud-sync-conflict", {
+            shop,
+            objectId,
+            hostname: remoteArtifact?.hostname ?? "",
+            resolution: "kept-local",
+          });
+          return;
+        }
+
+        // Freeze the conflict safety-backup so normal retention NEVER auto-
+        // deletes this device's interrupted local saves on a future close-backup
+        // (selectArtifactsToPrune always keeps frozen artifacts). Only the user
+        // can remove it later from the backup list. Best-effort: a freeze
+        // failure must not stop the restore of the newer remote state.
+        try {
+          const backend = await getArtifactBackend();
+          await backend.setFrozen(conflictArtifact.id, true);
+        } catch (error) {
+          logger.error("Failed to freeze conflict safety backup", {
+            shop,
+            objectId,
+            artifactId: conflictArtifact.id,
+            error,
+          });
+        }
+
+        await CloudSync.restoreArtifact(shop, objectId, plan.artifactId!);
+
+        const latestGame = (await gamesSublevel.get(gameKey)) ?? game;
+        await gamesSublevel.put(gameKey, {
+          ...latestGame,
+          lastSyncedBackupAt: plan.createdAt,
+          // The divergence is resolved (kept as a backup); clear the flag.
+          unsyncedSince: null,
+        });
+
+        logger.info("Resolved cloud save conflict (kept both) before launch", {
+          shop,
+          objectId,
+          artifactId: plan.artifactId,
+        });
+
+        // Non-blocking warning so the user knows what happened and how to undo.
+        WindowManager.sendToAppWindows("on-cloud-sync-conflict", {
+          shop,
+          objectId,
+          hostname: remoteArtifact?.hostname ?? "",
+          resolution: "kept-both",
         });
         return;
       }
@@ -296,6 +407,8 @@ export class CloudSync {
         await gamesSublevel.put(gameKey, {
           ...game,
           lastSyncedBackupAt: artifact.createdAt,
+          // A clean close-backup captured this device's changes; no divergence.
+          unsyncedSince: null,
         });
       }
 

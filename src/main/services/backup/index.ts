@@ -42,6 +42,7 @@ export const localArtifactToGameArtifact = (
   createdAt: artifact.createdAt,
   updatedAt: artifact.createdAt,
   hostname: artifact.hostname,
+  deviceId: artifact.deviceId ?? "",
   downloadCount: 0,
   label: artifact.label,
   isFrozen: artifact.isFrozen,

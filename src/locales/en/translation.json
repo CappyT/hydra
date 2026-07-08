@@ -13,6 +13,9 @@
     "error_boundary_component_trace": "Component trace",
     "error_boundary_restart": "Restart",
     "host_tools_missing_title": "Some optional tools are missing",
+    "cloud_sync_conflict_title": "Save conflict resolved",
+    "cloud_sync_conflict_message": "Conflict detected: this PC's saves were kept as a backup and the newer backup from {{hostname}} was loaded; restore this PC's from the backup list if you prefer.",
+    "cloud_sync_conflict_kept_local_message": "Conflict detected with the backup from {{hostname}}, but this PC's saves could not be backed up — they were kept as-is and the remote was NOT loaded. Free up space and relaunch to retry.",
     "host_tool_missing_bwrap": "bwrap (bubblewrap) not found — the sandbox can't run, so sandboxed games won't launch until you install bubblewrap or disable the sandbox.",
     "host_tool_missing_pasta": "pasta (passt) not found — network isolation is disabled; install the passt package to isolate games.",
     "host_tool_missing_gamescope": "gamescope not found — the gamescope wrapper is unavailable; games run without it."
@@ -563,6 +566,8 @@
     "select_folder": "Select folder",
     "backup_from": "Backup from {{date}}",
     "automatic_backup_from": "Automatic backup from {{date}}",
+    "conflict_backup_from": "Conflict backup from {{device}} ({{date}})",
+    "this_device": "This PC",
     "enable_automatic_cloud_sync": "Enable automatic backup",
     "backups_to_keep": "Backups to keep",
     "backups_to_keep_description": "How many backups to retain for this game before the oldest are deleted. Frozen backups are always kept. Leave empty to use the global default ({{count}}).",

@@ -103,6 +103,19 @@
     text-overflow: ellipsis;
   }
 
+  &__this-device-badge {
+    margin-left: calc(globals.$spacing-unit / 2);
+    padding: 0 calc(globals.$spacing-unit / 2);
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: globals.$muted-color;
+    border: 1px solid globals.$border-color;
+    background-color: globals.$dark-background-color;
+  }
+
   &__artifacts {
     display: flex;
     gap: globals.$spacing-unit;

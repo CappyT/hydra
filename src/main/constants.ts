@@ -44,6 +44,15 @@ export const achievementSoundPath = app.isPackaged
 
 export const backupsPath = path.join(SystemPath.getPath("userData"), "Backups");
 
+// Stable, random per-installation device id file (Steam-Cloud-like device
+// identity). Random UUID, NOT derived from hardware/hostname: it is launcher
+// metadata used only to tell save backups apart across machines and is never
+// exposed to games, so it must not become a fingerprint.
+export const deviceIdPath = path.join(
+  SystemPath.getPath("userData"),
+  "device-id"
+);
+
 export const sandboxHomesPath = path.join(
   SystemPath.getPath("userData"),
   "sandbox-homes"

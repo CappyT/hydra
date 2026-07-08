@@ -12,13 +12,22 @@ export interface PlannerArtifact {
   id: string;
   createdAt: string;
   isFrozen?: boolean;
+  /** Device that produced the backup; "" for legacy/unknown. */
+  deviceId?: string;
 }
 
-export type LaunchSyncAction = "none" | "adopt-baseline" | "restore";
+export type LaunchSyncAction =
+  | "none"
+  | "adopt-baseline"
+  | "restore"
+  | "conflict";
 
 export interface LaunchSyncPlan {
   action: LaunchSyncAction;
-  /** The artifact to restore (only for `action === "restore"`). */
+  /**
+   * The artifact to restore (for `action === "restore"`) or the remote latest
+   * that triggered the conflict (for `action === "conflict"`).
+   */
   artifactId?: string;
   /** The `createdAt` to persist as the new `lastSyncedBackupAt` marker. */
   createdAt?: string;
@@ -54,15 +63,25 @@ const pickLatest = <T extends PlannerArtifact>(artifacts: T[]): T | null => {
  *   restore (local saves may be newer than the latest backup); adopt the latest
  *   as the baseline instead.
  * - Latest backup strictly NEWER than the marker → another machine produced
- *   newer progress: restore it.
+ *   newer progress:
+ *     - our OWN newer backup → restore it (safe).
+ *     - ANOTHER device's newer backup, and this device has NO un-backed-up local
+ *       changes (`unsyncedSince` unset) → restore it (clean download).
+ *     - ANOTHER device's newer backup, and this device DOES have un-backed-up
+ *       local changes (`unsyncedSince` set, e.g. previous session crashed) →
+ *       `conflict`: both sides diverged, so the caller keeps both.
  * - Otherwise (in sync, or local ahead of the latest backup) → skip, so a
  *   crashed/aborted session's progress is never overwritten by an older backup.
  */
 export const decideLaunchSync = (params: {
   lastSyncedBackupAt?: string;
   artifacts: PlannerArtifact[];
+  /** This device's stable id, to tell our own backups from other devices'. */
+  ourDeviceId: string;
+  /** Set when this device has local changes not yet backed up (divergence). */
+  unsyncedSince?: string | null;
 }): LaunchSyncPlan => {
-  const { lastSyncedBackupAt, artifacts } = params;
+  const { lastSyncedBackupAt, artifacts, ourDeviceId, unsyncedSince } = params;
 
   const latest = pickLatest(artifacts);
   if (!latest) {
@@ -74,7 +93,14 @@ export const decideLaunchSync = (params: {
     return { action: "adopt-baseline", createdAt: latest.createdAt };
   }
 
-  if (toMs(latest.createdAt) > toMs(lastSyncedBackupAt)) {
+  const remoteNewer = toMs(latest.createdAt) > toMs(lastSyncedBackupAt);
+  if (!remoteNewer) {
+    return { action: "none" };
+  }
+
+  // Our own newer backup, or another device's with no local divergence here:
+  // a straight restore is safe (no local changes are at risk).
+  if (latest.deviceId === ourDeviceId || !unsyncedSince) {
     return {
       action: "restore",
       artifactId: latest.id,
@@ -82,7 +108,13 @@ export const decideLaunchSync = (params: {
     };
   }
 
-  return { action: "none" };
+  // Another device advanced AND this device has un-backed-up local changes:
+  // both sides diverged — the caller must preserve both (keep-both).
+  return {
+    action: "conflict",
+    artifactId: latest.id,
+    createdAt: latest.createdAt,
+  };
 };
 
 /**

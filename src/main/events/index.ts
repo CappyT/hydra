@@ -1,6 +1,7 @@
 import fs from "node:fs";
 
 import { appVersion, defaultDownloadsPath, isStaging } from "@main/constants";
+import { getDeviceId } from "@main/helpers";
 import { ipcMain } from "electron";
 
 import "./auth";
@@ -29,6 +30,7 @@ import { isPortableVersion } from "@main/helpers";
 
 ipcMain.handle("ping", () => "pong");
 ipcMain.handle("getVersion", () => appVersion);
+ipcMain.handle("getDeviceId", () => getDeviceId());
 ipcMain.handle("isStaging", () => isStaging);
 ipcMain.handle("isPortableVersion", () => isPortableVersion());
 ipcMain.handle("getDefaultDownloadsPath", () => {

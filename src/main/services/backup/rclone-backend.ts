@@ -24,6 +24,15 @@ interface RcloneLsjsonEntry {
 }
 
 /**
+ * Legacy sidecars predate the device id; default it to "" so old remote
+ * backups never crash and simply compare unequal to any real device id.
+ */
+const normalizeArtifact = (artifact: LocalArtifact): LocalArtifact => ({
+  ...artifact,
+  deviceId: artifact.deviceId ?? "",
+});
+
+/**
  * Stores save-game backups on any rclone remote (S3, Drive, Dropbox, WebDAV,
  * SFTP, …) by shelling out to the system `rclone` binary. The remote and its
  * credentials live entirely in the user's `rclone.conf`; we only ever pass a
@@ -108,7 +117,9 @@ export class RcloneBackend implements ArtifactStorageBackend {
       if (!fs.existsSync(sidecar)) continue;
 
       try {
-        return JSON.parse(fs.readFileSync(sidecar, "utf8")) as LocalArtifact;
+        return normalizeArtifact(
+          JSON.parse(fs.readFileSync(sidecar, "utf8")) as LocalArtifact
+        );
       } catch (error) {
         logger.error("Failed to read rclone cache sidecar", { sidecar, error });
       }
@@ -154,7 +165,7 @@ export class RcloneBackend implements ArtifactStorageBackend {
           ["cat", this.remotePath(shop, objectId, entry.Name)],
           META_TIMEOUT_MS
         );
-        const artifact = JSON.parse(stdout) as LocalArtifact;
+        const artifact = normalizeArtifact(JSON.parse(stdout) as LocalArtifact);
         this.writeCacheSidecar(artifact);
         artifacts.push(artifact);
       } catch (error) {
@@ -185,6 +196,7 @@ export class RcloneBackend implements ArtifactStorageBackend {
       objectId: meta.objectId,
       label: meta.label,
       hostname: meta.hostname,
+      deviceId: meta.deviceId,
       platform: meta.platform,
       homeDir: meta.homeDir,
       winePrefixPath: meta.winePrefixPath,

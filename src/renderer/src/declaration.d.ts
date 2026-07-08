@@ -755,6 +755,15 @@ declare global {
     openCheckout: () => Promise<void>;
     getCloudIframeUrl: () => Promise<string>;
     getVersion: () => Promise<string>;
+    getDeviceId: () => Promise<string>;
+    onCloudSyncConflict: (
+      cb: (payload: {
+        shop: string;
+        objectId: string;
+        hostname: string;
+        resolution: "kept-both" | "kept-local";
+      }) => void
+    ) => () => void;
     isStaging: () => Promise<boolean>;
     ping: () => string;
     getDefaultDownloadsPath: () => Promise<string>;

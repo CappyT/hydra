@@ -963,6 +963,27 @@ contextBridge.exposeInMainWorld("electron", {
   /* Misc */
   ping: () => ipcRenderer.invoke("ping"),
   getVersion: () => ipcRenderer.invoke("getVersion"),
+  getDeviceId: () => ipcRenderer.invoke("getDeviceId") as Promise<string>,
+  onCloudSyncConflict: (
+    cb: (payload: {
+      shop: string;
+      objectId: string;
+      hostname: string;
+      resolution: "kept-both" | "kept-local";
+    }) => void
+  ) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: {
+        shop: string;
+        objectId: string;
+        hostname: string;
+        resolution: "kept-both" | "kept-local";
+      }
+    ) => cb(payload);
+    ipcRenderer.on("on-cloud-sync-conflict", listener);
+    return () => ipcRenderer.removeListener("on-cloud-sync-conflict", listener);
+  },
   getDefaultDownloadsPath: () => ipcRenderer.invoke("getDefaultDownloadsPath"),
   isStaging: () => ipcRenderer.invoke("isStaging"),
   isPortableVersion: () => ipcRenderer.invoke("isPortableVersion"),

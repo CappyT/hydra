@@ -193,6 +193,26 @@ export function App() {
   }, [updateLibrary]);
 
   useEffect(() => {
+    // Non-blocking cloud-save conflict notice. "kept-both": local was backed up
+    // and the newer remote loaded. "kept-local": the local backup failed, so the
+    // remote was NOT loaded and local saves were kept intact (retried next launch).
+    const unsubscribe = window.electron.onCloudSyncConflict((payload) => {
+      const messageKey =
+        payload.resolution === "kept-local"
+          ? "cloud_sync_conflict_kept_local_message"
+          : "cloud_sync_conflict_message";
+
+      showWarningToast(
+        t("cloud_sync_conflict_title"),
+        t(messageKey, { hostname: payload.hostname }),
+        10000
+      );
+    });
+
+    return () => unsubscribe();
+  }, [t, showWarningToast]);
+
+  useEffect(() => {
     if (!lastPacket?.gameId) return;
 
     const activeGame = library.find((game) => game.id === lastPacket.gameId);
