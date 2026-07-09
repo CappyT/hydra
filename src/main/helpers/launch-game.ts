@@ -450,7 +450,15 @@ export const launchGame = async (
     gamescopeAvailable &&
     !gamescopeSession;
 
-  if (gamescopeSession && (game?.useGamescope ?? gamescopeAvailable)) {
+  // Log only when the session is the reason we drop the wrapper: the wrapper
+  // would otherwise be used (gamescope available AND enabled). Without the
+  // availability factor this also fired when gamescope simply is not installed,
+  // where the real reason is unavailability, not the session.
+  if (
+    gamescopeSession &&
+    gamescopeAvailable &&
+    (game?.useGamescope ?? gamescopeAvailable)
+  ) {
     logger.log(
       "Skipping gamescope wrapper: already inside a gamescope session"
     );

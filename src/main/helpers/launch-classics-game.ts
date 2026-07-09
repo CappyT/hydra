@@ -171,10 +171,24 @@ const resolveEmulatorWrappers = (
   // (Steam Deck gaming mode): a nested gamescope cannot initialise its display
   // there and the game presents to the session compositor directly.
   const gamescopeAvailable = isGamescopeAvailable();
+  const gamescopeSession = isGamescopeSessionActive();
   const useGamescope =
     (game?.useGamescope ?? gamescopeAvailable) &&
     gamescopeAvailable &&
-    !isGamescopeSessionActive();
+    !gamescopeSession;
+
+  // Mirror launch-game: note when the session (not unavailability) is why the
+  // wrapper is dropped, i.e. gamescope is available and enabled but we are
+  // already inside a gamescope session (Steam Deck gaming mode).
+  if (
+    gamescopeSession &&
+    gamescopeAvailable &&
+    (game?.useGamescope ?? gamescopeAvailable)
+  ) {
+    logger.log(
+      "Skipping gamescope wrapper: already inside a gamescope session"
+    );
+  }
 
   return {
     wrapperCommands: [
