@@ -11,6 +11,7 @@ import {
 import { GamepadButtonType } from "../../types";
 import { useVirtualKeyboardStore } from "../../stores";
 import { AccountPrivacySettingsSection } from "./account-privacy";
+import { BackupSettingsSection } from "./backup";
 import { BigPictureSettingsSection } from "./big-picture";
 import { CompatibilitySettingsSection } from "./compatibility";
 import { ContentSettingsSection } from "./content";
@@ -23,6 +24,7 @@ import { NotificationsSettingsSection } from "./notifications";
 import { useUserDetails } from "../../hooks";
 import {
   ACCOUNT_PRIVACY_PRIVACY_SELECT_ID,
+  BACKUP_BACKEND_SELECT_ID,
   COMPATIBILITY_COMMON_REDIST_BUTTON_ID,
   COMPATIBILITY_PROTON_OPTION_AUTO_FOCUS_ID,
   CONTENT_ITEM_FOCUS_IDS,
@@ -46,6 +48,7 @@ const ALL_SETTINGS_TABS = [
   { id: "emulation", label: "Emulation" },
   { id: "integrations", label: "Integrations" },
   { id: "compatibility", label: "Compatibility" },
+  { id: "backup", label: "Backup" },
   { id: "account-privacy", label: "Account and Privacy" },
 ] as const;
 
@@ -97,6 +100,7 @@ const SETTINGS_TAB_CONTENT: Record<
   emulation: EmulationSettingsSection,
   integrations: IntegrationsSettingsSection,
   compatibility: CompatibilitySettingsSection,
+  backup: BackupSettingsSection,
   "account-privacy": AccountPrivacySettingsSection,
 };
 
@@ -321,6 +325,11 @@ export default function Settings() {
             platform === "win32"
               ? COMPATIBILITY_COMMON_REDIST_BUTTON_ID
               : COMPATIBILITY_PROTON_OPTION_AUTO_FOCUS_ID,
+        };
+      case "backup":
+        return {
+          type: "item",
+          itemId: BACKUP_BACKEND_SELECT_ID,
         };
       case "account-privacy":
         return userDetails

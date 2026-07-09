@@ -40,6 +40,13 @@ export const BIG_PICTURE_DIAGNOSTICS_SECTION_REGION_ID =
 export const BIG_PICTURE_DIAGNOSTICS_POSITION_SELECT_ID =
   "big-picture-diagnostics-position-select";
 export const COMPATIBILITY_SECTION_REGION_ID = "compatibility-section-region";
+export const BACKUP_SECTION_REGION_ID = "backup-section-region";
+export const BACKUP_BACKEND_SELECT_ID = "backup-backend-select";
+export const BACKUP_LOCAL_PATH_BUTTON_ID = "backup-local-path-button";
+export const BACKUP_RCLONE_REMOTE_INPUT_ID = "backup-rclone-remote-input";
+export const BACKUP_AUTO_BACKUP_CHECKBOX_ID = "backup-auto-backup-checkbox";
+export const BACKUP_SAVE_BUTTON_ID = "backup-save-button";
+export const BACKUP_TEST_BUTTON_ID = "backup-test-button";
 export const INTEGRATIONS_SECTION_REGION_ID = "integrations-section-region";
 export const ACCOUNT_PRIVACY_PRIVACY_SELECT_ID =
   "account-privacy-profile-visibility";
