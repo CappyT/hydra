@@ -476,29 +476,43 @@ export function GameCompatibilitySettingsTab({
         title={t("proton_version")}
         description={t("proton_version_description")}
       >
-        <div className="game-compatibility-settings-tab__proton-options">
-          {protonOptions.map((option) => (
-            <Radio
-              key={option.focusId}
-              id={option.focusId}
-              label={
-                <span className="game-compatibility-settings-tab__proton-option-label">
-                  <span className="game-compatibility-settings-tab__proton-option-title">
-                    {option.title}
+        {/* Own focus region so the radios keep their visual (tree) order in
+            gamepad navigation. Without it they register as direct children of
+            the tab region, and because the version list mounts only after the
+            async availability load, order-based vertical navigation placed
+            them AFTER the checkboxes registered at first render: pressing
+            down on "Automatic" skipped the whole list and the viewport jumped
+            wildly. The region registers synchronously in tree position, so
+            traversal enters it right after the wine prefix row. */}
+        <VerticalFocusGroup
+          className="game-compatibility-settings-tab__proton-options"
+          asChild
+        >
+          <div>
+            {protonOptions.map((option) => (
+              <Radio
+                key={option.focusId}
+                id={option.focusId}
+                focusId={option.focusId}
+                label={
+                  <span className="game-compatibility-settings-tab__proton-option-label">
+                    <span className="game-compatibility-settings-tab__proton-option-title">
+                      {option.title}
+                    </span>
+                    <span className="game-compatibility-settings-tab__proton-option-description">
+                      {option.description}
+                    </span>
                   </span>
-                  <span className="game-compatibility-settings-tab__proton-option-description">
-                    {option.description}
-                  </span>
-                </span>
-              }
-              checked={selectedProtonPath === option.value}
-              block
-              onChange={() => {
-                handleChangeProtonVersion(option.value).catch(() => {});
-              }}
-            />
-          ))}
-        </div>
+                }
+                checked={selectedProtonPath === option.value}
+                block
+                onChange={() => {
+                  handleChangeProtonVersion(option.value).catch(() => {});
+                }}
+              />
+            ))}
+          </div>
+        </VerticalFocusGroup>
       </SettingsSection>
 
       <SettingsSection
