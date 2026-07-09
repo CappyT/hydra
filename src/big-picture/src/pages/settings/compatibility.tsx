@@ -727,8 +727,8 @@ export function CompatibilitySettingsSection({
 
       {shouldRenderSandboxSection ? (
         <SettingsSection
-          title="Sandbox"
-          description="Isolate games in a bubblewrap sandbox with optional seccomp syscall filtering and network isolation."
+          title={t("sandbox_section_title")}
+          description={t("sandbox_section_description")}
         >
           <div className="compatibility-settings-section__content">
             {items

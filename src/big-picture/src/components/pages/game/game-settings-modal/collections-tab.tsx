@@ -226,7 +226,7 @@ export function GameCollectionsSettingsTab({
         {sortedCollections.length === 0 ? (
           <EmptyState
             title={t("collections", { ns: "sidebar" })}
-            description="You haven't created any collections yet."
+            description={t("no_collections_created_yet", { ns: "sidebar" })}
           />
         ) : (
           <div className="game-collections-settings-tab__list">
