@@ -172,7 +172,7 @@ export class WindowManager {
     };
   }
 
-  public static async createMainWindow() {
+  public static async createMainWindow(forceBigPicture = false) {
     if (this.mainWindow) return;
 
     const userPreferences = await db
@@ -180,6 +180,11 @@ export class WindowManager {
         valueEncoding: "json",
       })
       .catch(() => null);
+
+    // A CLI flag (--big-picture) can force big-picture mode for this launch
+    // only, without touching the persisted `launchInBigPicture` preference.
+    const launchInBigPicture =
+      Boolean(userPreferences?.launchInBigPicture) || forceBigPicture;
 
     const { isMaximized = false, ...configWithoutMaximized } =
       await this.loadScreenConfig();
@@ -203,7 +208,7 @@ export class WindowManager {
     this.mainWindow.on("maximize", emitMaximizeState);
     this.mainWindow.on("unmaximize", emitMaximizeState);
 
-    if (userPreferences?.launchInBigPicture) {
+    if (launchInBigPicture) {
       this.mainWindow.setOpacity(0);
       this.mainWindow.setSkipTaskbar(true);
       if (isMaximized) {
@@ -291,7 +296,7 @@ export class WindowManager {
     this.mainWindow.on("ready-to-show", () => {
       if (!app.isPackaged || isStaging)
         WindowManager.mainWindow?.webContents.openDevTools();
-      if (userPreferences?.launchInBigPicture) {
+      if (launchInBigPicture) {
         void WindowManager.openBigPictureWindow();
       } else {
         WindowManager.mainWindow?.show();

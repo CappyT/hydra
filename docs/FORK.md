@@ -284,6 +284,26 @@ deep link — so Proton/umu wrapping, the bwrap sandbox, gamescope and save sync
 all apply. It must never `shell.openPath` the raw executable, which would hand
 the `.exe` to the desktop handler and bypass the sandbox entirely.
 
+## Big Picture launch flag
+
+`--big-picture` (alias `--bigpicture`) boots the launcher straight into the
+fullscreen, gamepad-friendly Big Picture window instead of the desktop window.
+It is a per-launch override: it forces big-picture mode without modifying the
+persisted `launchInBigPicture` preference. The flag is detected in
+`src/main/index.ts` (scanning `process.argv`, matching the existing `--hidden`
+handling and working the same in a packaged AppImage) and threaded into
+`WindowManager.createMainWindow(forceBigPicture)` in
+`src/main/services/window-manager.ts`. It wins over `--hidden` autostart, and a
+second launch carrying the flag focuses the Big Picture window on the already
+running instance.
+
+Intended use on a Steam Deck / HTPC: add the AppImage to Steam as a non-Steam
+game and set its launch options to boot into Big Picture:
+
+```
+--big-picture
+```
+
 ## Startup dependency check
 
 At startup the main process checks whether `bwrap`, `pasta` and `gamescope` are

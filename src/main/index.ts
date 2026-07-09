@@ -59,6 +59,18 @@ i18n.init({
 
 const PROTOCOL = "hydralauncher";
 
+// CLI switch to boot straight into the Big Picture window (fullscreen, gamepad
+// UI), e.g. as a Steam launch option on a Steam Deck / HTPC. It forces
+// big-picture mode for this launch only and never touches the persisted
+// `launchInBigPicture` preference. `--bigpicture` is accepted as an alias.
+// We scan `process.argv` (rather than `app.commandLine.hasSwitch`) to match the
+// existing `--hidden` handling and because the flag lands in argv regardless of
+// whether we run from source or a packaged AppImage.
+const BIG_PICTURE_FLAGS = ["--big-picture", "--bigpicture"];
+
+const hasBigPictureFlag = (argv: string[]) =>
+  argv.some((arg) => BIG_PICTURE_FLAGS.includes(arg));
+
 // Register the custom schemes as privileged so the renderer can fetch them
 // (supportFetchAPI) and use the results on a canvas without tainting it
 // (corsEnabled). Must run before the app is ready.
@@ -189,7 +201,11 @@ app.whenReady().then(async () => {
   );
   const isRunDeepLink = deepLinkArg?.startsWith("hydralauncher://run");
 
-  if (!process.argv.includes("--hidden") && !isRunDeepLink) {
+  // --big-picture wins over --hidden autostart: always open a window and force
+  // the fullscreen big-picture layout on top of it.
+  if (hasBigPictureFlag(process.argv)) {
+    WindowManager.createMainWindow(true);
+  } else if (!process.argv.includes("--hidden") && !isRunDeepLink) {
     WindowManager.createMainWindow();
   }
 
@@ -293,6 +309,20 @@ app.on("second-instance", (_event, commandLine) => {
   const deepLink = commandLine.find((arg) =>
     arg.startsWith("hydralauncher://")
   );
+
+  // A second launch carrying --big-picture opens/focuses the Big Picture window
+  // (layered over the existing main window, or bootstrapping one if the app is
+  // running window-less in the tray).
+  if (hasBigPictureFlag(commandLine)) {
+    if (WindowManager.mainWindow) {
+      void WindowManager.openBigPictureWindow();
+    } else {
+      WindowManager.createMainWindow(true);
+    }
+
+    handleDeepLinkPath(deepLink);
+    return;
+  }
 
   // Check if this is a "run" deep link - don't show main window in that case
   const isRunDeepLink = deepLink?.startsWith("hydralauncher://run");
