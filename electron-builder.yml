@@ -1,5 +1,6 @@
 appId: gg.hydralauncher.hydra
 productName: Hydra
+afterPack: ./scripts/after-pack.cjs
 directories:
   buildResources: build
 extraResources:
