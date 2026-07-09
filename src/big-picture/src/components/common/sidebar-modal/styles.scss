@@ -1,11 +1,19 @@
 .sidebar-modal {
   display: grid;
   grid-template-columns: minmax(180px, 16rem) minmax(0, 1fr);
+  // A single row constrained to the modal box (min 0) so the content column
+  // can never grow past the viewport. Combined with the definite `height`
+  // below this makes `.sidebar-modal__content` a real bounded scroll viewport
+  // instead of stretching to its intrinsic (min-content) height, which would
+  // otherwise clip tall tabs and leave nothing for gamepad focus-scroll to
+  // scroll into view.
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
 
   width: fit-content;
   min-width: min(92vw, 64rem);
   max-width: min(92vw, 76rem);
+  height: min(42rem, calc(100vh - 4rem));
   min-height: min(42rem, calc(100vh - 4rem));
   max-height: min(100%, calc(100vh - 4rem));
   border-radius: calc(var(--spacing-unit) * 3);
