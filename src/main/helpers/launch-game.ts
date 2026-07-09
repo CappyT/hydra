@@ -23,6 +23,7 @@ import { isGamemodeAvailable } from "./is-gamemode-available";
 import { isMangohudAvailable } from "./is-mangohud-available";
 import {
   isGamescopeAvailable,
+  isGamescopeSessionActive,
   isWaylandSessionAvailable,
 } from "./is-gamescope-available";
 import { buildGamescopeWrapper } from "./resolve-gamescope-wrapper";
@@ -429,9 +430,21 @@ export const launchGame = async (
   // Tri-state: explicit per-game choice wins; AUTO (null/undefined) falls back
   // to "gamescope detected". ANDed with availability so an explicit true never
   // wraps the launch with a missing binary (mirrors mangohud/gamemode).
+  // Inside a gamescope session (Steam Deck gaming mode) wrapping is forced OFF
+  // even when explicitly enabled: the game presents to the session compositor
+  // directly, and a nested gamescope there cannot initialise its display.
   const gamescopeAvailable = isGamescopeAvailable();
+  const gamescopeSession = isGamescopeSessionActive();
   const useGamescope =
-    (game?.useGamescope ?? gamescopeAvailable) && gamescopeAvailable;
+    (game?.useGamescope ?? gamescopeAvailable) &&
+    gamescopeAvailable &&
+    !gamescopeSession;
+
+  if (gamescopeSession && (game?.useGamescope ?? gamescopeAvailable)) {
+    logger.log(
+      "Skipping gamescope wrapper: already inside a gamescope session"
+    );
+  }
 
   if (game) {
     await gamesSublevel.put(gameKey, {

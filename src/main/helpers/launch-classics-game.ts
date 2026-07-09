@@ -23,6 +23,7 @@ import { isGamemodeAvailable } from "./is-gamemode-available";
 import { isMangohudAvailable } from "./is-mangohud-available";
 import {
   isGamescopeAvailable,
+  isGamescopeSessionActive,
   isWaylandSessionAvailable,
 } from "./is-gamescope-available";
 import { buildGamescopeWrapper } from "./resolve-gamescope-wrapper";
@@ -166,10 +167,14 @@ const resolveEmulatorWrappers = (
 
   // Tri-state: explicit per-game choice wins; AUTO (null/undefined) falls back
   // to "gamescope detected", ANDed with availability so a stale explicit true
-  // never wraps with a missing binary.
+  // never wraps with a missing binary. Forced OFF inside a gamescope session
+  // (Steam Deck gaming mode): a nested gamescope cannot initialise its display
+  // there and the game presents to the session compositor directly.
   const gamescopeAvailable = isGamescopeAvailable();
   const useGamescope =
-    (game?.useGamescope ?? gamescopeAvailable) && gamescopeAvailable;
+    (game?.useGamescope ?? gamescopeAvailable) &&
+    gamescopeAvailable &&
+    !isGamescopeSessionActive();
 
   return {
     wrapperCommands: [

@@ -16,6 +16,21 @@ export const isGamescopeAvailable = (): boolean => {
 };
 
 /**
+ * Detects whether we are already running inside a gamescope session (SteamOS
+ * gaming mode / Steam Deck). Nesting a second gamescope there is never wanted:
+ * the session compositor already owns the display, and the nested instance
+ * cannot even bring up its embedded Xwayland inside the sandbox (host
+ * /tmp/.X11-unix fails its socket-dir ownership check), leaving a doomed
+ * process that pops the gamescope WSI dialog and segfaults on dismissal.
+ */
+export const isGamescopeSessionActive = (): boolean => {
+  return (
+    process.platform === "linux" &&
+    process.env.XDG_CURRENT_DESKTOP === "gamescope"
+  );
+};
+
+/**
  * Detects whether a Wayland session socket is present. Used to decide the
  * gamescope backend: with a Wayland session gamescope presents as a single
  * Wayland client (and the sandbox can drop the session X11 binds); without one

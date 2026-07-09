@@ -243,6 +243,15 @@ resort. All four gamescope call sites (native, wine, classics, umu) use the
 shared `buildGamescopeWrapper()`. Note: some engines self-cap (e.g. Hollow
 Knight/Unity is locked to 60 fps regardless of what gamescope advertises).
 
+Inside a gamescope session (SteamOS gaming mode / Steam Deck,
+`XDG_CURRENT_DESKTOP=gamescope`) the wrapper is forced OFF, even when the
+per-game toggle is explicitly on: the session compositor already owns the
+display, and a nested gamescope cannot bring up its embedded Xwayland inside
+the sandbox (host `/tmp/.X11-unix` fails its ownership check), leaving a doomed
+process that pops the gamescope WSI dialog and segfaults when dismissed. Games
+present directly to the session compositor instead
+(`isGamescopeSessionActive()` in `src/main/helpers/is-gamescope-available.ts`).
+
 ## Save synchronization (Steam-Cloud-like)
 
 Backups use the local artifact store (`src/main/services/backup/`, local
