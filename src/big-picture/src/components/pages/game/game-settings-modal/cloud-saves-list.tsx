@@ -4,7 +4,7 @@ import {
   DownloadSimpleIcon,
 } from "@phosphor-icons/react";
 import type { GameArtifact } from "@types";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useDate } from "../../../../hooks";
 import {
@@ -52,12 +52,22 @@ export function CloudSavesList({
   hideFreeze = false,
 }: Readonly<CloudSavesListProps>) {
   const { t } = useTranslation("big_picture");
+  const { t: tGameDetails } = useTranslation("game_details");
   const { formatDate, formatDateTime } = useDate();
   const [openMenu, setOpenMenu] = useState<{
     artifactId: string;
     position: { x: number; y: number };
   } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<GameArtifact | null>(null);
+  // This installation's stable device id, to mark backups made on THIS PC.
+  const [thisDeviceId, setThisDeviceId] = useState<string | null>(null);
+
+  useEffect(() => {
+    globalThis.window.electron
+      .getDeviceId()
+      .then(setThisDeviceId)
+      .catch(() => setThisDeviceId(null));
+  }, []);
 
   const sortedArtifacts = useMemo(
     () =>
@@ -116,6 +126,11 @@ export function CloudSavesList({
                 const deviceName =
                   artifact.hostname || t("backup_info_unknown_device");
                 const artifactInfo = `${formatDateTime(artifact.createdAt)} · ${deviceName}`;
+                const isThisDevice = Boolean(
+                  thisDeviceId &&
+                    artifact.deviceId &&
+                    artifact.deviceId === thisDeviceId
+                );
                 const isRestoring = restoringArtifactId === artifact.id;
                 const isUpdating = updatingArtifactId === artifact.id;
                 const isDeleting = deletingArtifactId === artifact.id;
@@ -139,6 +154,11 @@ export function CloudSavesList({
                         title={artifactInfo}
                       >
                         {artifactInfo}
+                        {isThisDevice ? (
+                          <span className="game-cloud-settings-tab__save-device-badge">
+                            {tGameDetails("this_device")}
+                          </span>
+                        ) : null}
                       </p>
                     </div>
 

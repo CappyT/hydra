@@ -18,10 +18,12 @@ import {
   Button,
   Checkbox,
   HorizontalFocusGroup,
+  Input,
   VerticalFocusGroup,
 } from "../../../common";
 import { useBigPictureToast } from "../../../../hooks";
 import { useUserDetails } from "../../../../hooks/use-user-details.hook";
+import { useUserPreferences } from "../../../../hooks/use-user-preferences.hook";
 import { SettingsSection } from "../../../../pages/settings/settings-section";
 import { EmulationCloudRestoreModal } from "../../../../pages/settings/emulation/emulation-cloud-restore-modal";
 import { CloudSavesList } from "./cloud-saves-list";
@@ -31,6 +33,10 @@ import "./cloud-tab.scss";
 export const GAME_CLOUD_SETTINGS_PRIMARY_CONTROL_ID =
   "game-cloud-settings-primary-control";
 const GAME_CLOUD_SETTINGS_AUTO_SYNC_ID = "game-cloud-settings-auto-sync";
+const GAME_CLOUD_SETTINGS_BACKUPS_TO_KEEP_ID =
+  "game-cloud-settings-backups-to-keep";
+
+const DEFAULT_BACKUPS_TO_KEEP = 10;
 
 export interface GameCloudSettingsProps {
   game: LibraryGame;
@@ -108,12 +114,41 @@ export function GameCloudSettingsTab({
   onToggleAutomaticCloudSync,
 }: Readonly<GameCloudSettingsProps>) {
   const { t } = useTranslation("big_picture");
+  const { t: tGameDetails } = useTranslation("game_details");
   const { showErrorToast, showSuccessToast } = useBigPictureToast();
   const { userDetails } = useUserDetails();
+  const userPreferences = useUserPreferences();
 
   const system =
     game.shop === "launchbox" ? platformToSystem(game.platform) : null;
   const isEmulationGame = system === "ps1" || system === "ps2";
+
+  const [backupsToKeep, setBackupsToKeep] = useState<number | null>(
+    game.backupsToKeep ?? null
+  );
+
+  useEffect(() => {
+    setBackupsToKeep(game.backupsToKeep ?? null);
+  }, [game.backupsToKeep]);
+
+  const defaultBackupsToKeep =
+    userPreferences?.defaultBackupsToKeep ?? DEFAULT_BACKUPS_TO_KEEP;
+
+  const handleChangeBackupsToKeep = useCallback(
+    async (value: number | null) => {
+      setBackupsToKeep(value);
+      try {
+        await globalThis.window.electron.updateGameBackupsToKeep(
+          game.shop,
+          game.objectId,
+          value
+        );
+      } catch {
+        showErrorToast("Unable to sync save");
+      }
+    },
+    [game.shop, game.objectId, showErrorToast]
+  );
 
   const [artifacts, setArtifacts] = useState<GameArtifact[]>([]);
   const [emulationSaves, setEmulationSaves] = useState<EmulationCloudSave[]>(
@@ -556,6 +591,36 @@ export function GameCloudSettingsTab({
               checked={automaticCloudSync}
               onChange={onToggleAutomaticCloudSync}
             />
+
+            <div className="game-cloud-settings-tab__backups-to-keep">
+              <Input
+                type="number"
+                min={1}
+                className="game-cloud-settings-tab__backups-to-keep-input"
+                label={tGameDetails("backups_to_keep")}
+                placeholder={String(defaultBackupsToKeep)}
+                value={backupsToKeep ?? ""}
+                focusId={GAME_CLOUD_SETTINGS_BACKUPS_TO_KEEP_ID}
+                onChange={(event) => {
+                  const raw = event.target.value.trim();
+
+                  if (raw === "") {
+                    void handleChangeBackupsToKeep(null);
+                    return;
+                  }
+
+                  const parsed = Number.parseInt(raw, 10);
+                  if (Number.isFinite(parsed) && parsed > 0) {
+                    void handleChangeBackupsToKeep(parsed);
+                  }
+                }}
+              />
+              <p className="game-cloud-settings-tab__backups-to-keep-hint">
+                {tGameDetails("backups_to_keep_description", {
+                  count: defaultBackupsToKeep,
+                })}
+              </p>
+            </div>
           </div>
         </SettingsSection>
       )}
