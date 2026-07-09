@@ -336,6 +336,22 @@ non-Steam game):
 --big-picture --no-tray
 ```
 
+### gamescope WSI dialog mitigation
+
+Under Steam's gamescope session (gaming mode), Chromium's GPU process would
+otherwise create a Vulkan swapchain outside gamescope's hooked path, tripping
+its WSI layer's modal *"CreateSwapchainKHR: Creating swapchain for non-Gamescope
+swapchain. Hooking has failed somewhere!"* dialog — and dismissing it can crash
+the session. `src/main/index.ts` disables Chromium's Vulkan usage with
+`app.commandLine.appendSwitch("disable-features", "Vulkan,VulkanFromANGLE,DefaultANGLEVulkan")`
+before app ready, so no swapchain is ever created and the dialog can't appear
+(the launcher UI falls back to GL, which is fine). It is gated on the gamescope
+session only (`XDG_CURRENT_DESKTOP === "gamescope"`; Deck desktop mode reports
+`KDE` and keeps its normal GPU path). This is a **process-local** Chromium
+switch, deliberately not an `ENABLE_GAMESCOPE_WSI=0` environment variable —
+the launcher's env leaks to the games it spawns, and those must keep gamescope's
+WSI.
+
 ## Startup dependency check
 
 At startup the main process checks whether `bwrap`, `pasta` and `gamescope` are

@@ -46,6 +46,25 @@ if (process.platform !== "linux") {
   app.commandLine.appendSwitch("--no-sandbox");
 } else {
   app.commandLine.appendSwitch("ozone-platform-hint", "auto");
+
+  // Under Steam's gamescope session (Steam Deck gaming mode), disable Chromium's
+  // Vulkan usage so the GPU process never creates a VkSwapchain. Gamescope's WSI
+  // layer only expects to hook swapchains created through its own path; a
+  // launcher swapchain created outside it triggers the modal "CreateSwapchainKHR:
+  // Creating swapchain for non-Gamescope swapchain. Hooking has failed somewhere!"
+  // dialog, and dismissing it can crash the session. Disabling Vulkan (the GPU
+  // process falls back to GL, fine for a launcher UI) means no swapchain is ever
+  // created, so the dialog can't appear. This is a process-local Chromium switch
+  // — unlike ENABLE_GAMESCOPE_WSI=0 in the environment, it does NOT propagate to
+  // games the launcher spawns, which must keep gamescope's WSI. Gated on the
+  // gamescope session (gaming mode sets XDG_CURRENT_DESKTOP=gamescope; Deck
+  // desktop mode sets KDE), so desktop launches keep their current GPU behavior.
+  if (process.env.XDG_CURRENT_DESKTOP === "gamescope") {
+    app.commandLine.appendSwitch(
+      "disable-features",
+      "Vulkan,VulkanFromANGLE,DefaultANGLEVulkan"
+    );
+  }
 }
 
 i18n.init({
