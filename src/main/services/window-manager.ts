@@ -328,7 +328,18 @@ export class WindowManager {
         mainWindow.setProgressBar(-1);
 
         const lastBounds = mainWindow.getBounds();
-        const isMaximized = mainWindow.isMaximized() ?? false;
+        // A `--big-picture` launch keeps the desktop window as a hidden,
+        // non-maximized placeholder and records the pending maximize in
+        // `deferredMainMaximize`. When the app quits straight from Big Picture
+        // (e.g. `--no-tray`, where closing BP calls `app.quit()`), the window
+        // never left that placeholder state, so `isMaximized()` is false and
+        // `getBounds()` returns placeholder bounds. Fold the deferred intent in
+        // so quitting from Big Picture persists the maximized screen config
+        // instead of clobbering it with placeholder state. On the normal
+        // desktop path `deferredMainMaximize` is always false, so this is a
+        // no-op and the save is unchanged.
+        const isMaximized =
+          (mainWindow.isMaximized() ?? false) || this.deferredMainMaximize;
         const screenConfig = isMaximized
           ? {
               x: undefined,
