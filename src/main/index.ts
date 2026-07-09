@@ -71,6 +71,19 @@ const BIG_PICTURE_FLAGS = ["--big-picture", "--bigpicture"];
 const hasBigPictureFlag = (argv: string[]) =>
   argv.some((arg) => BIG_PICTURE_FLAGS.includes(arg));
 
+// CLI switch to disable the system tray for this launch: no tray is created and
+// closing the last window becomes a real quit instead of hiding to tray. Meant
+// for Steam Deck gaming mode (added to Steam as `--big-picture --no-tray`),
+// which has no tray area — without it the closed app lingers headless and Steam
+// keeps showing it as running. Per-launch only; it never touches any persisted
+// preference. `--notray` is accepted as an alias. Scanned in `process.argv`
+// like the flags above so it works identically from source and a packaged
+// AppImage.
+const NO_TRAY_FLAGS = ["--no-tray", "--notray"];
+
+const hasNoTrayFlag = (argv: string[]) =>
+  argv.some((arg) => NO_TRAY_FLAGS.includes(arg));
+
 // Register the custom schemes as privileged so the renderer can fetch them
 // (supportFetchAPI) and use the results on a canvas without tainting it
 // (corsEnabled). Must run before the app is ready.
@@ -210,7 +223,15 @@ app.whenReady().then(async () => {
   }
 
   WindowManager.createNotificationWindow();
-  WindowManager.createSystemTray(language || "en");
+
+  // --no-tray: never create the tray, and make closing the last window quit the
+  // whole app (the flag is stored on WindowManager so its window-close and
+  // Big-Picture-close handlers can take the real-quit path). Used on Steam Deck
+  // gaming mode, where a trayless headless process would otherwise linger.
+  WindowManager.noTray = hasNoTrayFlag(process.argv);
+  if (!WindowManager.noTray) {
+    WindowManager.createSystemTray(language || "en");
+  }
 
   if (deepLinkArg) {
     handleDeepLinkPath(deepLinkArg);

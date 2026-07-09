@@ -304,6 +304,38 @@ game and set its launch options to boot into Big Picture:
 --big-picture
 ```
 
+### `--no-tray`
+
+`--no-tray` (alias `--notray`) disables the system tray for this launch and makes
+closing the window actually **quit** the app. Without it, closing the window on
+Steam Deck gaming mode does not terminate Hydra: the close is swallowed by the
+hide-to-tray behavior and the process lingers headless (gaming mode has no tray
+area to reach it), so Steam keeps showing the app as running.
+
+Like `--big-picture`, it is detected in `src/main/index.ts` (scanning
+`process.argv`, so it works from source and a packaged AppImage) and is a
+per-launch override that never touches any persisted preference. It does two
+things: (1) `WindowManager.createSystemTray` is skipped, and (2) the flag is
+stored on `WindowManager.noTray`, which routes the main-window `close` handler
+and the Big Picture `closed` handler (both in
+`src/main/services/window-manager.ts`) to `app.quit()` — the normal
+`before-quit` cleanup path (downloads, sandboxed-game teardown, playtime flush).
+In a `--big-picture` launch the desktop window is a hidden opacity-0 placeholder
+under the Big Picture window; with `--no-tray`, closing the Big Picture window
+quits the whole app instead of restoring that hidden placeholder (which would
+otherwise keep the process alive headless).
+
+**Quitting the launcher tears down any running sandboxed game** (the bwrap
+sandbox uses `--die-with-parent` tied to the Electron main process). This is
+accepted for this flag: on the Deck you close Hydra when you are done playing.
+
+Recommended Steam Deck gaming-mode launch options (add the AppImage as a
+non-Steam game):
+
+```
+--big-picture --no-tray
+```
+
 ## Startup dependency check
 
 At startup the main process checks whether `bwrap`, `pasta` and `gamescope` are

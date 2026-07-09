@@ -43,6 +43,16 @@ export class WindowManager {
   private static authWindow: Electron.BrowserWindow | null = null;
   private static deferredMainMaximize = false;
 
+  /**
+   * Set from the `--no-tray` CLI flag in `src/main/index.ts`. When true, closing
+   * the last window quits the app through the normal `app.quit()` / `before-quit`
+   * cleanup path instead of hiding to tray or restoring the hidden Big Picture
+   * placeholder window. IMPORTANT: quitting the launcher tears down running
+   * sandboxed games (bwrap `--die-with-parent` is tied to the Electron main
+   * process); this is accepted for this flag — see docs/FORK.md.
+   */
+  public static noTray = false;
+
   private static readonly editorWindows: Map<string, BrowserWindow> = new Map();
 
   private static initialConfigInitializationMainWindow: Electron.BrowserWindowConstructorOptions =
@@ -332,7 +342,10 @@ export class WindowManager {
         await this.saveScreenConfig(screenConfig);
       }
 
-      if (userPreferences?.preferQuitInsteadOfHiding) {
+      // --no-tray turns a window close into a real quit (there is no tray to
+      // hide into), mirroring the preferQuitInsteadOfHiding path so `before-quit`
+      // cleanup still runs (downloads, sandboxed-game teardown, etc.).
+      if (this.noTray || userPreferences?.preferQuitInsteadOfHiding) {
         app.quit();
       }
     });
@@ -403,6 +416,18 @@ export class WindowManager {
 
     this.bigPicture.on("closed", () => {
       this.bigPicture = null;
+
+      // With --no-tray, closing the Big Picture window quits the whole app. In a
+      // `--big-picture` launch the main window is a hidden opacity-0 placeholder
+      // underneath Big Picture; restoring it (the default below) would keep the
+      // process alive headless with no tray to reach it. Quit instead — the
+      // main window's own close handler runs during shutdown and persists its
+      // screen config.
+      if (this.noTray) {
+        app.quit();
+        return;
+      }
+
       const main = this.mainWindow;
       if (main && !main.isDestroyed()) {
         this.restoreMainWindowAfterBigPictureCloses();
