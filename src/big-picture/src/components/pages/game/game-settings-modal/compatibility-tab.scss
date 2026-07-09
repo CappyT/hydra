@@ -45,3 +45,39 @@
   font-size: 12px;
   color: var(--text-secondary);
 }
+
+.game-compatibility-settings-tab__seccomp {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing-unit) * 2);
+}
+
+.game-compatibility-settings-tab__seccomp-description,
+.game-compatibility-settings-tab__sandbox-paths-description {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.game-compatibility-settings-tab__sandbox-paths {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing-unit) * 2);
+}
+
+.game-compatibility-settings-tab__sandbox-paths-title {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.game-compatibility-settings-tab__sandbox-path-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+}
+
+.game-compatibility-settings-tab__sandbox-path-input {
+  flex: 1;
+  min-width: 0;
+}
