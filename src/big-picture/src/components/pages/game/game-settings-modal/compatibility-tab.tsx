@@ -584,114 +584,127 @@ export function GameCompatibilitySettingsTab({
           />
 
           {showSandboxOptions ? (
-            <>
-              <Checkbox
-                id={GAME_COMPATIBILITY_SETTINGS_SANDBOX_IPC_ID}
-                label={t("sandbox_share_ipc")}
-                secondaryText={t("sandbox_share_ipc_description")}
-                checked={sandboxShareIpc}
-                block
-                onChange={(checked) => {
-                  handleToggleSandboxShareIpc(checked).catch(() => {});
-                }}
-              />
-
-              <Checkbox
-                id={GAME_COMPATIBILITY_SETTINGS_NETWORK_ISOLATION_ID}
-                label={t("enable_network_isolation")}
-                secondaryText={
-                  networkIsolationAvailable
-                    ? t("network_isolation_description")
-                    : t("network_isolation_unavailable_tooltip")
-                }
-                checked={networkIsolationEnabled && networkIsolationAvailable}
-                disabled={!networkIsolationAvailable}
-                block
-                onChange={(checked) => {
-                  handleToggleNetworkIsolation(checked).catch(() => {});
-                }}
-              />
-
-              <div className="game-compatibility-settings-tab__seccomp">
-                <DropdownSelect<SeccompSelectValue>
-                  label={t("seccomp_level")}
-                  ariaLabel={t("seccomp_level")}
-                  value={seccompSelectValue}
-                  focusId={GAME_COMPATIBILITY_SETTINGS_SECCOMP_LEVEL_ID}
-                  options={[
-                    { value: "", label: t("seccomp_level_follow_global") },
-                    { value: "off", label: t("seccomp_level_off") },
-                    { value: "low", label: t("seccomp_level_low") },
-                    { value: "medium", label: t("seccomp_level_medium") },
-                    { value: "high", label: t("seccomp_level_high") },
-                  ]}
-                  onValueChange={(value) => {
-                    handleChangeSeccompLevel(value === "" ? null : value).catch(
-                      () => {}
-                    );
+            // Own focus region so these sub-options keep their visual (tree)
+            // order in gamepad navigation. They mount late behind
+            // `showSandboxOptions` (after the async availability load); as bare
+            // children of the tab region they register at its END, correct
+            // today only because they happen to be visually last. The region
+            // registers synchronously in tree position, so traversal enters it
+            // right after the "enable sandbox" checkbox. Mirrors the
+            // proton-options region (commit 144cdf01).
+            <VerticalFocusGroup asChild>
+              <div>
+                <Checkbox
+                  id={GAME_COMPATIBILITY_SETTINGS_SANDBOX_IPC_ID}
+                  focusId={GAME_COMPATIBILITY_SETTINGS_SANDBOX_IPC_ID}
+                  label={t("sandbox_share_ipc")}
+                  secondaryText={t("sandbox_share_ipc_description")}
+                  checked={sandboxShareIpc}
+                  block
+                  onChange={(checked) => {
+                    handleToggleSandboxShareIpc(checked).catch(() => {});
                   }}
                 />
-                <p className="game-compatibility-settings-tab__seccomp-description">
-                  {t("seccomp_level_description")}
-                </p>
-              </div>
 
-              <Checkbox
-                id={GAME_COMPATIBILITY_SETTINGS_SECCOMP_AUDIT_ID}
-                label={t("seccomp_audit")}
-                secondaryText={t("seccomp_audit_description")}
-                checked={seccompAudit}
-                disabled={seccompLevel === "off"}
-                block
-                onChange={(checked) => {
-                  handleToggleSeccompAudit(checked).catch(() => {});
-                }}
-              />
+                <Checkbox
+                  id={GAME_COMPATIBILITY_SETTINGS_NETWORK_ISOLATION_ID}
+                  focusId={GAME_COMPATIBILITY_SETTINGS_NETWORK_ISOLATION_ID}
+                  label={t("enable_network_isolation")}
+                  secondaryText={
+                    networkIsolationAvailable
+                      ? t("network_isolation_description")
+                      : t("network_isolation_unavailable_tooltip")
+                  }
+                  checked={networkIsolationEnabled && networkIsolationAvailable}
+                  disabled={!networkIsolationAvailable}
+                  block
+                  onChange={(checked) => {
+                    handleToggleNetworkIsolation(checked).catch(() => {});
+                  }}
+                />
 
-              <div className="game-compatibility-settings-tab__sandbox-paths">
-                <p className="game-compatibility-settings-tab__sandbox-paths-title">
-                  {t("sandbox_extra_paths")}
-                </p>
-                <p className="game-compatibility-settings-tab__sandbox-paths-description">
-                  {t("sandbox_extra_paths_description")}
-                </p>
+                <div className="game-compatibility-settings-tab__seccomp">
+                  <DropdownSelect<SeccompSelectValue>
+                    label={t("seccomp_level")}
+                    ariaLabel={t("seccomp_level")}
+                    value={seccompSelectValue}
+                    focusId={GAME_COMPATIBILITY_SETTINGS_SECCOMP_LEVEL_ID}
+                    options={[
+                      { value: "", label: t("seccomp_level_follow_global") },
+                      { value: "off", label: t("seccomp_level_off") },
+                      { value: "low", label: t("seccomp_level_low") },
+                      { value: "medium", label: t("seccomp_level_medium") },
+                      { value: "high", label: t("seccomp_level_high") },
+                    ]}
+                    onValueChange={(value) => {
+                      handleChangeSeccompLevel(
+                        value === "" ? null : value
+                      ).catch(() => {});
+                    }}
+                  />
+                  <p className="game-compatibility-settings-tab__seccomp-description">
+                    {t("seccomp_level_description")}
+                  </p>
+                </div>
 
-                {sandboxExtraPaths.map((extraPath) => (
-                  <HorizontalFocusGroup
-                    key={extraPath}
-                    className="game-compatibility-settings-tab__sandbox-path-row"
-                    asChild
+                <Checkbox
+                  id={GAME_COMPATIBILITY_SETTINGS_SECCOMP_AUDIT_ID}
+                  focusId={GAME_COMPATIBILITY_SETTINGS_SECCOMP_AUDIT_ID}
+                  label={t("seccomp_audit")}
+                  secondaryText={t("seccomp_audit_description")}
+                  checked={seccompAudit}
+                  disabled={seccompLevel === "off"}
+                  block
+                  onChange={(checked) => {
+                    handleToggleSeccompAudit(checked).catch(() => {});
+                  }}
+                />
+
+                <div className="game-compatibility-settings-tab__sandbox-paths">
+                  <p className="game-compatibility-settings-tab__sandbox-paths-title">
+                    {t("sandbox_extra_paths")}
+                  </p>
+                  <p className="game-compatibility-settings-tab__sandbox-paths-description">
+                    {t("sandbox_extra_paths_description")}
+                  </p>
+
+                  {sandboxExtraPaths.map((extraPath) => (
+                    <HorizontalFocusGroup
+                      key={extraPath}
+                      className="game-compatibility-settings-tab__sandbox-path-row"
+                      asChild
+                    >
+                      <div>
+                        <Input
+                          className="game-compatibility-settings-tab__sandbox-path-input"
+                          value={extraPath}
+                          readOnly
+                        />
+                        <Button
+                          focusId={getSandboxPathRemoveFocusId(extraPath)}
+                          variant="danger"
+                          icon={<TrashIcon size={16} />}
+                          onClick={() => {
+                            handleRemoveSandboxPath(extraPath).catch(() => {});
+                          }}
+                        >
+                          {t("clear")}
+                        </Button>
+                      </div>
+                    </HorizontalFocusGroup>
+                  ))}
+
+                  <Button
+                    focusId={GAME_COMPATIBILITY_SETTINGS_SANDBOX_ADD_PATH_ID}
+                    variant="secondary"
+                    icon={<PlusIcon size={16} />}
+                    onClick={() => setSandboxPathPickerOpen(true)}
                   >
-                    <div>
-                      <Input
-                        className="game-compatibility-settings-tab__sandbox-path-input"
-                        value={extraPath}
-                        readOnly
-                      />
-                      <Button
-                        focusId={getSandboxPathRemoveFocusId(extraPath)}
-                        variant="danger"
-                        icon={<TrashIcon size={16} />}
-                        onClick={() => {
-                          handleRemoveSandboxPath(extraPath).catch(() => {});
-                        }}
-                      >
-                        {t("clear")}
-                      </Button>
-                    </div>
-                  </HorizontalFocusGroup>
-                ))}
-
-                <Button
-                  focusId={GAME_COMPATIBILITY_SETTINGS_SANDBOX_ADD_PATH_ID}
-                  variant="secondary"
-                  icon={<PlusIcon size={16} />}
-                  onClick={() => setSandboxPathPickerOpen(true)}
-                >
-                  {t("sandbox_add_path")}
-                </Button>
+                    {t("sandbox_add_path")}
+                  </Button>
+                </div>
               </div>
-            </>
+            </VerticalFocusGroup>
           ) : null}
         </SettingsSection>
       ) : null}
