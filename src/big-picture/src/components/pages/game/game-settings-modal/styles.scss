@@ -1,7 +1,15 @@
 .game-settings-modal {
   height: min(42rem, calc(100vh - 4rem));
 
-  .sidebar-modal__content {
-    overflow: hidden;
-  }
+  // NOTE: do NOT clip `.sidebar-modal__content` here. The shared sidebar-modal
+  // styles make this cell a bounded viewport with `overflow: auto`, which is
+  // what lets natural-height tabs (Compatibility / Collections / Launch) scroll
+  // with the gamepad — the auto-scroll helper only treats an ancestor as a
+  // scroll viewport when it has `overflow: auto/scroll/overlay` AND
+  // `scrollHeight > clientHeight`. An earlier `overflow: hidden` override here
+  // (specificity 1,2,0) beat the shared `overflow: auto` (1,1,0) and clipped
+  // tall tabs, leaving controls below the fold unreachable on Steam Deck. The
+  // fill-height tabs (Cloud / Customization / Downloads) size themselves to
+  // `height: 100%` with their own inner scrollers, so `auto` never adds an
+  // outer scrollbar for them.
 }
