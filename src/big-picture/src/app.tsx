@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Outlet, useLocation } from "react-router-dom";
 import {
   BIG_PICTURE_APP_LAYER_ID,
@@ -13,7 +14,7 @@ import {
   Sidebar,
 } from "./layout";
 import { IS_DESKTOP } from "./constants";
-import { useNavigation, useUserPreferences } from "./hooks";
+import { useBigPictureToast, useNavigation, useUserPreferences } from "./hooks";
 import {
   HorizontalFocusGroup,
   InputModeProvider,
@@ -41,7 +42,9 @@ export default function App() {
   ensureBigPictureI18nResources();
 
   const { pathname } = useLocation();
+  const { t } = useTranslation("app");
   const { nodes, regions, setFocusRegion } = useNavigation();
+  const { showWarningToast } = useBigPictureToast();
   const userPreferences = useUserPreferences();
   const inputMode = useInputModeStore((state) => state.mode);
   const [pendingRouteFocusPathname, setPendingRouteFocusPathname] = useState<
@@ -101,6 +104,56 @@ export default function App() {
         inputMode === "gamepad"
     );
   }, [userPreferences?.bigPictureSoundsEnabled, inputMode]);
+
+  // Startup dependency check: warn once about any missing optional host tools
+  // (bwrap / pasta / gamescope) so a BP-only device (Steam Deck) is informed.
+  useEffect(() => {
+    if (!IS_DESKTOP) return;
+    if (globalThis.window.electron.platform !== "linux") return;
+
+    globalThis.window.electron
+      .getMissingHostTools()
+      .then((missing) => {
+        if (!missing.length) return;
+
+        const message = missing
+          .map((tool) => t(`host_tool_missing_${tool}`))
+          .join(" ");
+
+        showWarningToast(t("host_tools_missing_title"), {
+          message,
+          duration: 10000,
+          fallbackVisual: "settings",
+        });
+      })
+      .catch(() => {
+        // Best-effort only: a failed probe must never disrupt startup.
+      });
+  }, [t, showWarningToast]);
+
+  // Non-blocking cloud-save conflict notice. "kept-both": local was backed up
+  // and the newer remote loaded. "kept-local": the local backup failed, so the
+  // remote was NOT loaded and local saves were kept intact.
+  useEffect(() => {
+    if (!IS_DESKTOP) return;
+
+    const unsubscribe = globalThis.window.electron.onCloudSyncConflict(
+      (payload) => {
+        const messageKey =
+          payload.resolution === "kept-local"
+            ? "cloud_sync_conflict_kept_local_message"
+            : "cloud_sync_conflict_message";
+
+        showWarningToast(t("cloud_sync_conflict_title"), {
+          message: t(messageKey, { hostname: payload.hostname }),
+          duration: 10000,
+          fallbackVisual: "settings",
+        });
+      }
+    );
+
+    return () => unsubscribe();
+  }, [t, showWarningToast]);
 
   return (
     <Fragment>
