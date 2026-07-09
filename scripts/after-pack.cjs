@@ -40,19 +40,19 @@ if [ -n "\${LD_PRELOAD+x}" ]; then
   # The trailing newline on printf is required: without it, 'read' would drop
   # the final entry (it returns non-zero on an unterminated last line).
   _hydra_new_preload=$(
-    printf '%s\\n' "\$LD_PRELOAD" | tr ': ' '\\n\\n' | while IFS= read -r _hydra_entry; do
-      [ -n "\$_hydra_entry" ] || continue
-      case "\$_hydra_entry" in
+    printf '%s\\n' "$LD_PRELOAD" | tr ': ' '\\n\\n' | while IFS= read -r _hydra_entry; do
+      [ -n "$_hydra_entry" ] || continue
+      case "$_hydra_entry" in
         *gameoverlayrenderer*) ;; # drop the steam overlay preload
-        *) printf '%s ' "\$_hydra_entry" ;;
+        *) printf '%s ' "$_hydra_entry" ;;
       esac
     done
   )
   # Trim the single trailing space left by the loop above.
   _hydra_new_preload=\${_hydra_new_preload% }
 
-  if [ -n "\$_hydra_new_preload" ]; then
-    LD_PRELOAD="\$_hydra_new_preload"
+  if [ -n "$_hydra_new_preload" ]; then
+    LD_PRELOAD="$_hydra_new_preload"
     export LD_PRELOAD
   else
     unset LD_PRELOAD
@@ -63,9 +63,26 @@ fi
 # Resolve this script's own directory (portable, no readlink -f required) and
 # exec the real Electron binary, forwarding every original argument so flags
 # like --big-picture and --no-sandbox pass through untouched.
-_hydra_dir=$(CDPATH= cd -- "$(dirname -- "\$0")" && pwd)
-exec "\$_hydra_dir/${binName}" "\$@"
+_hydra_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec "$_hydra_dir/${binName}" "$@"
 `;
+
+/**
+ * True when the file at `filePath` is our generated sh launcher rather than
+ * the real ELF binary (ELF files start with "\x7fELF", never "#!").
+ * @param {string} filePath
+ * @returns {boolean}
+ */
+const isWrapperScript = (filePath) => {
+  const fd = fs.openSync(filePath, "r");
+  try {
+    const header = Buffer.alloc(9);
+    const bytesRead = fs.readSync(fd, header, 0, header.length, 0);
+    return header.subarray(0, bytesRead).toString("utf8") === "#!/bin/sh";
+  } finally {
+    fs.closeSync(fd);
+  }
+};
 
 /**
  * @param {import("app-builder-lib").AfterPackContext} context
@@ -81,23 +98,25 @@ exports.default = async function afterPack(context) {
   const launcherPath = path.join(appOutDir, executableName);
   const realBinaryPath = path.join(appOutDir, realBinaryName);
 
-  // Idempotency guard: afterPack may run more than once (e.g. --dir plus a
-  // target build). If the real binary was already moved aside, do nothing.
-  if (fs.existsSync(realBinaryPath)) {
-    console.log(
-      `[after-pack] launcher already installed for ${executableName}, skipping.`
-    );
-    return;
-  }
-
   if (!fs.existsSync(launcherPath)) {
     throw new Error(
       `[after-pack] expected executable not found at ${launcherPath}`
     );
   }
 
-  // Move the real Electron binary aside, then install the sh launcher in its
-  // place with the same executable permissions.
+  // Idempotency guard, by content rather than by the presence of the .bin
+  // file: on incremental in-place rebuilds electron-builder re-copies the raw
+  // binary over our launcher while a stale .bin from the previous run is still
+  // around, so "does .bin exist" would skip and ship an unwrapped binary.
+  if (isWrapperScript(launcherPath)) {
+    console.log(
+      `[after-pack] launcher already installed for ${executableName}, skipping.`
+    );
+    return;
+  }
+
+  // Move the real Electron binary aside (overwriting any stale .bin), then
+  // install the sh launcher in its place with executable permissions.
   fs.renameSync(launcherPath, realBinaryPath);
   fs.writeFileSync(launcherPath, buildWrapper(realBinaryName), { mode: 0o755 });
   fs.chmodSync(launcherPath, 0o755);
