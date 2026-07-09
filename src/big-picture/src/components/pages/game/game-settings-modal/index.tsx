@@ -32,12 +32,17 @@ import {
   GameCompatibilitySettingsTab,
   GAME_COMPATIBILITY_SETTINGS_PRIMARY_CONTROL_ID,
 } from "./compatibility-tab";
+import {
+  GameCollectionsSettingsTab,
+  GAME_COLLECTIONS_SETTINGS_PRIMARY_CONTROL_ID,
+} from "./collections-tab";
 
 type GameSettingsTabId =
   | "launch"
   | "customization"
   | "hydra_cloud"
   | "compatibility"
+  | "collections"
   | "downloads"
   | "danger_zone";
 
@@ -48,6 +53,7 @@ const GAME_SETTINGS_TAB_FOCUS_IDS: Record<GameSettingsTabId, string> = {
   downloads: GAME_DOWNLOADS_SETTINGS_PRIMARY_CONTROL_ID,
   danger_zone: GAME_DANGER_ZONE_PRIMARY_CONTROL_ID,
   compatibility: GAME_COMPATIBILITY_SETTINGS_PRIMARY_CONTROL_ID,
+  collections: GAME_COLLECTIONS_SETTINGS_PRIMARY_CONTROL_ID,
 };
 
 interface GameSettingsModalProps {
@@ -108,8 +114,19 @@ export function GameSettingsModal({
     () => <GameCompatibilitySettingsTab game={game} />,
     [game]
   );
+  const collectionsContent = useMemo(
+    () => <GameCollectionsSettingsTab game={game} />,
+    [game]
+  );
 
   const shouldShowCloudTab = game.shop !== "custom";
+  const shouldShowCollectionsTab = game.shop !== "custom";
+
+  useEffect(() => {
+    if (!shouldShowCollectionsTab && activeTabId === "collections") {
+      setActiveTabId("launch");
+    }
+  }, [shouldShowCollectionsTab, activeTabId]);
 
   useEffect(() => {
     if (!shouldShowCloudTab && activeTabId === "hydra_cloud") {
@@ -147,6 +164,15 @@ export function GameSettingsModal({
             } satisfies SidebarModalTab<GameSettingsTabId>,
           ]
         : []),
+      ...(shouldShowCollectionsTab
+        ? [
+            {
+              id: "collections",
+              label: t("collections", { ns: "sidebar" }),
+              content: collectionsContent,
+            } satisfies SidebarModalTab<GameSettingsTabId>,
+          ]
+        : []),
       {
         id: "downloads",
         label: t("settings_category_downloads"),
@@ -160,12 +186,14 @@ export function GameSettingsModal({
     ],
     [
       cloudContent,
+      collectionsContent,
       compatibilityContent,
       customizationContent,
       dangerContent,
       downloadContent,
       launchContent,
       shouldShowCloudTab,
+      shouldShowCollectionsTab,
       shouldShowCompatibilityTab,
       t,
     ]
