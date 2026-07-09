@@ -6,6 +6,7 @@ import {
   logger,
   Sandbox,
   Wine,
+  clearGameLaunching,
 } from "@main/services";
 import sudo from "sudo-prompt";
 import { app } from "electron";
@@ -29,6 +30,11 @@ const closeGame = async (
   shop: GameShop,
   objectId: string
 ) => {
+  // The user explicitly closed the game: drop the launch grace so the process
+  // watcher reports the close on its next tick instead of holding the game in
+  // the running-games feed until the grace expires.
+  clearGameLaunching(levelKeys.game(shop, objectId));
+
   if (emulators.closeEmulatorSession(levelKeys.game(shop, objectId))) return;
 
   const processes = await NativeAddon.listProcesses();

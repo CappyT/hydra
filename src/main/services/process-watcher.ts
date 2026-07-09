@@ -26,6 +26,38 @@ export const gamesPlaytime = new Map<
   { lastTick: number; firstTick: number; lastSyncTick: number }
 >();
 
+// Games we've just asked to launch, keyed by game key → grace deadline
+// (performance.now()). During startup the process scan flaps: it transiently
+// matches short-lived bootstrap processes (the recorded wrapper pid of the
+// bwrap/pasta/umu chain before it hands off, Proton's wineboot/prefix-setup
+// processes that inherit the game directory as cwd) and then loses the match
+// again before the game's own process becomes matchable. Each match→gap edge
+// used to fire a close transition, making the running-games feed — and the
+// launch/close button that reads it — bounce. While the grace is active,
+// ABSENCE of a match is not trusted, so the close transition is suppressed;
+// matches are still reported normally. The grace is purely time-based (the gap
+// can span several watcher ticks, so "seen running recently" is not a safe
+// early-out) and is cleared explicitly when the user closes the game, so an
+// intentional close during startup still registers on the next tick.
+const launchingGames = new Map<string, number>();
+const LAUNCH_GRACE_MS = 30_000;
+
+export const markGameLaunching = (gameKey: string) => {
+  launchingGames.set(gameKey, performance.now() + LAUNCH_GRACE_MS);
+};
+
+export const clearGameLaunching = (gameKey: string) => {
+  launchingGames.delete(gameKey);
+};
+
+const isWithinLaunchGrace = (gameKey: string) => {
+  const deadline = launchingGames.get(gameKey);
+  if (deadline === undefined) return false;
+  if (performance.now() <= deadline) return true;
+  launchingGames.delete(gameKey);
+  return false;
+};
+
 export const getGamesRunning = () => {
   const now = performance.now();
   const gamesRunning = Array.from(gamesPlaytime.entries()).map((entry) => {
@@ -289,7 +321,7 @@ export const watchProcesses = async () => {
       } else {
         onOpenGame(game);
       }
-    } else if (gamesPlaytime.has(gameKey)) {
+    } else if (gamesPlaytime.has(gameKey) && !isWithinLaunchGrace(gameKey)) {
       onCloseGame(game);
     }
   }

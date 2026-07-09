@@ -16,6 +16,7 @@ import {
   sandboxedGamePids,
   Sandbox,
   CloudSync,
+  markGameLaunching,
 } from "@main/services";
 import { CommonRedistManager } from "@main/services/common-redist-manager";
 import { parseExecutablePath } from "../events/helpers/parse-executable-path";
@@ -410,6 +411,15 @@ export const launchGame = async (
 
   const gameKey = levelKeys.game(shop, objectId);
   const game = await gamesSublevel.get(gameKey);
+
+  // Open a launch-grace window covering the whole startup: the spawned
+  // bwrap/pasta/umu/proton chain churns short-lived bootstrap processes that
+  // the process watcher transiently matches and then loses again before the
+  // game's own process is matchable, which used to bounce the running-games
+  // feed (launch/close button flashing close→launch mid-startup). While the
+  // grace is active the watcher does not trust the ABSENCE of a match (see
+  // process-watcher); an explicit user close still clears it immediately.
+  markGameLaunching(gameKey);
 
   const userPreferences = await db
     .get<string, UserPreferences | null>(levelKeys.userPreferences, {
