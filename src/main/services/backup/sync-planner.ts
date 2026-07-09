@@ -59,9 +59,13 @@ const pickLatest = <T extends PlannerArtifact>(artifacts: T[]): T | null => {
  * sync marker and the list of stored backups. This is the data-safety crux:
  *
  * - No backups → nothing to restore.
- * - Marker UNSET → pre-existing game / first run of this feature: DO NOT
- *   restore (local saves may be newer than the latest backup); adopt the latest
- *   as the baseline instead.
+ * - Marker UNSET → pre-existing game / first run of this feature:
+ *     - This device has NO local save files (`hasLocalSaves === false`, a POSITIVE
+ *       determination by the caller) → restore the latest backup: there is nothing
+ *       to clobber, so a first-run download is safe (true Steam-Cloud semantics).
+ *     - Otherwise (local saves exist, or existence could not be determined —
+ *       `hasLocalSaves` true or undefined) → DO NOT restore (local saves may be
+ *       newer than the latest backup); adopt the latest as the baseline instead.
  * - Latest backup strictly NEWER than the marker → another machine produced
  *   newer progress:
  *     - our OWN newer backup → restore it (safe).
@@ -80,6 +84,13 @@ export const decideLaunchSync = (params: {
   ourDeviceId: string;
   /** Set when this device has local changes not yet backed up (divergence). */
   unsyncedSince?: string | null;
+  /**
+   * Whether this device currently has local save files for the game. Only
+   * meaningful (and only computed by the caller) when the marker is unset.
+   * `false` MUST be a POSITIVE determination that zero save files exist; any
+   * error/ambiguity leaves this undefined so we fall back to adopt-baseline.
+   */
+  hasLocalSaves?: boolean;
 }): LaunchSyncPlan => {
   const { lastSyncedBackupAt, artifacts, ourDeviceId, unsyncedSince } = params;
 
@@ -89,7 +100,18 @@ export const decideLaunchSync = (params: {
   }
 
   if (!lastSyncedBackupAt) {
-    // Migration safety: adopt the latest as the baseline without restoring.
+    // Fresh device with NO local save files: nothing to clobber, so restoring
+    // the latest backup on first launch is safe (true Steam-Cloud first run).
+    if (params.hasLocalSaves === false) {
+      return {
+        action: "restore",
+        artifactId: latest.id,
+        createdAt: latest.createdAt,
+      };
+    }
+
+    // Otherwise (local saves may exist, or existence could not be determined):
+    // migration safety — adopt the latest as the baseline without restoring.
     return { action: "adopt-baseline", createdAt: latest.createdAt };
   }
 

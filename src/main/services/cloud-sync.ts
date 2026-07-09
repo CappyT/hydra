@@ -234,6 +234,65 @@ export class CloudSync {
   }
 
   /**
+   * FAIL-SAFE detection of whether this device currently has local save files
+   * for the game. Used ONLY on a fresh device (sync marker unset) to choose
+   * between a first-run restore and adopt-baseline. Runs a ludusavi backup
+   * *preview* — the same read-only scan the real backup uses to enumerate save
+   * files — and returns `false` ONLY on a POSITIVE determination that ludusavi
+   * found zero save files. ANY error/timeout/missing/ambiguous result → `true`
+   * ("assume saves exist"), so a restore can never clobber saves we failed to
+   * detect. Logs the determination one line either way.
+   */
+  private static async detectHasLocalSaves(
+    shop: GameShop,
+    objectId: string,
+    winePrefixPath: string | null | undefined
+  ): Promise<boolean> {
+    try {
+      const effectiveWinePrefixPath = Wine.getEffectivePrefixPath(
+        winePrefixPath,
+        objectId
+      );
+
+      const preview = await Ludusavi.getBackupPreview(
+        shop,
+        objectId,
+        effectiveWinePrefixPath
+      );
+
+      const gameData = preview?.games[objectId];
+
+      // No preview, or the game is absent from the scan (e.g. no known save path
+      // on this install) → we cannot positively confirm zero saves → fail-safe.
+      if (!gameData?.files) {
+        logger.info(
+          "Local-save detection inconclusive on fresh device; assuming saves exist",
+          { shop, objectId, reason: preview ? "no-game-data" : "no-preview" }
+        );
+        return true;
+      }
+
+      const fileCount = Object.keys(gameData.files).length;
+      const hasLocalSaves = fileCount > 0;
+
+      logger.info("Local-save detection on fresh device", {
+        shop,
+        objectId,
+        fileCount,
+        hasLocalSaves,
+      });
+
+      return hasLocalSaves;
+    } catch (error) {
+      logger.error(
+        "Local-save detection failed on fresh device; assuming saves exist",
+        { shop, objectId, error }
+      );
+      return true;
+    }
+  }
+
+  /**
    * Steam-Cloud-like restore-BEFORE-launch. Awaited at the start of the launch
    * flow when `automaticCloudSync` is enabled. Restores the latest backup only
    * when it is strictly newer than this machine's sync marker (see
@@ -254,11 +313,24 @@ export class CloudSync {
       const backend = await getArtifactBackend();
       const artifacts = await backend.list(shop, objectId);
 
+      // Only pay for local-save detection on a fresh device (marker unset) that
+      // actually has backups to restore — never on every launch. `undefined`
+      // keeps the planner on the safe adopt-baseline path.
+      let hasLocalSaves: boolean | undefined;
+      if (!game.lastSyncedBackupAt && artifacts.length > 0) {
+        hasLocalSaves = await CloudSync.detectHasLocalSaves(
+          shop,
+          objectId,
+          game.winePrefixPath
+        );
+      }
+
       const plan = decideLaunchSync({
         lastSyncedBackupAt: game.lastSyncedBackupAt,
         artifacts,
         ourDeviceId: getDeviceId(),
         unsyncedSince: game.unsyncedSince,
+        hasLocalSaves,
       });
 
       if (plan.action === "none") return;
@@ -285,11 +357,14 @@ export class CloudSync {
             CloudSync.getConflictBackupLabel()
           );
         } catch (error) {
-          logger.error("Failed to back up local state before conflict restore", {
-            shop,
-            objectId,
-            error,
-          });
+          logger.error(
+            "Failed to back up local state before conflict restore",
+            {
+              shop,
+              objectId,
+              error,
+            }
+          );
         }
 
         const remoteArtifact = artifacts.find(

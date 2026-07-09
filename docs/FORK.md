@@ -266,10 +266,18 @@ Enabled per game via `automaticCloudSync`.
 - **Marker-based, data-safe decisions** (pure logic in
   `src/main/services/backup/sync-planner.ts`, `decideLaunchSync`). `Game.lastSyncedBackupAt`
   is the createdAt of the backup this machine is in sync with. On launch: no
-  backups → nothing; marker unset → adopt the latest as baseline WITHOUT
-  restoring (migration safety — never overwrite possibly-newer local saves on
-  first run); latest newer than the marker → restore; otherwise skip (protects a
-  crashed session's local progress from being overwritten).
+  backups → nothing; marker unset **and this device has NO local save files** →
+  restore the latest (true Steam-Cloud first run on a fresh device — nothing to
+  clobber); marker unset with local saves present (or existence undetermined) →
+  adopt the latest as baseline WITHOUT restoring (migration safety — never
+  overwrite possibly-newer local saves on first run); latest newer than the
+  marker → restore; otherwise skip (protects a crashed session's local progress
+  from being overwritten). Local-save existence is detected only on the marker-
+  unset path via a ludusavi backup *preview* (`CloudSync.detectHasLocalSaves`,
+  the same read-only scan the real backup uses) — a preview finding zero save
+  files = no local saves. **Fail-safe (non-negotiable):** a restore happens ONLY
+  on a POSITIVE zero-files determination; any error/timeout/ambiguity is treated
+  as "saves exist" → adopt-baseline, never a restore.
 - **Retention.** After each close-backup, prune to N (`Game.backupsToKeep` ??
   `UserPreferences.defaultBackupsToKeep` ?? 10), keeping the newest N non-frozen
   plus ALL frozen artifacts. The backups list (game options → Backup) is sorted

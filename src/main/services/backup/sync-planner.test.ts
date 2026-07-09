@@ -47,6 +47,68 @@ describe("decideLaunchSync (marker decision — the data-safety crux)", () => {
     assert.equal(plan.artifactId, undefined);
   });
 
+  it("restores the latest on a fresh device with NO local saves (marker unset)", () => {
+    // True Steam-Cloud first run: nothing local to clobber, so download+restore.
+    const plan = decideLaunchSync({
+      lastSyncedBackupAt: undefined,
+      artifacts: [
+        artifact("a", "2026-07-01T10:00:00.000Z"),
+        artifact("b", "2026-07-05T10:00:00.000Z"),
+      ],
+      ourDeviceId: OUR_DEVICE,
+      hasLocalSaves: false,
+    });
+
+    assert.equal(plan.action, "restore");
+    assert.equal(plan.artifactId, "b");
+    assert.equal(plan.createdAt, "2026-07-05T10:00:00.000Z");
+  });
+
+  it("adopts baseline (no restore) when the marker is unset but local saves EXIST", () => {
+    const plan = decideLaunchSync({
+      lastSyncedBackupAt: undefined,
+      artifacts: [
+        artifact("a", "2026-07-01T10:00:00.000Z"),
+        artifact("b", "2026-07-05T10:00:00.000Z"),
+      ],
+      ourDeviceId: OUR_DEVICE,
+      hasLocalSaves: true,
+    });
+
+    assert.equal(plan.action, "adopt-baseline");
+    assert.equal(plan.createdAt, "2026-07-05T10:00:00.000Z");
+    assert.equal(plan.artifactId, undefined);
+  });
+
+  it("adopts baseline when the marker is unset and local-save existence is undetermined", () => {
+    // Fail-safe: hasLocalSaves undefined (detection failed/skipped) must NOT
+    // restore — it behaves exactly like "local saves exist".
+    const plan = decideLaunchSync({
+      lastSyncedBackupAt: undefined,
+      artifacts: [artifact("b", "2026-07-05T10:00:00.000Z")],
+      ourDeviceId: OUR_DEVICE,
+      hasLocalSaves: undefined,
+    });
+
+    assert.equal(plan.action, "adopt-baseline");
+    assert.equal(plan.createdAt, "2026-07-05T10:00:00.000Z");
+    assert.equal(plan.artifactId, undefined);
+  });
+
+  it("does nothing when the marker is unset and there are NO backups, regardless of local saves", () => {
+    // No artifacts short-circuits to "none" before hasLocalSaves is ever read.
+    for (const hasLocalSaves of [false, true, undefined]) {
+      const plan = decideLaunchSync({
+        lastSyncedBackupAt: undefined,
+        artifacts: [],
+        ourDeviceId: OUR_DEVICE,
+        hasLocalSaves,
+      });
+
+      assert.deepEqual(plan, { action: "none" });
+    }
+  });
+
   it("restores the latest when it is strictly newer than the marker", () => {
     const plan = decideLaunchSync({
       lastSyncedBackupAt: "2026-07-01T10:00:00.000Z",
@@ -102,7 +164,9 @@ describe("decideLaunchSync (marker decision — the data-safety crux)", () => {
     // with — a straight restore is safe.
     const plan = decideLaunchSync({
       lastSyncedBackupAt: "2026-07-01T10:00:00.000Z",
-      artifacts: [artifact("mine", "2026-07-06T12:00:00.000Z", false, OUR_DEVICE)],
+      artifacts: [
+        artifact("mine", "2026-07-06T12:00:00.000Z", false, OUR_DEVICE),
+      ],
       ourDeviceId: OUR_DEVICE,
       unsyncedSince: "2026-07-05T00:00:00.000Z",
     });
