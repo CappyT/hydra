@@ -3,6 +3,7 @@ import { screen } from "electron";
 
 import { WindowManager } from "@main/services/window-manager";
 import { logger } from "@main/services/logger";
+import { resolveSystemBinary } from "./resolve-system-binary";
 
 /**
  * Resolves the display refresh rate (Hz) for gamescope's `-r`.
@@ -63,7 +64,15 @@ const resolveRefreshHz = (electronFrequency: number): number => {
  * default) rather than emitting a broken command line.
  */
 export const buildGamescopeWrapper = (): string[] => {
-  const wrapper = ["gamescope", "-f"];
+  // Spawn the SAME binary `isGamescopeAvailable()` probed. Both go through
+  // `resolveSystemBinary`, which also searches `~/.local/bin` (the XDG user bin
+  // dir Steam gaming mode drops from PATH); emitting the bare `"gamescope"` here
+  // would be resolved by the spawn-time PATH instead, so a gamescope installed
+  // only in `~/.local/bin` would probe available yet fail to spawn. Fall back to
+  // the bare name if resolution unexpectedly returns null (callers already gate
+  // on availability) rather than crashing.
+  const gamescopeBinary = resolveSystemBinary(["gamescope"]) ?? "gamescope";
+  const wrapper = [gamescopeBinary, "-f"];
 
   try {
     const bounds = WindowManager.mainWindow?.getBounds();
