@@ -1,0 +1,49 @@
+.retroachievements-section__content {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing-unit) * 3);
+}
+
+.retroachievements-section__profile {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing-unit) * 1);
+}
+
+.retroachievements-section__username {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.retroachievements-section__status {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--spacing-unit) * 1);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.retroachievements-section__status--warning {
+  color: var(--warning, #e0a83a);
+}
+
+.retroachievements-section__actions,
+.retroachievements-section__modal-actions {
+  display: flex;
+  gap: calc(var(--spacing-unit) * 2);
+}
+
+.retroachievements-section__visibility-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.retroachievements-section__modal-actions {
+  margin-top: calc(var(--spacing-unit) * 3);
+}

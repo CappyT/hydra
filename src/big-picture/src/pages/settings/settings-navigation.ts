@@ -48,6 +48,18 @@ export const BACKUP_AUTO_BACKUP_CHECKBOX_ID = "backup-auto-backup-checkbox";
 export const BACKUP_SAVE_BUTTON_ID = "backup-save-button";
 export const BACKUP_TEST_BUTTON_ID = "backup-test-button";
 export const INTEGRATIONS_SECTION_REGION_ID = "integrations-section-region";
+export const RETROACHIEVEMENTS_SECTION_REGION_ID =
+  "integrations-retroachievements-region";
+export const RETROACHIEVEMENTS_USERNAME_INPUT_ID =
+  "integrations-retroachievements-username";
+export const RETROACHIEVEMENTS_WEB_API_KEY_INPUT_ID =
+  "integrations-retroachievements-web-api-key";
+export const RETROACHIEVEMENTS_CONNECT_BUTTON_ID =
+  "integrations-retroachievements-connect";
+export const RETROACHIEVEMENTS_UPDATE_BUTTON_ID =
+  "integrations-retroachievements-update";
+export const RETROACHIEVEMENTS_DISCONNECT_BUTTON_ID =
+  "integrations-retroachievements-disconnect";
 export const ACCOUNT_PRIVACY_PRIVACY_SELECT_ID =
   "account-privacy-profile-visibility";
 export const COMPATIBILITY_GAMEMODE_FOCUS_ID = "compatibility-gamemode";

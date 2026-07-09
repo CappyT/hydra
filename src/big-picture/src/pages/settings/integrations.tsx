@@ -13,6 +13,7 @@ import { useFeature } from "../../hooks";
 import type { FocusOverrideTarget } from "../../services";
 import {
   getIntegrationProviderCheckboxFocusId,
+  RETROACHIEVEMENTS_SECTION_REGION_ID,
   SETTINGS_HEADER_RETURN_TARGET,
   type IntegrationProviderId,
 } from "./settings-navigation";
@@ -20,6 +21,7 @@ import {
   IntegrationProviderSection,
   type IntegrationProviderConfig,
 } from "./integration-provider-section";
+import { RetroAchievementsSection } from "./retroachievements-section";
 
 interface SettingsSectionProps {
   className?: string;
@@ -134,6 +136,8 @@ export function IntegrationsSettingsSection({
     });
   }, [features]);
 
+  const lastVisibleProvider = visibleProviders[visibleProviders.length - 1];
+
   return (
     <div
       className={
@@ -163,7 +167,9 @@ export function IntegrationsSettingsSection({
               ),
             }
           : {
-              type: "block",
+              type: "region",
+              regionId: RETROACHIEVEMENTS_SECTION_REGION_ID,
+              entryDirection: "down",
             };
 
         return (
@@ -175,6 +181,19 @@ export function IntegrationsSettingsSection({
           />
         );
       })}
+
+      <RetroAchievementsSection
+        upTarget={
+          lastVisibleProvider
+            ? {
+                type: "item",
+                itemId: getIntegrationProviderCheckboxFocusId(
+                  lastVisibleProvider.id as IntegrationProviderId
+                ),
+              }
+            : SETTINGS_HEADER_RETURN_TARGET
+        }
+      />
     </div>
   );
 }
