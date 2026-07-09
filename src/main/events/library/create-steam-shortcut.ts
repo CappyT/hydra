@@ -125,8 +125,14 @@ const createSteamShortcut = async (
     // rather than bypassing them. The appid stays derived from the real
     // executable path above to remain stable/unique per game.
     const deepLink = buildRunDeepLink(game.shop, game.objectId);
-    newShortcut.Exe = `"${process.execPath}"`;
-    newShortcut.StartDir = `"${path.dirname(process.execPath)}"`;
+    // In a packaged AppImage, process.execPath is the transient /tmp/.mount_*
+    // path (dead on the next launch) and points at the renamed real binary,
+    // which would skip the steam-overlay-stripping wrapper installed by
+    // scripts/after-pack.cjs. Point Steam at the AppImage file itself so the
+    // shortcut survives remounts and launches go through AppRun -> wrapper.
+    const launcherPath = process.env.APPIMAGE ?? process.execPath;
+    newShortcut.Exe = `"${launcherPath}"`;
+    newShortcut.StartDir = `"${path.dirname(launcherPath)}"`;
     newShortcut.LaunchOptions = buildSteamLaunchOptions(deepLink);
 
     for (const steamUserId of steamUserIds) {
