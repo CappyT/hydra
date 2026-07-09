@@ -10,19 +10,33 @@ import {
 } from "react";
 import { GAMEMODE_SITE_URL, MANGOHUD_SITE_URL } from "@shared";
 
-import { Button, Checkbox, Radio, VerticalFocusGroup } from "../../components";
+import { useTranslation } from "react-i18next";
+
+import {
+  Button,
+  Checkbox,
+  DropdownSelect,
+  Radio,
+  VerticalFocusGroup,
+} from "../../components";
 import { useUserPreferences, useBigPictureToast } from "../../hooks";
 import type { FocusOverrides } from "../../services";
 import {
   COMPATIBILITY_COMMON_REDIST_BUTTON_ID,
   COMPATIBILITY_GAMEMODE_FOCUS_ID,
   COMPATIBILITY_MANGOHUD_FOCUS_ID,
+  COMPATIBILITY_NETWORK_ISOLATION_FOCUS_ID,
   COMPATIBILITY_PROTON_OPTION_AUTO_FOCUS_ID,
+  COMPATIBILITY_SANDBOX_FOCUS_ID,
+  COMPATIBILITY_SECCOMP_FOCUS_ID,
+  COMPATIBILITY_SECCOMP_LEVEL_FOCUS_ID,
   COMPATIBILITY_SECTION_REGION_ID,
   getCompatibilityProtonOptionFocusId,
   SETTINGS_HEADER_RETURN_TARGET,
 } from "./settings-navigation";
 import { SettingsSection } from "./settings-section";
+
+type SeccompLevel = "low" | "medium" | "high";
 
 interface SettingsSectionProps {
   className?: string;
@@ -32,12 +46,20 @@ interface CompatibilityForm {
   defaultProtonPath: string;
   autoRunGamemode: boolean;
   autoRunMangohud: boolean;
+  disableSandbox: boolean;
+  disableSeccomp: boolean;
+  seccompLevel: SeccompLevel;
+  disableNetworkIsolation: boolean;
 }
 
 interface CompatibilityPreferenceValues {
   defaultProtonPath?: string | null;
   autoRunGamemode?: boolean;
   autoRunMangohud?: boolean;
+  disableSandbox?: boolean;
+  disableSeccomp?: boolean;
+  seccompLevel?: SeccompLevel;
+  disableNetworkIsolation?: boolean;
 }
 
 interface CompatibilityItem {
@@ -58,6 +80,10 @@ const DEFAULT_FORM: CompatibilityForm = {
   defaultProtonPath: "",
   autoRunGamemode: false,
   autoRunMangohud: false,
+  disableSandbox: false,
+  disableSeccomp: false,
+  seccompLevel: "medium",
+  disableNetworkIsolation: false,
 };
 
 function getProtonSourceDescription(version: ProtonVersion | null) {
@@ -79,12 +105,16 @@ export function CompatibilitySettingsSection({
   className,
 }: Readonly<SettingsSectionProps>) {
   const userPreferences = useUserPreferences();
+  const { t } = useTranslation("settings");
   const { showSuccessToast } = useBigPictureToast();
   const [form, setForm] = useState<CompatibilityForm>(DEFAULT_FORM);
   const [protonVersions, setProtonVersions] = useState<ProtonVersion[]>([]);
   const [protonVersionsLoaded, setProtonVersionsLoaded] = useState(false);
   const [gamemodeAvailable, setGamemodeAvailable] = useState(false);
   const [mangohudAvailable, setMangohudAvailable] = useState(false);
+  const [sandboxAvailable, setSandboxAvailable] = useState(false);
+  const [networkIsolationAvailable, setNetworkIsolationAvailable] =
+    useState(false);
   const [canInstallCommonRedist, setCanInstallCommonRedist] = useState(false);
   const [installingCommonRedist, setInstallingCommonRedist] = useState(false);
 
@@ -93,9 +123,11 @@ export function CompatibilitySettingsSection({
   const isWindows = globalThis.window.electron.platform === "win32";
   const shouldRenderProtonSection = isLinux || isDev;
   const shouldRenderBehaviorSection = isLinux || isDev;
+  const shouldRenderSandboxSection = isLinux || isDev;
   const shouldRenderCommonRedistSection = isWindows || isDev;
   const canUseProtonSection = isLinux;
   const canUseBehaviorSection = isLinux;
+  const canUseSandboxSection = isLinux;
   const canUseCommonRedistSection = isWindows;
 
   useEffect(() => {
@@ -105,6 +137,10 @@ export function CompatibilitySettingsSection({
       defaultProtonPath: userPreferences.defaultProtonPath ?? "",
       autoRunGamemode: userPreferences.autoRunGamemode ?? false,
       autoRunMangohud: userPreferences.autoRunMangohud ?? false,
+      disableSandbox: userPreferences.disableSandbox ?? false,
+      disableSeccomp: userPreferences.disableSeccomp ?? false,
+      seccompLevel: userPreferences.seccompLevel ?? "medium",
+      disableNetworkIsolation: userPreferences.disableNetworkIsolation ?? false,
     });
   }, [userPreferences]);
 
@@ -112,6 +148,8 @@ export function CompatibilitySettingsSection({
     if (!isLinux) {
       setGamemodeAvailable(false);
       setMangohudAvailable(false);
+      setSandboxAvailable(false);
+      setNetworkIsolationAvailable(false);
       return;
     }
 
@@ -124,6 +162,16 @@ export function CompatibilitySettingsSection({
       .isMangohudAvailable()
       .then(setMangohudAvailable)
       .catch(() => setMangohudAvailable(false));
+
+    globalThis.window.electron
+      .isSandboxAvailable()
+      .then(setSandboxAvailable)
+      .catch(() => setSandboxAvailable(false));
+
+    globalThis.window.electron
+      .isNetworkIsolationAvailable()
+      .then(setNetworkIsolationAvailable)
+      .catch(() => setNetworkIsolationAvailable(false));
   }, [isLinux]);
 
   useEffect(() => {
@@ -391,6 +439,159 @@ export function CompatibilitySettingsSection({
       );
     }
 
+    if (shouldRenderSandboxSection) {
+      const sandboxEnabled = !form.disableSandbox;
+      const seccompEnabled = !form.disableSeccomp && sandboxEnabled;
+
+      nextItems.push(
+        {
+          focusId: COMPATIBILITY_SANDBOX_FOCUS_ID,
+          disabled: !canUseSandboxSection || !sandboxAvailable,
+          render: (navigationOverrides: FocusOverrides) => (
+            <div
+              key={COMPATIBILITY_SANDBOX_FOCUS_ID}
+              className="compatibility-settings-section__behavior-item"
+            >
+              <Checkbox
+                id={COMPATIBILITY_SANDBOX_FOCUS_ID}
+                label={t("enable_sandbox")}
+                secondaryText={t("sandbox_description")}
+                checked={sandboxEnabled}
+                disabled={!canUseSandboxSection || !sandboxAvailable}
+                focusId={COMPATIBILITY_SANDBOX_FOCUS_ID}
+                navigationOverrides={navigationOverrides}
+                block
+                onChange={(checked) => {
+                  void updateCompatibilityPreferences({
+                    disableSandbox: !checked,
+                  });
+                }}
+              />
+              {canUseSandboxSection && !sandboxAvailable ? (
+                <p className="compatibility-settings-section__helper-note">
+                  {t("sandbox_unavailable_tooltip")}
+                </p>
+              ) : null}
+            </div>
+          ),
+        },
+        {
+          focusId: COMPATIBILITY_SECCOMP_FOCUS_ID,
+          disabled:
+            !canUseSandboxSection || !sandboxAvailable || !sandboxEnabled,
+          render: (navigationOverrides: FocusOverrides) => (
+            <div
+              key={COMPATIBILITY_SECCOMP_FOCUS_ID}
+              className="compatibility-settings-section__behavior-item"
+            >
+              <Checkbox
+                id={COMPATIBILITY_SECCOMP_FOCUS_ID}
+                label={t("enable_seccomp")}
+                secondaryText={t("seccomp_description")}
+                checked={seccompEnabled}
+                disabled={
+                  !canUseSandboxSection || !sandboxAvailable || !sandboxEnabled
+                }
+                focusId={COMPATIBILITY_SECCOMP_FOCUS_ID}
+                navigationOverrides={navigationOverrides}
+                block
+                onChange={(checked) => {
+                  void updateCompatibilityPreferences({
+                    disableSeccomp: !checked,
+                  });
+                }}
+              />
+            </div>
+          ),
+        },
+        {
+          focusId: COMPATIBILITY_SECCOMP_LEVEL_FOCUS_ID,
+          disabled:
+            !canUseSandboxSection ||
+            !sandboxAvailable ||
+            !sandboxEnabled ||
+            !seccompEnabled,
+          render: (navigationOverrides: FocusOverrides) => (
+            <div
+              key={COMPATIBILITY_SECCOMP_LEVEL_FOCUS_ID}
+              className="compatibility-settings-section__behavior-item"
+            >
+              <DropdownSelect<SeccompLevel>
+                label={t("seccomp_level")}
+                ariaLabel={t("seccomp_level")}
+                value={form.seccompLevel}
+                disabled={
+                  !canUseSandboxSection ||
+                  !sandboxAvailable ||
+                  !sandboxEnabled ||
+                  !seccompEnabled
+                }
+                focusId={COMPATIBILITY_SECCOMP_LEVEL_FOCUS_ID}
+                focusNavigationOverrides={navigationOverrides}
+                options={[
+                  { value: "low", label: t("seccomp_level_low") },
+                  { value: "medium", label: t("seccomp_level_medium") },
+                  { value: "high", label: t("seccomp_level_high") },
+                ]}
+                onValueChange={(nextLevel) => {
+                  void updateCompatibilityPreferences({
+                    seccompLevel: nextLevel,
+                  });
+                }}
+              />
+              <p className="compatibility-settings-section__helper-note">
+                {t("seccomp_level_description")}
+              </p>
+            </div>
+          ),
+        },
+        {
+          focusId: COMPATIBILITY_NETWORK_ISOLATION_FOCUS_ID,
+          disabled:
+            !canUseSandboxSection ||
+            !sandboxAvailable ||
+            !sandboxEnabled ||
+            !networkIsolationAvailable,
+          render: (navigationOverrides: FocusOverrides) => (
+            <div
+              key={COMPATIBILITY_NETWORK_ISOLATION_FOCUS_ID}
+              className="compatibility-settings-section__behavior-item"
+            >
+              <Checkbox
+                id={COMPATIBILITY_NETWORK_ISOLATION_FOCUS_ID}
+                label={t("enable_network_isolation")}
+                secondaryText={t("network_isolation_description")}
+                checked={
+                  !form.disableNetworkIsolation &&
+                  sandboxEnabled &&
+                  networkIsolationAvailable
+                }
+                disabled={
+                  !canUseSandboxSection ||
+                  !sandboxAvailable ||
+                  !sandboxEnabled ||
+                  !networkIsolationAvailable
+                }
+                focusId={COMPATIBILITY_NETWORK_ISOLATION_FOCUS_ID}
+                navigationOverrides={navigationOverrides}
+                block
+                onChange={(checked) => {
+                  void updateCompatibilityPreferences({
+                    disableNetworkIsolation: !checked,
+                  });
+                }}
+              />
+              {canUseSandboxSection && !networkIsolationAvailable ? (
+                <p className="compatibility-settings-section__helper-note">
+                  {t("network_isolation_unavailable_tooltip")}
+                </p>
+              ) : null}
+            </div>
+          ),
+        }
+      );
+    }
+
     if (shouldRenderCommonRedistSection) {
       nextItems.push({
         focusId: COMPATIBILITY_COMMON_REDIST_BUTTON_ID,
@@ -420,17 +621,26 @@ export function CompatibilitySettingsSection({
     canInstallCommonRedist,
     canUseBehaviorSection,
     canUseCommonRedistSection,
+    canUseSandboxSection,
     form.autoRunGamemode,
     form.autoRunMangohud,
     form.defaultProtonPath,
+    form.disableSandbox,
+    form.disableSeccomp,
+    form.seccompLevel,
+    form.disableNetworkIsolation,
     gamemodeAvailable,
     handleInstallCommonRedist,
     installingCommonRedist,
     mangohudAvailable,
+    networkIsolationAvailable,
     protonOptions,
+    sandboxAvailable,
     shouldRenderCommonRedistSection,
     shouldRenderBehaviorSection,
     shouldRenderProtonSection,
+    shouldRenderSandboxSection,
+    t,
     updateCompatibilityPreferences,
   ]);
 
@@ -507,6 +717,27 @@ export function CompatibilitySettingsSection({
                 (item) =>
                   item.focusId === COMPATIBILITY_GAMEMODE_FOCUS_ID ||
                   item.focusId === COMPATIBILITY_MANGOHUD_FOCUS_ID
+              )
+              .map((item) =>
+                item.render(navigationOverridesByFocusId[item.focusId] ?? {})
+              )}
+          </div>
+        </SettingsSection>
+      ) : null}
+
+      {shouldRenderSandboxSection ? (
+        <SettingsSection
+          title="Sandbox"
+          description="Isolate games in a bubblewrap sandbox with optional seccomp syscall filtering and network isolation."
+        >
+          <div className="compatibility-settings-section__content">
+            {items
+              .filter(
+                (item) =>
+                  item.focusId === COMPATIBILITY_SANDBOX_FOCUS_ID ||
+                  item.focusId === COMPATIBILITY_SECCOMP_FOCUS_ID ||
+                  item.focusId === COMPATIBILITY_SECCOMP_LEVEL_FOCUS_ID ||
+                  item.focusId === COMPATIBILITY_NETWORK_ISOLATION_FOCUS_ID
               )
               .map((item) =>
                 item.render(navigationOverridesByFocusId[item.focusId] ?? {})

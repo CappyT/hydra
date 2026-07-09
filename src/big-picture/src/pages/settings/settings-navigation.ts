@@ -45,6 +45,12 @@ export const ACCOUNT_PRIVACY_PRIVACY_SELECT_ID =
   "account-privacy-profile-visibility";
 export const COMPATIBILITY_GAMEMODE_FOCUS_ID = "compatibility-gamemode";
 export const COMPATIBILITY_MANGOHUD_FOCUS_ID = "compatibility-mangohud";
+export const COMPATIBILITY_SANDBOX_FOCUS_ID = "compatibility-sandbox";
+export const COMPATIBILITY_SECCOMP_FOCUS_ID = "compatibility-seccomp";
+export const COMPATIBILITY_SECCOMP_LEVEL_FOCUS_ID =
+  "compatibility-seccomp-level";
+export const COMPATIBILITY_NETWORK_ISOLATION_FOCUS_ID =
+  "compatibility-network-isolation";
 export const COMPATIBILITY_COMMON_REDIST_BUTTON_ID =
   "compatibility-common-redist";
 export const ACCOUNT_PRIVACY_UPDATE_EMAIL_BUTTON_ID =
