@@ -120,7 +120,11 @@ export function CloudSavesList({
                 const artifactTitle =
                   artifact.label ??
                   artifact.downloadOptionTitle ??
-                  t("backup_from", {
+                  // Resolve through the real `game_details` namespace (which BP
+                  // loads) so `{{date}}` is interpolated. The `big_picture` key
+                  // only exists in the DOM-walk `exact` dictionary, which does
+                  // plain string replacement and renders the literal `{{date}}`.
+                  tGameDetails("backup_from", {
                     date: formatDate(artifact.createdAt),
                   });
                 const deviceName =

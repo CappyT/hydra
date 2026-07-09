@@ -217,11 +217,14 @@ export function GameCloudSettingsTab({
     }
 
     if (hasRestoreInProgress) {
-      if (formatProgress === null) {
-        return t("restoring_backup");
-      }
-
-      return `${t("restoring_backup")} ${formatProgress}`;
+      // Route through the real `game_details` namespace so `{{progress}}` is
+      // interpolated; the `big_picture` key exists only in the DOM-walk `exact`
+      // dictionary, which does plain string replacement and would render the
+      // literal `{{progress}}`. Mirror the desktop panel and default to 0%
+      // until the first progress event arrives.
+      return tGameDetails("restoring_backup", {
+        progress: formatProgress ?? formatDownloadProgress(0),
+      });
     }
 
     if (loadingPreview) {
@@ -250,6 +253,7 @@ export function GameCloudSettingsTab({
     backupPreview,
     artifacts.length,
     t,
+    tGameDetails,
   ]);
 
   const loadArtifacts = useCallback(async () => {
