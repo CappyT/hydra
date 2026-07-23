@@ -33,12 +33,13 @@ const findUpdInfoSection = (filePath) => {
   });
 
   // e.g. "  [27] .upd_info  PROGBITS  0000000000000000 02ae68 000400 00   A  0  0  1"
-  const line = output
-    .split("\n")
-    .find((entry) => entry.includes(".upd_info"));
+  const line = output.split("\n").find((entry) => entry.includes(".upd_info"));
   if (!line) return null;
 
-  const columns = line.replace(/^.*\.upd_info\s+\w+\s+/, "").trim().split(/\s+/);
+  const columns = line
+    .replace(/^.*\.upd_info\s+\w+\s+/, "")
+    .trim()
+    .split(/\s+/);
   const offset = Number.parseInt(columns[1], 16);
   const size = Number.parseInt(columns[2], 16);
   if (!Number.isFinite(offset) || !Number.isFinite(size)) return null;
@@ -81,7 +82,10 @@ const latestYmlPath = path.join(distDir, "latest-linux.yml");
 
 if (fs.existsSync(latestYmlPath)) {
   const fileBuffer = fs.readFileSync(appImagePath);
-  const sha512 = crypto.createHash("sha512").update(fileBuffer).digest("base64");
+  const sha512 = crypto
+    .createHash("sha512")
+    .update(fileBuffer)
+    .digest("base64");
   const size = fileBuffer.length;
 
   const updated = fs
