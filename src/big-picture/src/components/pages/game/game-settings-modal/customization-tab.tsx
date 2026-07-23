@@ -29,6 +29,20 @@ const GAME_CUSTOMIZATION_SETTINGS_ASSET_PREVIEW_ID =
   "game-customization-settings-asset-preview";
 
 type AssetTab = "icon" | "logo" | "hero" | "grid";
+
+// Stable focus ids for the asset tab row. The sidebar-modal content region
+// maps `left` to its category sidebar, which otherwise pre-empts horizontal
+// navigation between the tabs (a `left` press from any tab jumps to the
+// sidebar instead of the previous tab). Explicit per-item `left` overrides
+// pointing at the previous tab keep the row navigable; the leftmost tab
+// (icon) intentionally has no override so `left` still exits to the sidebar.
+// Same workaround as the compatibility tab's wine-prefix row.
+const ASSET_TAB_FOCUS_IDS: Record<AssetTab, string> = {
+  icon: "game-customization-settings-asset-tab-icon",
+  logo: "game-customization-settings-asset-tab-logo",
+  hero: "game-customization-settings-asset-tab-hero",
+  grid: "game-customization-settings-asset-tab-grid",
+};
 type AssetPreviewState = Record<
   AssetTab,
   {
@@ -271,22 +285,35 @@ export function GameCustomizationSettingsTab({
     const items: Array<TabsItem<AssetTab>> = [
       {
         value: "icon",
+        id: ASSET_TAB_FOCUS_IDS.icon,
         label: t("edit_game_modal_icon"),
       },
       {
         value: "logo",
+        id: ASSET_TAB_FOCUS_IDS.logo,
         label: t("edit_game_modal_logo"),
+        navigationOverrides: {
+          left: { type: "item", itemId: ASSET_TAB_FOCUS_IDS.icon },
+        },
       },
       {
         value: "hero",
+        id: ASSET_TAB_FOCUS_IDS.hero,
         label: t("edit_game_modal_hero"),
+        navigationOverrides: {
+          left: { type: "item", itemId: ASSET_TAB_FOCUS_IDS.logo },
+        },
       },
     ];
 
     if (!isCustomGame) {
       items.push({
         value: "grid",
+        id: ASSET_TAB_FOCUS_IDS.grid,
         label: t("edit_game_modal_grid"),
+        navigationOverrides: {
+          left: { type: "item", itemId: ASSET_TAB_FOCUS_IDS.hero },
+        },
       });
     }
 
