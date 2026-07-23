@@ -189,7 +189,7 @@ export function GameDetailsContent() {
   const isLaunchboxGame = shop === "launchbox";
   const renderClassicsHero = isLaunchboxGame && !classicsUseHeroLayout;
 
-  const resolvedHeroImage = isCustomGame
+  const heroImage = isCustomGame
     ? game?.libraryHeroImageUrl || game?.iconUrl || ""
     : getImageWithCustomPriority(
         game?.customHeroImageUrl,
@@ -197,7 +197,8 @@ export function GameDetailsContent() {
       );
 
   const launchboxCover = isLaunchboxGame
-    ? game?.customIconUrl ||
+    ? game?.customCoverImageUrl ||
+      shopDetails?.assets?.coverImageUrl ||
       shopDetails?.assets?.libraryImageUrl ||
       game?.libraryImageUrl ||
       shopDetails?.assets?.iconUrl ||
@@ -266,11 +267,7 @@ export function GameDetailsContent() {
             </>
           ) : (
             <img
-              src={
-                isLaunchboxGame
-                  ? resolvedHeroImage || launchboxCover
-                  : resolvedHeroImage
-              }
+              src={isLaunchboxGame ? heroImage || launchboxCover : heroImage}
               className="game-details__hero-image"
               alt={game?.title}
             />

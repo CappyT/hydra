@@ -127,10 +127,7 @@ if (process.defaultApp) {
   app.setAsDefaultProtocolClient(PROTOCOL);
 }
 
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
-app.whenReady().then(async () => {
+const initializeApp = async () => {
   electronApp.setAppUserModelId("gg.hydralauncher.hydra");
 
   protocol.handle("local", (request) => {
@@ -231,14 +228,17 @@ app.whenReady().then(async () => {
   const deepLinkArg = process.argv.find((arg) =>
     arg.startsWith("hydralauncher://")
   );
+  // hasBigPictureFlag also accepts the --bigpicture alias.
+  const forceBigPicture = hasBigPictureFlag(process.argv);
   const isRunDeepLink = deepLinkArg?.startsWith("hydralauncher://run");
 
   // --big-picture wins over --hidden autostart: always open a window and force
   // the fullscreen big-picture layout on top of it.
-  if (hasBigPictureFlag(process.argv)) {
-    WindowManager.createMainWindow(true);
-  } else if (!process.argv.includes("--hidden") && !isRunDeepLink) {
-    WindowManager.createMainWindow();
+  if (
+    forceBigPicture ||
+    (!process.argv.includes("--hidden") && !isRunDeepLink)
+  ) {
+    WindowManager.createMainWindow({ forceBigPicture });
   }
 
   WindowManager.createNotificationWindow();
@@ -255,7 +255,7 @@ app.whenReady().then(async () => {
   if (deepLinkArg) {
     handleDeepLinkPath(deepLinkArg);
   }
-});
+};
 
 app.on("browser-window-created", (_, window) => {
   optimizer.watchWindowShortcuts(window);
@@ -349,20 +349,8 @@ app.on("second-instance", (_event, commandLine) => {
   const deepLink = commandLine.find((arg) =>
     arg.startsWith("hydralauncher://")
   );
-
-  // A second launch carrying --big-picture opens/focuses the Big Picture window
-  // (layered over the existing main window, or bootstrapping one if the app is
-  // running window-less in the tray).
-  if (hasBigPictureFlag(commandLine)) {
-    if (WindowManager.mainWindow) {
-      void WindowManager.openBigPictureWindow();
-    } else {
-      WindowManager.createMainWindow(true);
-    }
-
-    handleDeepLinkPath(deepLink);
-    return;
-  }
+  // hasBigPictureFlag also accepts the --bigpicture alias.
+  const forceBigPicture = hasBigPictureFlag(commandLine);
 
   // Check if this is a "run" deep link - don't show main window in that case
   const isRunDeepLink = deepLink?.startsWith("hydralauncher://run");
@@ -373,8 +361,11 @@ app.on("second-instance", (_event, commandLine) => {
         WindowManager.mainWindow.restore();
 
       WindowManager.mainWindow.focus();
+      if (forceBigPicture) {
+        void WindowManager.openBigPictureWindow();
+      }
     } else {
-      WindowManager.createMainWindow();
+      WindowManager.createMainWindow({ forceBigPicture });
     }
   }
 
@@ -389,7 +380,7 @@ app.on("open-url", (_event, url) => {
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
 app.on("window-all-closed", () => {
-  WindowManager.mainWindow = null;
+  WindowManager.clearMainWindow();
 });
 
 let canAppBeClosed = false;
@@ -415,6 +406,10 @@ app.on("activate", () => {
     WindowManager.createMainWindow();
   }
 });
+
+// Some Electron APIs can only be used after initialization finishes.
+// Top-level await blocks Electron startup when running through electron-vite.
+app.once("ready", initializeApp);
 
 // In this file you can include the rest of your app's specific main process
 // code. You can also put them in separate files and import them here.
