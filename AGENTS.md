@@ -125,8 +125,14 @@ All of this is on `main` and shipped; docs/FORK.md has the operational detail.
 release `vX.Y.Z`, merge that *tag* (not `upstream/main` HEAD) and publish the
 fork's own `vX.Y.Z`. Upstream's version bump commit is inside the tag, so
 `package.json` gets the right version from the merge itself. Never invent
-fork-only version numbers; between upstream releases, fixes ride on `main`
-and get re-released under the same version only if the owner asks.
+fork-only version numbers (no `-1` suffixes — semver treats them as
+pre-releases, which the auto-updater ranks BELOW the base version and never
+offers); between upstream releases, fixes ride on `main` and get re-released
+under the same version only if the owner asks. On owner request an **early
+release** of unreleased upstream work is allowed: merge `upstream/main`,
+bump to the next patch version (e.g. `4.0.7` while upstream is still on
+4.0.6), release it, then replace that release when the real upstream tag
+lands.
 
 Procedure per upstream release tag:
 
