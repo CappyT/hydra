@@ -18,6 +18,7 @@ import { Button, ImageCropModal } from "@renderer/components";
 import { useToast, useAppSelector, useUserDetails } from "@renderer/hooks";
 import { useSubscription } from "@renderer/hooks/use-subscription";
 import { generateRandomGradient } from "@renderer/helpers";
+import { ACCOUNTLESS } from "@shared";
 import type {
   Game,
   GameArtworkSelection,
@@ -1222,7 +1223,7 @@ export function GameAssetsSettings({
 
         {renderImageSection(selectedAssetType)}
 
-        {!hasActiveSubscription && !isCustomGame(game) && (
+        {!ACCOUNTLESS && !hasActiveSubscription && !isCustomGame(game) && (
           <button
             type="button"
             className="subscription-required-button"
