@@ -130,9 +130,8 @@ pre-releases, which the auto-updater ranks BELOW the base version and never
 offers); between upstream releases, fixes ride on `main` and get re-released
 under the same version only if the owner asks. On owner request an **early
 release** of unreleased upstream work is allowed: merge `upstream/main`,
-bump to the next patch version (e.g. `4.0.7` while upstream is still on
-4.0.6), release it, then replace that release when the real upstream tag
-lands.
+bump to the next patch version above the last upstream tag, release it,
+then replace that release when the real upstream tag lands.
 
 Procedure per upstream release tag:
 
@@ -169,5 +168,5 @@ Procedure per upstream release tag:
    sandbox, or save-sync paths (unit tests don't cover Wine/Proton flows).
 
 If multiple upstream releases accumulated, repeat per tag in order (merge
-v4.0.5 → release, merge v4.0.6 → release, …) so fork releases mirror the
-upstream release history.
+the oldest unmerged tag → release, then the next, …) so fork releases
+mirror the upstream release history.
