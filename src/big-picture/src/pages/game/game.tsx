@@ -318,6 +318,7 @@ export default function Game() {
   const lastMainContentFocusIdRef = useRef<string | null>(null);
   const descriptionScrollAnimationFrameRef = useRef<number | null>(null);
   const preserveDescriptionScrollOnNextBodyFocusRef = useRef(false);
+  const hasAttemptedLocateRef = useRef(false);
   const currentFocusId = useNavigationStore((state) => state.currentFocusId);
   const navigationNodes = useNavigationStore((state) => state.nodes);
   const navigationRegions = useNavigationStore((state) => state.regions);
@@ -642,6 +643,33 @@ export default function Game() {
       cancelled = true;
     };
   }, [game]);
+
+  // Reset the once-per-visit locate guard when navigating between games.
+  useEffect(() => {
+    hasAttemptedLocateRef.current = false;
+  }, [objectId, shop]);
+
+  // On Linux, a game installed by running its Windows installer under
+  // Proton/wine lands inside the per-game wine prefix, so its executablePath is
+  // still unset. Try to locate it once per page visit and refresh on success so
+  // the hero flips from Install to Launch.
+  useEffect(() => {
+    if (hasAttemptedLocateRef.current) return;
+    if (!game || game.executablePath) return;
+    if (globalThis.window.electron.platform !== "linux") return;
+    if (game.download?.status === "active") return;
+
+    hasAttemptedLocateRef.current = true;
+
+    globalThis.window.electron
+      .locateGameExecutable(game.shop, game.objectId)
+      .then((foundPath) => {
+        if (!foundPath) return;
+        void updateGame();
+        showSuccessToast("Executable found", { message: foundPath });
+      })
+      .catch(() => {});
+  }, [game, updateGame, showSuccessToast]);
 
   const launchClassicsWithErrorHandling = useCallback(
     async (discPath?: string, force?: boolean) => {
