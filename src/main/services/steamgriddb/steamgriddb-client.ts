@@ -193,9 +193,13 @@ export const validateSteamGridDbApiKey = async (
 
   try {
     const client = await getClient();
+    // SteamGridDB serves a short-TTL URL-keyed response cache that skips auth:
+    // right after a successful request, the same URL returns 200 to ANY
+    // non-empty bearer (observed live). A unique probe param forces a cache
+    // miss so the key is actually checked.
     const response = await client.get("/grids/steam/440", {
       headers: authHeaders(trimmed),
-      params: { page: 0 },
+      params: { page: 0, probe: Date.now() },
       validateStatus: () => true,
     });
 
