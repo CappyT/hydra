@@ -1,5 +1,6 @@
 import {
   DownloadSimpleIcon,
+  FolderOpenIcon,
   GearIcon,
   HeartIcon,
   PlayIcon,
@@ -41,6 +42,8 @@ export interface HeroProps {
   toggleFavorite: () => void;
   onPlay: () => void;
   onDownload: () => void;
+  onInstall: () => void;
+  installActionType: "install" | "open-folder" | null;
   onAddToLibrary: () => void;
   onOpenDownloadOptions: () => void;
   onOpenSettings: () => void;
@@ -80,6 +83,8 @@ export function Hero({
   toggleFavorite,
   onPlay,
   onDownload,
+  onInstall,
+  installActionType,
   onAddToLibrary,
   onOpenDownloadOptions,
   onOpenSettings,
@@ -243,6 +248,44 @@ export function Hero({
         };
       }
 
+      if (game?.download?.progress === 1 && !game.download.extracting) {
+        const isOpenFolder = installActionType === "open-folder";
+
+        return {
+          primaryActionButton: (
+            <Button
+              focusId={GAME_HERO_PRIMARY_ACTION_ID}
+              focusNavigationOverrides={primaryActionNavigationOverrides}
+              variant="primary"
+              color={dominantColor ?? undefined}
+              icon={
+                isOpenFolder ? (
+                  <FolderOpenIcon size={24} />
+                ) : (
+                  <DownloadSimpleIcon size={24} />
+                )
+              }
+              onClick={onInstall}
+            >
+              {isOpenFolder ? "Open Folder" : "Install"}
+            </Button>
+          ),
+          downloadOptionsButton: null,
+          settingsButton: (
+            <Button
+              focusId={GAME_HERO_OPEN_SETTINGS_ID}
+              focusNavigationOverrides={settingsNavigationOverrides}
+              variant="secondary"
+              aria-label={t("options")}
+              icon={<GearIcon size={24} />}
+              onClick={onOpenSettings}
+            >
+              {t("options")}
+            </Button>
+          ),
+        };
+      }
+
       if (game) {
         return {
           primaryActionButton: (
@@ -316,9 +359,11 @@ export function Hero({
       isAddingToLibrary,
       isGameRunning,
       isPlayableClassicsGame,
+      installActionType,
       onAddToLibrary,
       onClose,
       onDownload,
+      onInstall,
       onOpenDownloadOptions,
       onOpenSettings,
       onPlay,

@@ -970,6 +970,9 @@ export default function Downloads() {
     restoreFocusId: null,
     visible: false,
   });
+  const [installActionTypes, setInstallActionTypes] = useState<
+    Record<string, "install" | "open-folder">
+  >({});
   const currentFocusRegionId = useMemo(() => {
     if (!currentFocusId) return null;
 
@@ -998,6 +1001,49 @@ export default function Downloads() {
         : null,
     [activeDownload]
   );
+
+  useEffect(() => {
+    const missing = completedDownloads.filter(
+      (item) => !(item.id in installActionTypes)
+    );
+
+    if (missing.length === 0) return;
+
+    let cancelled = false;
+
+    const fetchActionTypes = async () => {
+      const results = await Promise.all(
+        missing.map(async (item) => {
+          try {
+            const actionType =
+              await globalThis.window.electron.getGameInstallerActionType(
+                item.game.shop,
+                item.game.objectId
+              );
+            return { id: item.id, actionType };
+          } catch {
+            return { id: item.id, actionType: "open-folder" as const };
+          }
+        })
+      );
+
+      if (cancelled) return;
+
+      setInstallActionTypes((prev) => {
+        const next = { ...prev };
+        results.forEach(({ id, actionType }) => {
+          next[id] = actionType;
+        });
+        return next;
+      });
+    };
+
+    fetchActionTypes();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [completedDownloads, installActionTypes]);
 
   const canPromoteToHero = !activeDownload || activeDownload.canPromoteToHero;
   const interactionsLocked = Boolean(moveMode);
@@ -2163,6 +2209,20 @@ export default function Downloads() {
     }
 
     return [
+      {
+        id: "install",
+        label:
+          installActionTypes[item.id] === "open-folder"
+            ? "Open Folder"
+            : "Install",
+        disabled: interactionsLocked,
+        onSelect: () => {
+          void globalThis.window.electron.openGameInstaller(
+            item.game.shop,
+            item.game.objectId
+          );
+        },
+      } satisfies ContextMenuItem,
       ...(item.seedAction
         ? [
             {
@@ -2197,6 +2257,7 @@ export default function Downloads() {
     canPromoteToHero,
     handleCompletedRemoval,
     handleRemovalCancel,
+    installActionTypes,
     interactionsLocked,
     menuState.item,
     menuState.section,

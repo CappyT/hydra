@@ -304,6 +304,9 @@ export default function Game() {
     discPath?: string;
   } | null>(null);
   const [isAddingToLibrary, setIsAddingToLibrary] = useState(false);
+  const [installActionType, setInstallActionType] = useState<
+    "install" | "open-folder" | null
+  >(null);
   const [hasNavigableComments, setHasNavigableComments] = useState(false);
   const [activeMediaItemId, setActiveMediaItemId] = useState<string | null>(
     null
@@ -602,6 +605,43 @@ export default function Game() {
     shopDetails,
     updateGame,
   ]);
+
+  const handleInstallGame = useCallback(async () => {
+    if (!game) return;
+
+    const wasOpened = await globalThis.window.electron.openGameInstaller(
+      game.shop,
+      game.objectId
+    );
+
+    if (!wasOpened) {
+      showErrorToast("Installer could not be started", {
+        message: "Check that Wine/UMU is available.",
+      });
+    }
+  }, [game, showErrorToast]);
+
+  useEffect(() => {
+    if (!game || game.download?.progress !== 1) {
+      setInstallActionType(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    globalThis.window.electron
+      .getGameInstallerActionType(game.shop, game.objectId)
+      .then((actionType) => {
+        if (!cancelled) setInstallActionType(actionType);
+      })
+      .catch(() => {
+        if (!cancelled) setInstallActionType("open-folder");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [game]);
 
   const launchClassicsWithErrorHandling = useCallback(
     async (discPath?: string, force?: boolean) => {
@@ -1171,6 +1211,8 @@ export default function Game() {
           toggleFavorite={toggleFavorite}
           onPlay={handlePlayGame}
           onDownload={handleOpenDownloadModal}
+          onInstall={handleInstallGame}
+          installActionType={installActionType}
           onAddToLibrary={handleAddToLibrary}
           onOpenDownloadOptions={handleOpenDownloadModal}
           onOpenSettings={() => setIsGameSettingsModalOpen(true)}
