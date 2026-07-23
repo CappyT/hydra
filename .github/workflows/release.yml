@@ -99,6 +99,9 @@ jobs:
         with:
           draft: true
           tag_name: v${{ steps.app_version.outputs.version }}
+          # Without this the tag is created at the default branch's HEAD on
+          # publish, which may have moved past the commit that was built.
+          target_commitish: ${{ github.sha }}
           name: v${{ steps.app_version.outputs.version }}
           files: |
             dist/*.AppImage
