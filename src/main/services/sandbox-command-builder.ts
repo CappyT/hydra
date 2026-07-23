@@ -251,17 +251,15 @@ const listHidrawDevices = (): string[] => {
 
 const listRuntimeSockets = (runtimeDir: string): string[] => {
   try {
-    return fs
-      .readdirSync(runtimeDir)
-      .filter(
-        (entry) =>
-          entry.startsWith("wayland-") ||
-          entry.startsWith("pipewire-") ||
-          // gamescope-N is the SteamOS Game Mode compositor socket; the
-          // gamescope WSI Vulkan layer needs it for direct presentation.
-          entry.startsWith("gamescope-") ||
-          entry === "pulse"
-      );
+    return fs.readdirSync(runtimeDir).filter(
+      (entry) =>
+        entry.startsWith("wayland-") ||
+        entry.startsWith("pipewire-") ||
+        // gamescope-N is the SteamOS Game Mode compositor socket; the
+        // gamescope WSI Vulkan layer needs it for direct presentation.
+        entry.startsWith("gamescope-") ||
+        entry === "pulse"
+    );
   } catch {
     return [];
   }

@@ -52,10 +52,7 @@ function SidebarNotificationsInner() {
     const handleNotificationsChanged = () => {
       void fetchLocalNotificationCount();
     };
-    window.addEventListener(
-      "notificationsChanged",
-      handleNotificationsChanged
-    );
+    window.addEventListener("notificationsChanged", handleNotificationsChanged);
     return () =>
       window.removeEventListener(
         "notificationsChanged",

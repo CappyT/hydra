@@ -315,9 +315,8 @@ const includedForLevel = (level: ProtectionLevel) =>
 
 /** Names of every syscall blocked at `level` (cumulative). Handy for a settings
  *  UI that lists what each level denies. */
-export const blockedSyscallNamesForLevel = (
-  level: ProtectionLevel
-): string[] => includedForLevel(level).map((entry) => entry.name);
+export const blockedSyscallNamesForLevel = (level: ProtectionLevel): string[] =>
+  includedForLevel(level).map((entry) => entry.name);
 
 // --- Tiny label-resolving cBPF assembler. ---
 

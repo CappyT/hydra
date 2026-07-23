@@ -150,7 +150,10 @@ export const resolveSandboxResolvConfDest = (): string => {
  */
 export const resolveHostResolver = (): string | null => {
   try {
-    const content = fs.readFileSync(fs.realpathSync("/etc/resolv.conf"), "utf8");
+    const content = fs.readFileSync(
+      fs.realpathSync("/etc/resolv.conf"),
+      "utf8"
+    );
     for (const line of content.split("\n")) {
       const match = line.match(/^\s*nameserver\s+(\S+)/);
       if (match) return match[1];

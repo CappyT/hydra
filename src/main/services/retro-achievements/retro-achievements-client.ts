@@ -52,10 +52,7 @@ export class RetroAchievementsClient {
     return response.data;
   }
 
-  static async getUserProfile({
-    username,
-    webApiKey,
-  }: GetUserProfileParams) {
+  static async getUserProfile({ username, webApiKey }: GetUserProfileParams) {
     const response = await this.instance.get<RetroAchievementsUserProfile>(
       "/API_GetUserProfile.php",
       { params: { u: username, z: username, y: webApiKey } }

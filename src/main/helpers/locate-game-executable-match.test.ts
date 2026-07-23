@@ -34,7 +34,12 @@ describe("locate-game-executable matching", () => {
   });
 
   it("finds an executable recursively, case-insensitively", async () => {
-    const target = path.join(root, "Games", "Hollow Knight", "Hollow Knight.exe");
+    const target = path.join(
+      root,
+      "Games",
+      "Hollow Knight",
+      "Hollow Knight.exe"
+    );
     touch(target);
     touch(path.join(root, "Games", "Hollow Knight", "readme.txt"));
 
@@ -123,10 +128,7 @@ describe("locate-game-executable matching", () => {
     touch(target);
 
     const found = await searchCandidateDirectories(
-      [
-        { path: driveC, isDriveC: true },
-        { path: sandboxHome },
-      ],
+      [{ path: driveC, isDriveC: true }, { path: sandboxHome }],
       new Set(["app.exe"]),
       silentLogger
     );

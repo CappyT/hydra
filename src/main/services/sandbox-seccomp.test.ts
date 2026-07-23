@@ -174,7 +174,13 @@ const buildLegacyLowFilter = () => {
     k: SECCOMP_RET_ERRNO_ENOSYS,
     label: DENY,
   });
-  prog.push({ code: OP_RET_K, jt: 0, jf: 0, k: SECCOMP_RET_ALLOW, label: ALLOW });
+  prog.push({
+    code: OP_RET_K,
+    jt: 0,
+    jf: 0,
+    k: SECCOMP_RET_ALLOW,
+    label: ALLOW,
+  });
 
   const labels = new Map<string, number>();
   prog.forEach((ins, i) => {
@@ -375,9 +381,17 @@ describe("protection levels", () => {
       "perf_event_open",
     ];
     for (const name of eperm) {
-      assert.equal(BLOCKED_SYSCALLS[name].errno, EPERM, `${name} should be EPERM`);
+      assert.equal(
+        BLOCKED_SYSCALLS[name].errno,
+        EPERM,
+        `${name} should be EPERM`
+      );
     }
-    for (const name of ["io_uring_setup", "io_uring_enter", "io_uring_register"]) {
+    for (const name of [
+      "io_uring_setup",
+      "io_uring_enter",
+      "io_uring_register",
+    ]) {
       assert.equal(BLOCKED_SYSCALLS[name].errno ?? ENOSYS, ENOSYS);
     }
     // Pre-existing Tier-A entries stay bare (default ENOSYS, no level tag).
@@ -396,7 +410,9 @@ describe("protection levels", () => {
       for (const entry of entriesOf()) {
         if (entry.argFilter) continue;
         const included = includedAt(level, entry);
-        const wanted = included ? expectedErrnoAction(entry) : SECCOMP_RET_ALLOW;
+        const wanted = included
+          ? expectedErrnoAction(entry)
+          : SECCOMP_RET_ALLOW;
         assert.equal(
           runFilter(filter, { nr: entry.x86_64, arch: AUDIT_ARCH_X86_64 }),
           wanted,

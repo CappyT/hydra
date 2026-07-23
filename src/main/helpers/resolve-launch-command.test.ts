@@ -19,11 +19,7 @@ describe("resolveLaunchCommand wrappers", () => {
     const resolved = resolveLaunchCommand({
       baseCommand: "/games/game.x86_64",
       baseArgs: ["--foo"],
-      wrapperCommands: [
-        "gamemoderun",
-        ["gamescope", "-f", "--"],
-        "mangohud",
-      ],
+      wrapperCommands: ["gamemoderun", ["gamescope", "-f", "--"], "mangohud"],
     });
 
     // reduceRight nests mangohud closest to the game, gamescope around it, and

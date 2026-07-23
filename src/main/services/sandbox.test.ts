@@ -193,9 +193,7 @@ describe("Sandbox.wrapCommand", () => {
     });
 
     const pairs = collectBindPairs(args);
-    const busBind = pairs.find(
-      (pair) => pair.dest === "/run/user/1000/bus"
-    );
+    const busBind = pairs.find((pair) => pair.dest === "/run/user/1000/bus");
     assert.ok(busBind);
     assert.equal(busBind.flag, "--ro-bind");
     assert.equal(busBind.source, "/dev/null");
@@ -436,7 +434,9 @@ describe("Sandbox X11 hardening (hideX11)", () => {
     assert.ok(hasBind(args, "--ro-bind", xauthority));
     assert.ok(hasBind(args, "--ro-bind", path.join(home, ".Xauthority")));
     // MangoHud config stays regardless of hideX11.
-    assert.ok(hasBind(args, "--ro-bind", path.join(home, ".config", "MangoHud")));
+    assert.ok(
+      hasBind(args, "--ro-bind", path.join(home, ".config", "MangoHud"))
+    );
   });
 
   it("omits every session X11 bind when hideX11 is true", () => {
