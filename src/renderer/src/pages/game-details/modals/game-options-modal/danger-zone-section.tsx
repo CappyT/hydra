@@ -14,6 +14,7 @@ interface DangerZoneSectionProps {
   onOpenRemoveFromLibrary: () => void;
   onOpenResetAchievements: () => void;
   onOpenChangePlaytime: () => void;
+  onOpenResetPlaytime: () => void;
   onOpenRemoveFiles: () => void;
 }
 
@@ -27,6 +28,7 @@ export function DangerZoneSection({
   onOpenRemoveFromLibrary,
   onOpenResetAchievements,
   onOpenChangePlaytime,
+  onOpenResetPlaytime,
   onOpenRemoveFiles,
 }: Readonly<DangerZoneSectionProps>) {
   const { t } = useTranslation("game_details");
@@ -66,6 +68,10 @@ export function DangerZoneSection({
 
         <Button onClick={onOpenChangePlaytime} theme="danger">
           {t("update_game_playtime")}
+        </Button>
+
+        <Button onClick={onOpenResetPlaytime} theme="danger">
+          {t("reset_playtime")}
         </Button>
 
         {game.shop !== "custom" && (

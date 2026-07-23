@@ -178,6 +178,9 @@ export interface DownloadLayoutState {
   pausedOrder: string[];
 }
 
+// Accountless fork: persisted shape of the local achievement store (upstream
+// dropped it with the move to a session-scoped in-memory store; without an
+// account the disk copy is the only durable record).
 export interface GameAchievement {
   achievements: SteamAchievement[];
   unlockedAchievements: UnlockedAchievement[];

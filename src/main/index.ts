@@ -241,8 +241,6 @@ const initializeApp = async () => {
     WindowManager.createMainWindow({ forceBigPicture });
   }
 
-  WindowManager.createNotificationWindow();
-
   // --no-tray: never create the tray, and make closing the last window quit the
   // whole app (the flag is stored on WindowManager so its window-close and
   // Big-Picture-close handlers can take the real-quit path). Used on Steam Deck
