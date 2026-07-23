@@ -1,6 +1,8 @@
 import type { ArtworkItem, ArtworkKind, ArtworkPage, GameShop } from "@types";
+import { ACCOUNTLESS } from "@shared";
 
 import { HydraApi } from "./hydra-api";
+import { fetchSteamGridDbArtwork } from "./steamgriddb/steamgriddb-client";
 
 export const ARTWORK_PAGE_SIZE = 50;
 
@@ -34,6 +36,8 @@ export const fetchGameArtwork = async (
   kind: ArtworkKind,
   page = 0
 ): Promise<ArtworkPage> => {
+  if (ACCOUNTLESS) return fetchSteamGridDbArtwork(shop, objectId, kind, page);
+
   const response = await HydraApi.getResponse<ArtworkResponse>(
     `/games/${shop}/${objectId}/artwork/${kind}`,
     { ...KIND_PARAMS[kind], limit: ARTWORK_PAGE_SIZE, page },

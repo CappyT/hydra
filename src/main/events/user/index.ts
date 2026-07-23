@@ -4,3 +4,4 @@ import "./get-unlocked-achievements";
 import "./get-retroachievements-achievements";
 import "./reset-retroachievements-achievements";
 import "./validate-retroachievements-web-api-key";
+import "./validate-steamgriddb-api-key";

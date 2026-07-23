@@ -917,6 +917,7 @@ declare global {
       username: string,
       webApiKey: string
     ) => Promise<{ valid: boolean; userId: string | null }>;
+    validateSteamGridDbApiKey: (apiKey: string) => Promise<{ valid: boolean }>;
 
     /* Profile */
     getMe: () => Promise<UserDetails | null>;

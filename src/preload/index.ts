@@ -1245,6 +1245,8 @@ contextBridge.exposeInMainWorld("electron", {
       username,
       webApiKey
     ),
+  validateSteamGridDbApiKey: (apiKey: string) =>
+    ipcRenderer.invoke("validateSteamGridDbApiKey", apiKey),
 
   /* Auth */
   getAuth: () => ipcRenderer.invoke("getAuth"),

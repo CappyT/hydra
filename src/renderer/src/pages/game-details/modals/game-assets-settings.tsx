@@ -223,6 +223,9 @@ export function GameAssetsSettings({
     useAppSelector(
       (state) => state.userPreferences.value?.classicsUseHeroLayout
     ) ?? false;
+  const steamGridDbApiKey = useAppSelector(
+    (state) => state.userPreferences.value?.steamGridDbApiKey
+  );
 
   const [assetPaths, setAssetPaths] = useState<AssetPaths>(INITIAL_ASSET_PATHS);
   const [originalAssetPaths, setOriginalAssetPaths] =
@@ -1231,6 +1234,17 @@ export function GameAssetsSettings({
           >
             <AlertIcon size={14} />
             <span>{t("custom_assets_not_sync")}</span>
+          </button>
+        )}
+
+        {ACCOUNTLESS && !isCustomGame(game) && !steamGridDbApiKey && (
+          <button
+            type="button"
+            className="subscription-required-button"
+            onClick={() => navigate("/settings?tab=integrations")}
+          >
+            <AlertIcon size={14} />
+            <span>{t("steamgriddb_key_required")}</span>
           </button>
         )}
 

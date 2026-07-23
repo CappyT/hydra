@@ -22,6 +22,7 @@ import {
   type IntegrationProviderConfig,
 } from "./integration-provider-section";
 import { RetroAchievementsSection } from "./retroachievements-section";
+import { SteamGridDbSection } from "./steamgriddb-section";
 
 interface SettingsSectionProps {
   className?: string;
@@ -193,6 +194,14 @@ export function IntegrationsSettingsSection({
               }
             : SETTINGS_HEADER_RETURN_TARGET
         }
+      />
+
+      <SteamGridDbSection
+        upTarget={{
+          type: "region",
+          regionId: RETROACHIEVEMENTS_SECTION_REGION_ID,
+          entryDirection: "up",
+        }}
       />
     </div>
   );

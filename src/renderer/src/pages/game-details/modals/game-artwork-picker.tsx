@@ -11,6 +11,7 @@ import Skeleton, { SkeletonTheme } from "react-loading-skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
 import { Button } from "@renderer/components";
+import { ACCOUNTLESS } from "@shared";
 import {
   getArtworkDisplaySource,
   getLastArtworkRowIds,
@@ -432,7 +433,9 @@ export function GameArtworkPicker({
     shop: game.shop,
     objectId: game.objectId,
     assetType,
-    enabled: Boolean(userDetails),
+    // Accountless fork: the artwork gallery is served directly from SteamGridDB
+    // (see fetchGameArtwork), so it does not require a logged-in Hydra account.
+    enabled: ACCOUNTLESS || Boolean(userDetails),
     onChanged,
     onError,
     onPicked,
@@ -583,7 +586,7 @@ export function GameArtworkPicker({
     scrollRef.current?.scrollTo({ top: 0 });
   }, [assetType, game.objectId, game.shop]);
 
-  if (!userDetails) {
+  if (!ACCOUNTLESS && !userDetails) {
     return (
       <div className="game-artwork__hint">
         {t("steamgriddb_sign_in_required")}

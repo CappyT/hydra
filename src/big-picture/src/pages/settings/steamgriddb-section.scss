@@ -1,0 +1,28 @@
+.steamgriddb-section__content {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing-unit) * 3);
+}
+
+.steamgriddb-section__status {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--spacing-unit) * 1);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.steamgriddb-section__actions {
+  display: flex;
+  gap: calc(var(--spacing-unit) * 2);
+}
+
+.steamgriddb-section__visibility-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}

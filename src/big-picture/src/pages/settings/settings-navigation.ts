@@ -60,6 +60,10 @@ export const RETROACHIEVEMENTS_UPDATE_BUTTON_ID =
   "integrations-retroachievements-update";
 export const RETROACHIEVEMENTS_DISCONNECT_BUTTON_ID =
   "integrations-retroachievements-disconnect";
+export const STEAMGRIDDB_SECTION_REGION_ID = "integrations-steamgriddb-region";
+export const STEAMGRIDDB_API_KEY_INPUT_ID = "integrations-steamgriddb-api-key";
+export const STEAMGRIDDB_SAVE_BUTTON_ID = "integrations-steamgriddb-save";
+export const STEAMGRIDDB_REMOVE_BUTTON_ID = "integrations-steamgriddb-remove";
 export const ACCOUNT_PRIVACY_PRIVACY_SELECT_ID =
   "account-privacy-profile-visibility";
 export const COMPATIBILITY_GAMEMODE_FOCUS_ID = "compatibility-gamemode";
