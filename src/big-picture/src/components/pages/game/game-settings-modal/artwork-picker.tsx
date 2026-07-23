@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { CheckIcon } from "@primer/octicons-react";
 import type { ArtworkAssetType, ArtworkItem, LibraryGame } from "@types";
+import { ACCOUNTLESS } from "@shared";
 import {
   getArtworkDisplaySource,
   useGameArtworkGrid,
@@ -65,7 +66,9 @@ export function GameArtworkPicker({
     shop: game.shop,
     objectId: game.objectId,
     assetType,
-    enabled: Boolean(userDetails),
+    // Accountless fork: the artwork gallery is served directly from SteamGridDB
+    // (see fetchGameArtwork), so it does not require a logged-in Hydra account.
+    enabled: ACCOUNTLESS || Boolean(userDetails),
     onChanged,
     onError,
     onPicked,
@@ -110,7 +113,7 @@ export function GameArtworkPicker({
     ARTWORK_PREVIEW_FOCUS_ID
   );
 
-  if (!userDetails) {
+  if (!ACCOUNTLESS && !userDetails) {
     return (
       <p className="game-artwork-picker__hint">
         {t("steamgriddb_sign_in_required")}
