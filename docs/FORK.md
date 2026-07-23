@@ -55,8 +55,12 @@ The fork's CI is kept lean for fast release turnaround:
 - **`build.yml`** — a single build-smoke job on PRs and `main` pushes (the upstream
   second `build-production` job was removed; release artifacts come from `release.yml`).
 - **`release.yml`** — triggered by pushing a `release/**` branch; builds the AppImage,
-  derives the tag `v<package.json version>`, and creates a **draft** release with the
-  AppImage + `latest-linux.yml` + `.blockmap` (needed for auto-update). Publish the draft
+  embeds the standard AppImage update information (`gh-releases-zsync|CappyT|hydra|latest|…`
+  written into the `.upd_info` ELF section via `scripts/embed-appimage-update-info.mjs`,
+  which also recomputes `latest-linux.yml`'s sha512 for the patched file — this is what
+  lets Gear Lever / AppImageUpdate discover updates) and a `.zsync` file, derives the tag
+  `v<package.json version>`, and creates a **draft** release with the
+  AppImage + `latest-linux.yml` + `.zsync` (all needed for auto-update). Publish the draft
   manually, or via `gh release edit v<version> --draft=false --latest`. Redundant steps
   (rpm tooling, a duplicate Python-RPC build already done by `build:linux`, and the
   duplicate `upload-artifact`) were removed; Python setup + `build:linux` (which builds the

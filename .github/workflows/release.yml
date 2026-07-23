@@ -88,6 +88,19 @@ jobs:
           RENDERER_VITE_TORBOX_REFERRAL_CODE: ${{ vars.RENDERER_VITE_TORBOX_REFERRAL_CODE }}
           MAIN_VITE_LAUNCHER_SUBDOMAIN: ${{ vars.MAIN_VITE_LAUNCHER_SUBDOMAIN }}
 
+      # Gear Lever / AppImageUpdate read the standard `.upd_info` ELF section,
+      # which electron-builder leaves zero-filled. Embed the gh-releases-zsync
+      # update string (the script also re-aligns latest-linux.yml's sha512 so
+      # the in-app updater keeps accepting the patched file) and publish a
+      # .zsync alongside for delta-capable updaters.
+      - name: Embed AppImage update info
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq zsync
+          APPIMAGE=$(ls dist/*.AppImage)
+          node scripts/embed-appimage-update-info.mjs "$APPIMAGE" \
+            "gh-releases-zsync|CappyT|hydra|latest|hydralauncher-*.AppImage.zsync"
+          (cd dist && zsyncmake -u "$(basename "$APPIMAGE")" "$(basename "$APPIMAGE")")
+
       # The workflow runs on release/** branch pushes, so there is no tag in
       # the ref; gh-release requires one. Derive it from the app version.
       - name: Read app version
@@ -107,5 +120,6 @@ jobs:
             dist/*.AppImage
             dist/latest-linux.yml
             dist/*.blockmap
+            dist/*.zsync
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

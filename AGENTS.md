@@ -99,7 +99,9 @@ All of this is on `main` and shipped; docs/FORK.md has the operational detail.
 - **Launcher-owned downloads dir** (`<userData>/Downloads`) so the sandbox
   game-dir bind never exposes user data.
 - **CI**: `build.yml` single smoke job; `release.yml` on `release/**`
-  branches → AppImage-only draft release. Signing/telemetry removed.
+  branches → AppImage-only draft release, with AppImage update info
+  (`.upd_info` section, for Gear Lever/AppImageUpdate) embedded post-build
+  and a `.zsync` asset. Signing/telemetry removed.
 
 ## Working in this repo
 
