@@ -1,5 +1,7 @@
 import type { GameShop, SteamAchievement, UnlockedAchievement } from "@types";
 
+import { persistAchievementEntry } from "./achievement-disk-store.js";
+
 type AchievementMemoryEntry = {
   achievements: SteamAchievement[];
   unlockedAchievements: UnlockedAchievement[];
@@ -22,6 +24,10 @@ export const AchievementMemoryStore = {
     achievementEntry: AchievementMemoryEntry
   ) {
     entries.set(gameKey(shop, objectId), achievementEntry);
+    // Accountless fork: mirror to disk — without an account there is no
+    // cloud copy, so the session-scoped store alone would lose everything on
+    // restart (no-op when not accountless or while hydrating).
+    persistAchievementEntry(shop, objectId, achievementEntry);
   },
 
   all() {

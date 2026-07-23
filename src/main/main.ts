@@ -30,6 +30,8 @@ import { migrateDownloadSources } from "./helpers/migrate-download-sources";
 import { getDirSize } from "./services/download/helpers";
 import { GofileApi } from "./services/hosters";
 import { clearLegacyAchievementPersistence } from "./level/clear-legacy-achievements";
+import { hydrateAchievementsFromDisk } from "./services/achievements/achievement-disk-store";
+import { ACCOUNTLESS } from "@shared";
 
 const hasMissingSeedFiles = async (download: Download): Promise<boolean> => {
   if (!download.folderName) return false;
@@ -55,7 +57,15 @@ const hasMissingSeedFiles = async (download: Download): Promise<boolean> => {
 
 export const loadState = async () => {
   await Lock.acquireLock();
-  await clearLegacyAchievementPersistence();
+
+  // Accountless fork: the "legacy" local achievement store is our ONLY copy
+  // (no account, no cloud) — hydrate the in-memory store from it instead of
+  // wiping it. The upstream wipe only runs for account-backed installs.
+  if (ACCOUNTLESS) {
+    await hydrateAchievementsFromDisk();
+  } else {
+    await clearLegacyAchievementPersistence();
+  }
 
   const userPreferences = await db.get<string, UserPreferences | null>(
     levelKeys.userPreferences,
