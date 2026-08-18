@@ -23,7 +23,6 @@ import {
   buildRunDeepLink,
   getHydraShortcutTarget,
 } from "@main/helpers/shortcut-launch";
-import { SystemPath } from "@main/services/system-path";
 
 const downloadAsset = async (
   downloadPath: string,
@@ -155,35 +154,6 @@ const addShortcutForSteamUser = async (
   await writeSteamShortcuts(steamUserId, steamShortcuts);
 };
 
-const configureLinuxWinePrefix = async (game: Game, appId: number) => {
-  if (
-    process.platform !== "linux" ||
-    game.shop === "launchbox" ||
-    game.winePrefixPath
-  ) {
-    return;
-  }
-
-  const winePrefixPath = path.join(
-    SystemPath.getPath("home"),
-    ".local",
-    "share",
-    "Steam",
-    "steamapps",
-    "compatdata",
-    appId.toString(),
-    "pfx"
-  );
-  await fs.promises.mkdir(winePrefixPath, { recursive: true });
-
-  const gameKey = levelKeys.game(game.shop, game.objectId);
-  await gamesSublevel.put(gameKey, {
-    ...game,
-    steamShortcutAppId: appId,
-    winePrefixPath,
-  });
-};
-
 const createSteamShortcut = async (
   _event: Electron.IpcMainInvokeEvent,
   shop: GameShop,
@@ -268,7 +238,11 @@ const createSteamShortcut = async (
     steamShortcutAppId: newShortcut.appid,
   });
 
-  await configureLinuxWinePrefix(game, newShortcut.appid);
+  // Upstream's configureLinuxWinePrefix is intentionally not called: it
+  // rebinds game.winePrefixPath to Steam's compatdata/<appid>/pfx, which only
+  // makes sense when the shortcut points Steam at the raw executable. Fork
+  // shortcuts launch Hydra via its deep link, so Hydra keeps managing its own
+  // per-game prefix; rebinding would orphan the existing prefix and its saves.
 };
 
 registerEvent("createSteamShortcut", createSteamShortcut);
