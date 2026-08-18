@@ -32,7 +32,7 @@ const locateGameExecutable = async (
     if (!executableNames || executableNames.length === 0) return null;
 
     const normalizedNames = new Set(
-      executableNames.map((name) => name.toLowerCase())
+      executableNames.map((executable) => executable.exe.toLowerCase())
     );
 
     const download = await downloadsSublevel.get(gameKey).catch(() => null);

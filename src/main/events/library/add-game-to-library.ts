@@ -3,12 +3,12 @@ import type { GameShop, UserPreferences } from "@types";
 import { createGame } from "@main/services/library-sync";
 import {
   db,
-  downloadsSublevel,
   gamesShopAssetsSublevel,
   gamesShopCacheSublevel,
   gamesSublevel,
   levelKeys,
 } from "@main/level";
+import { clearFinishedDownload } from "@main/helpers";
 import { AchievementWatcherManager } from "@main/services/achievements/achievement-watcher-manager";
 
 const lookupCachedPlatform = async (
@@ -50,7 +50,7 @@ const addGameToLibrary = async (
     (shop === "launchbox" ? await lookupCachedPlatform(shop, objectId) : null);
 
   if (game) {
-    await downloadsSublevel.del(gameKey);
+    await clearFinishedDownload(shop, objectId);
 
     game.isDeleted = false;
     game.addedToLibraryAt ??= new Date();

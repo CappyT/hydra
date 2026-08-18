@@ -16,7 +16,6 @@ import {
   addTrailingSlash,
   getDeviceId,
   normalizePath,
-  parseRegFile,
 } from "@main/helpers";
 import { logger } from "./logger";
 import { WindowManager } from "./window-manager";
@@ -40,28 +39,9 @@ export class CloudSync {
         throw new Error("Wine prefix path is required");
       }
 
-      const userReg = fs.readFileSync(
-        path.join(winePrefixPath, "user.reg"),
-        "utf8"
-      );
-
-      const entries = parseRegFile(userReg);
-      const volatileEnvironment = entries.find(
-        (entry) => entry.path === "Volatile Environment"
-      );
-
-      if (!volatileEnvironment) {
-        throw new Error("Volatile environment not found in user.reg");
-      }
-
-      const { values } = volatileEnvironment;
-      const userProfile = String(values["USERPROFILE"]);
-
-      if (userProfile) {
-        return normalizePath(userProfile);
-      } else {
-        throw new Error("User profile not found in user.reg");
-      }
+      const userProfile = Wine.getWindowsUserProfilePath(winePrefixPath);
+      if (!userProfile) throw new Error("User profile not found in user.reg");
+      return userProfile;
     }
 
     return normalizePath(SystemPath.getPath("home"));

@@ -2,6 +2,7 @@ import { downloadsSublevel } from "./level/sublevels/downloads";
 import { orderBy } from "lodash-es";
 import { Downloader } from "@shared";
 import { levelKeys, db } from "./level";
+import { refreshGlobalTrackersUrlCache } from "@main/helpers";
 import { type Download, type UserPreferences } from "../types";
 import path from "node:path";
 import fs from "node:fs";
@@ -25,6 +26,7 @@ import {
   Wine,
   WindowManager,
   logger,
+  migrateCloudSaveAutomaticSyncDefaults,
 } from "@main/services";
 import { migrateDownloadSources } from "./helpers/migrate-download-sources";
 import { getDirSize } from "./services/download/helpers";
@@ -61,10 +63,13 @@ export const loadState = async () => {
   // Accountless fork: the "legacy" local achievement store is our ONLY copy
   // (no account, no cloud) — hydrate the in-memory store from it instead of
   // wiping it. The upstream wipe only runs for account-backed installs.
+  // The cloud-save migration would also disable automaticCloudSync on Steam
+  // games, which drives our local backup sync — account-backed installs only.
   if (ACCOUNTLESS) {
     await hydrateAchievementsFromDisk();
   } else {
     await clearLegacyAchievementPersistence();
+    await migrateCloudSaveAutomaticSyncDefaults();
   }
 
   const userPreferences = await db.get<string, UserPreferences | null>(
@@ -95,6 +100,15 @@ export const loadState = async () => {
   }
 
   GofileApi.initialize();
+
+  if (
+    userPreferences?.appendGlobalTrackersUrl &&
+    userPreferences?.globalTrackersUrl
+  ) {
+    refreshGlobalTrackersUrlCache().catch((err) =>
+      logger.warn("Failed to refresh global tracker URL cache on startup", err)
+    );
+  }
 
   Ludusavi.copyConfigFileToUserData();
   Ludusavi.copyBinaryToUserData();

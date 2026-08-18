@@ -25,6 +25,7 @@ import "./user";
 import "./user-preferences";
 import "./library/transfer-game-files";
 import "./emulators";
+import "./retroarch";
 
 import { isPortableVersion } from "@main/helpers";
 

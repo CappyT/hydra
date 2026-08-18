@@ -5,7 +5,9 @@ import {
   gamesSublevel,
   levelKeys,
 } from "@main/level";
-import type { GameShop, UserPreferences } from "@types";
+import type { UserPreferences } from "@types";
+import { DownloadOrchestrator } from "@main/services/download-orchestrator";
+import { canDiscardDownload, type GameShop } from "../../types";
 
 interface PrepareGameEntryParams {
   gameKey: string;
@@ -13,6 +15,21 @@ interface PrepareGameEntryParams {
   objectId: string;
   shop: GameShop;
 }
+
+export const clearFinishedDownload = async (
+  shop: GameShop,
+  objectId: string
+): Promise<void> => {
+  const gameKey = levelKeys.game(shop, objectId);
+  const download = await downloadsSublevel.get(gameKey);
+
+  if (!download || !canDiscardDownload(download)) return;
+
+  await downloadsSublevel.del(gameKey).catch(() => {});
+  await DownloadOrchestrator.syncAfterDownloadRemoved({ shop, objectId }).catch(
+    () => {}
+  );
+};
 
 export const prepareGameEntry = async ({
   gameKey,

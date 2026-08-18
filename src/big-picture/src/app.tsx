@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Outlet, useLocation } from "react-router-dom";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   BIG_PICTURE_APP_LAYER_ID,
   BIG_PICTURE_CONTENT_REGION_ID,
@@ -43,6 +43,7 @@ export default function App() {
 
   const { pathname } = useLocation();
   const { t } = useTranslation("app");
+  const navigate = useNavigate();
   const { nodes, regions, setFocusRegion } = useNavigation();
   const { showWarningToast } = useBigPictureToast();
   const userPreferences = useUserPreferences();
@@ -67,6 +68,16 @@ export default function App() {
 
     initializeBigPictureRunningGamesStore();
   }, []);
+
+  useEffect(() => {
+    if (!IS_DESKTOP) return;
+
+    return globalThis.window.electron.onNavigate((path) => {
+      if (path.startsWith("/big-picture")) {
+        navigate(path);
+      }
+    });
+  }, [navigate]);
 
   useEffect(() => {
     setPendingRouteFocusPathname(pathname);

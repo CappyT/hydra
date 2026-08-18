@@ -5,7 +5,7 @@ import { platformToSystem } from "@renderer/helpers";
 import { CloudSyncPanel } from "../../cloud-sync/cloud-sync-panel";
 import { GameEmulationSaves } from "../../cloud-sync/game-emulation-saves";
 
-interface HydraCloudSettingsSectionProps {
+interface HydraCloudLegacySettingsSectionProps {
   game: LibraryGame;
   automaticCloudSync: boolean;
   onToggleAutomaticCloudSync: (
@@ -16,14 +16,14 @@ interface HydraCloudSettingsSectionProps {
   onChangeBackupsToKeep: (value: number | null) => Promise<void>;
 }
 
-export function HydraCloudSettingsSection({
+export function HydraCloudLegacySettingsSection({
   game,
   automaticCloudSync,
   onToggleAutomaticCloudSync,
   backupsToKeep,
   defaultBackupsToKeep,
   onChangeBackupsToKeep,
-}: Readonly<HydraCloudSettingsSectionProps>) {
+}: Readonly<HydraCloudLegacySettingsSectionProps>) {
   const { t } = useTranslation("game_details");
 
   if (game.shop === "custom") {

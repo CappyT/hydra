@@ -16,7 +16,8 @@ export type HydraCloudFeature =
   | "achievements"
   | "backup"
   | "achievements-points"
-  | "customization";
+  | "customization"
+  | "vikingfile";
 
 export interface DiskUsage {
   free: number;
@@ -71,6 +72,7 @@ export type ShopDetails = SteamAppDetails & {
   platform?: string;
   skus?: string[];
   retroAchievementsGameId?: number | null;
+  descriptionLanguage?: string;
 };
 
 export type ShopDetailsWithAssets = ShopDetails & {
@@ -462,6 +464,21 @@ export interface BackupBackendTestResult {
 
 export type BackupBackend = "local" | "rclone";
 
+export type LegacySaveExportResult =
+  | { status: "saved"; filePath: string }
+  | { status: "cancelled" }
+  | { status: "busy" };
+
+export interface LegacySaveExportProgress {
+  downloadedBytes: number;
+  totalBytes: number | null;
+  percentage: number | null;
+}
+
+export interface LegacySaveExportIpcProgress extends LegacySaveExportProgress {
+  operationId: string;
+}
+
 export type NotificationType =
   | "FRIEND_REQUEST_RECEIVED"
   | "FRIEND_REQUEST_ACCEPTED"
@@ -645,4 +662,6 @@ export * from "./how-long-to-beat.types";
 export * from "./level.types";
 export * from "./theme.types";
 export * from "./emulator.types";
+export * from "./retroarch.types";
 export * from "./artwork.types";
+export * from "./cloud-save.types";
