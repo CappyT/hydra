@@ -10,7 +10,13 @@ import {
 } from "./classics-import-state";
 import { isWithin } from "./rom-path-utils";
 import { bandPercent, baseNameWithoutExt } from "./import-progress-utils";
-import { HydraApi, WindowManager, emulators, logger } from "@main/services";
+import {
+  HydraApi,
+  WindowManager,
+  emulators,
+  logger,
+  mergeWithRemoteGames,
+} from "@main/services";
 import { clearFinishedDownload, platformToSystem } from "@main/helpers";
 import {
   fetchShopDetailsForSkus,
@@ -246,6 +252,8 @@ export const syncProfileBatch = async (objectIds: string[]) => {
   if (objectIds.length === 0) return;
 
   const chunks = chunk(objectIds, PROFILE_BATCH_CHUNK_SIZE);
+  let syncedAtLeastOneChunk = false;
+
   for (const objectIdChunk of chunks) {
     const payload = objectIdChunk.map((objectId) => ({
       objectId,
@@ -255,10 +263,13 @@ export const syncProfileBatch = async (objectIds: string[]) => {
     }));
     try {
       await HydraApi.post("/profile/games/batch", payload);
+      syncedAtLeastOneChunk = true;
     } catch (err) {
       logger.error("Failed to batch-sync launchbox games to profile", err);
     }
   }
+
+  if (syncedAtLeastOneChunk) await mergeWithRemoteGames();
 };
 
 const persistRomFolder = async (

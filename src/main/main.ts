@@ -27,6 +27,7 @@ import {
   WindowManager,
   logger,
   migrateCloudSaveAutomaticSyncDefaults,
+  groupedSouvenirWorker,
 } from "@main/services";
 import { migrateDownloadSources } from "./helpers/migrate-download-sources";
 import { getDirSize } from "./services/download/helpers";
@@ -131,6 +132,7 @@ export const loadState = async () => {
 
     if (HydraApi.isLoggedIn()) {
       SSEClient.connect();
+      void groupedSouvenirWorker.trigger();
     }
   });
 

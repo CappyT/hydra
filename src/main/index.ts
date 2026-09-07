@@ -21,6 +21,7 @@ import {
   DownloadOrchestrator,
   SSEClient,
   SandboxUnavailableError,
+  emulators,
 } from "@main/services";
 import resources from "@locales";
 import { PythonRPC } from "./services/python-rpc";
@@ -442,7 +443,10 @@ app.on("before-quit", async (e) => {
     PowerSaveBlockerManager.reset();
     /* Disconnects Python RPC */
     PythonRPC.kill();
-    await clearGamesPlaytime();
+    await Promise.all([
+      clearGamesPlaytime(),
+      emulators.stopAllEmulatorSouvenirCaptureSessions(),
+    ]);
     canAppBeClosed = true;
     app.quit();
   }

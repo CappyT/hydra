@@ -263,14 +263,18 @@ export function SettingsRetroAchievements() {
         return;
       }
 
+      if (deleteAchievements) {
+        await globalThis.window.electron.resetRetroAchievementsAchievements(
+          true
+        );
+      }
+
       await globalThis.window.electron.hydraApi.delete(
         `${INTEGRATION_ENDPOINT}?deleteAchievements=${deleteAchievements}`
       );
 
       if (deleteAchievements) {
-        await globalThis.window.electron
-          .resetRetroAchievementsAchievements()
-          .catch(() => {});
+        await globalThis.window.electron.resetRetroAchievementsAchievements();
       }
 
       setIntegration({ connected: false });

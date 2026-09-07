@@ -3,6 +3,13 @@ import fs from "node:fs";
 import { appVersion, defaultDownloadsPath, isStaging } from "@main/constants";
 import { getDeviceId } from "@main/helpers";
 import { ipcMain } from "electron";
+import { ScreenshotService } from "@main/services/screenshot";
+import {
+  cleanupAchievementSouvenirSync,
+  getAchievementSouvenirSyncDetails,
+  getAchievementSouvenirSyncStatus,
+  retryAchievementSouvenirSync,
+} from "@main/services/achievements/grouped-souvenir-worker";
 
 import "./auth";
 import "./autoupdater";
@@ -40,6 +47,21 @@ ipcMain.handle("getDefaultDownloadsPath", () => {
   fs.mkdirSync(defaultDownloadsPath, { recursive: true });
   return defaultDownloadsPath;
 });
+ipcMain.handle("getScreenshotsPath", () =>
+  ScreenshotService.getScreenshotsPath()
+);
+ipcMain.handle("getAchievementSouvenirSyncStatus", () =>
+  getAchievementSouvenirSyncStatus()
+);
+ipcMain.handle("getAchievementSouvenirSyncDetails", () =>
+  getAchievementSouvenirSyncDetails()
+);
+ipcMain.handle("retryAchievementSouvenirSync", () =>
+  retryAchievementSouvenirSync()
+);
+ipcMain.handle("cleanupAchievementSouvenirSync", () =>
+  cleanupAchievementSouvenirSync()
+);
 ipcMain.handle("getCloudIframeUrl", () => {
   const checkoutUrl = import.meta.env.MAIN_VITE_CHECKOUT_URL;
   if (!checkoutUrl) return "";

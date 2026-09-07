@@ -86,7 +86,7 @@ const addGameToLibrary = async (
   if (game) {
     await createGame(game).catch(() => {});
 
-    AchievementWatcherManager.firstSyncWithRemoteIfNeeded(
+    AchievementWatcherManager.syncGameAchievementFiles(
       game.shop,
       game.objectId
     );

@@ -20,6 +20,8 @@ import {
 } from "./sandbox-launch";
 import { buildSandboxEnv } from "./sandbox-env";
 import { isWaylandSessionAvailable } from "./is-gamescope-available";
+import { prepareEmulatorSouvenirs } from "@main/services/emulators/prepare-emulator-souvenirs";
+import { cleanupRetroArchSouvenirSession } from "@main/services/emulators/emulator-souvenir-config";
 
 export class RetroArchNotConfiguredError extends Error {
   code = "RETROARCH_NOT_CONFIGURED" as const;
@@ -86,15 +88,28 @@ export const launchRetroArchGame = async (
     game
   );
 
-  if (game) {
-    await gamesSublevel.put(gameKey, {
-      ...game,
-      selectedDiscPath: romPath,
-      lastTimePlayed: new Date(),
-    });
-  }
+  const sessionGame = game
+    ? {
+        ...game,
+        selectedDiscPath: romPath,
+        lastTimePlayed: new Date(),
+      }
+    : null;
 
-  const baseArgs = ["-L", core.path, romPath, "-f"];
+  if (sessionGame) await gamesSublevel.put(gameKey, sessionGame);
+
+  const souvenirSession = sessionGame
+    ? await prepareEmulatorSouvenirs(platform, config.executablePath)
+    : null;
+  const baseArgs = [
+    ...(souvenirSession
+      ? ["--appendconfig", souvenirSession.appendConfigPath]
+      : []),
+    "-L",
+    core.path,
+    romPath,
+    "-f",
+  ];
 
   const workingDirectory = path.dirname(executableTarget);
 
@@ -124,6 +139,9 @@ export const launchRetroArchGame = async (
   );
 
   const seccompFd = openSeccompFd(resolvedLaunchCommand);
+
+  let sessionStarted = false;
+
   try {
     const processRef = spawn(
       resolvedLaunchCommand.command,
@@ -157,18 +175,23 @@ export const launchRetroArchGame = async (
       processRef.once("error", onError);
     });
 
-    if (game) {
+    if (sessionGame) {
       await emulators.startEmulatorSession({
-        game,
+        game: sessionGame,
         system: platform,
         executablePath: config.executablePath,
         sku: null,
         child: processRef,
+        souvenirSession,
       });
+      sessionStarted = true;
     }
 
     processRef.unref();
   } catch (error) {
+    if (!sessionStarted) {
+      await cleanupRetroArchSouvenirSession(souvenirSession);
+    }
     logger.error("Failed to spawn RetroArch", error);
     throw error;
   } finally {

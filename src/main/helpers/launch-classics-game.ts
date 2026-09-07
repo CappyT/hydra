@@ -28,6 +28,7 @@ import {
 } from "./is-gamescope-available";
 import { buildGamescopeWrapper } from "./resolve-gamescope-wrapper";
 import { resolveLaunchCommand } from "./resolve-launch-command";
+import { prepareEmulatorSouvenirs } from "@main/services/emulators/prepare-emulator-souvenirs";
 
 export class EmulatorNotConfiguredError extends Error {
   code = "EMULATOR_NOT_CONFIGURED" as const;
@@ -304,6 +305,8 @@ export const launchClassicsGame = async (
   const baseArgs = buildEmulatorArgs(config.binary, bootTarget);
 
   const workingDirectory = path.dirname(executableTarget);
+
+  await prepareEmulatorSouvenirs(system, config.executablePath);
 
   const emulatorAdditionalBinds = [
     ...resolveEmulatorDataDirs(config.binary),
