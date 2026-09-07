@@ -16,7 +16,7 @@ import {
   QuestionIcon,
 } from "@primer/octicons-react";
 import { useLocation } from "react-router-dom";
-import { isAchievementSouvenirsEnabled } from "@shared";
+import { ACCOUNTLESS, isAchievementSouvenirsEnabled } from "@shared";
 
 import "./settings-behavior.scss";
 
@@ -203,75 +203,82 @@ export function SettingsContextContentGameplay() {
           </small>
         </div>
 
-        {hasActiveSubscription ? (
-          <CheckboxField
-            id="achievement-souvenirs"
-            label={t("enable_achievement_souvenirs")}
-            checked={form.enableAchievementSouvenirs}
-            onChange={handleAchievementSouvenirsChange}
-          />
-        ) : (
-          <button
-            type="button"
-            className="settings-behavior__hydra-cloud-row"
-            onClick={() => showHydraCloudModal("achievements")}
-          >
-            <CheckboxField
-              id="achievement-souvenirs"
-              label={t("enable_achievement_souvenirs")}
-              checked={false}
-              disabled
-              readOnly
-            />
+        {/* Accountless fork: souvenirs upload to the Hydra Cloud profile, so
+            neither the toggle (with its Hydra Cloud upsell) nor the screenshots
+            folder apply here. */}
+        {!ACCOUNTLESS && (
+          <>
+            {hasActiveSubscription ? (
+              <CheckboxField
+                id="achievement-souvenirs"
+                label={t("enable_achievement_souvenirs")}
+                checked={form.enableAchievementSouvenirs}
+                onChange={handleAchievementSouvenirsChange}
+              />
+            ) : (
+              <button
+                type="button"
+                className="settings-behavior__hydra-cloud-row"
+                onClick={() => showHydraCloudModal("achievements")}
+              >
+                <CheckboxField
+                  id="achievement-souvenirs"
+                  label={t("enable_achievement_souvenirs")}
+                  checked={false}
+                  disabled
+                  readOnly
+                />
 
-            <span className="settings-behavior__hydra-cloud-badge">
-              Hydra Cloud
-            </span>
-          </button>
+                <span className="settings-behavior__hydra-cloud-badge">
+                  Hydra Cloud
+                </span>
+              </button>
+            )}
+
+            <div className="settings-behavior__screenshots-directory">
+              <TextField
+                label={t("screenshots_directory")}
+                value={screenshotsPath}
+                readOnly
+                disabled
+                rightContent={
+                  <>
+                    <Button
+                      theme="outline"
+                      disabled={!canManageScreenshots}
+                      onClick={handleChooseScreenshotsPath}
+                    >
+                      <FileDirectoryIcon size={14} />
+                      {t("change_screenshots_directory")}
+                    </Button>
+                    {hasCustomScreenshotsPath && (
+                      <Button
+                        className="settings-behavior__reset-screenshots-button"
+                        theme="outline"
+                        disabled={!canManageScreenshots}
+                        tooltip={t("reset_screenshots_directory")}
+                        aria-label={t("reset_screenshots_directory")}
+                        onClick={handleResetScreenshotsPath}
+                      >
+                        <HistoryIcon size={14} />
+                      </Button>
+                    )}
+                  </>
+                }
+              />
+
+              <Button
+                className="settings-behavior__open-screenshots-button"
+                theme="outline"
+                disabled={!canManageScreenshots}
+                onClick={handleOpenScreenshotsPath}
+              >
+                <FileDirectoryIcon size={14} />
+                {t("open_screenshots_directory")}
+              </Button>
+            </div>
+          </>
         )}
-
-        <div className="settings-behavior__screenshots-directory">
-          <TextField
-            label={t("screenshots_directory")}
-            value={screenshotsPath}
-            readOnly
-            disabled
-            rightContent={
-              <>
-                <Button
-                  theme="outline"
-                  disabled={!canManageScreenshots}
-                  onClick={handleChooseScreenshotsPath}
-                >
-                  <FileDirectoryIcon size={14} />
-                  {t("change_screenshots_directory")}
-                </Button>
-                {hasCustomScreenshotsPath && (
-                  <Button
-                    className="settings-behavior__reset-screenshots-button"
-                    theme="outline"
-                    disabled={!canManageScreenshots}
-                    tooltip={t("reset_screenshots_directory")}
-                    aria-label={t("reset_screenshots_directory")}
-                    onClick={handleResetScreenshotsPath}
-                  >
-                    <HistoryIcon size={14} />
-                  </Button>
-                )}
-              </>
-            }
-          />
-
-          <Button
-            className="settings-behavior__open-screenshots-button"
-            theme="outline"
-            disabled={!canManageScreenshots}
-            onClick={handleOpenScreenshotsPath}
-          >
-            <FileDirectoryIcon size={14} />
-            {t("open_screenshots_directory")}
-          </Button>
-        </div>
 
         <CheckboxField
           label={t("enable_new_download_options_badges")}
