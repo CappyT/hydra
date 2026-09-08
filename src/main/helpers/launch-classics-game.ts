@@ -1,16 +1,8 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { db, gamesSublevel, levelKeys } from "@main/level";
-import { Sandbox, emulators, logger } from "@main/services";
-import {
-  wrapWithSandbox,
-  openSeccompFd,
-  withSeccompStdio,
-  closeSeccompFd,
-} from "./sandbox-launch";
-import { buildSandboxEnv } from "./sandbox-env";
+import { emulators, logger } from "@main/services";
 import type {
   EmulatorBinary,
   EmulatorConfig,
@@ -24,10 +16,10 @@ import { isMangohudAvailable } from "./is-mangohud-available";
 import {
   isGamescopeAvailable,
   isGamescopeSessionActive,
-  isWaylandSessionAvailable,
 } from "./is-gamescope-available";
 import { buildGamescopeWrapper } from "./resolve-gamescope-wrapper";
 import { resolveLaunchCommand } from "./resolve-launch-command";
+import { spawnDetachedEmulator } from "./spawn-detached-emulator";
 import { prepareEmulatorSouvenirs } from "@main/services/emulators/prepare-emulator-souvenirs";
 import { cleanupEmulatorSouvenirSession } from "@main/services/emulators/emulator-souvenir-config";
 
@@ -176,7 +168,7 @@ const assertBiosInstalled = async (
 export const resolveEmulatorWrappers = (
   preferences: UserPreferences | null,
   game: Game | undefined
-): { wrapperCommands: (string | string[])[]; useGamescope: boolean } => {
+): (string | string[])[] => {
   const useMangohud =
     (preferences?.autoRunMangohud === true || game?.autoRunMangohud === true) &&
     isMangohudAvailable();
@@ -210,63 +202,11 @@ export const resolveEmulatorWrappers = (
     );
   }
 
-  return {
-    wrapperCommands: [
-      ...(useGamemode ? ["gamemoderun"] : []),
-      ...(useGamescope ? [buildGamescopeWrapper()] : []),
-      ...(useMangohud ? ["mangohud"] : []),
-    ],
-    useGamescope,
-  };
-};
-
-/**
- * Config/save directories the emulator needs read-write access to inside the
- * sandbox. Native (XDG) and flatpak locations are both listed: the flatpak app
- * dir is where a Flathub-installed emulator keeps its user data, and binding a
- * missing path is a no-op for bwrap.
- */
-const resolveEmulatorDataDirs = (binary: EmulatorBinary): string[] => {
-  const home = os.homedir();
-  const configDir = path.join(home, ".config");
-  const shareDir = path.join(home, ".local", "share");
-  const cacheDir = path.join(home, ".cache");
-  const flatpakAppDir = (appId: string) =>
-    path.join(home, ".var", "app", appId);
-
-  switch (binary) {
-    case "duckstation":
-      return [
-        path.join(configDir, "duckstation"),
-        path.join(shareDir, "duckstation"),
-      ];
-    case "pcsx2":
-      return [
-        path.join(configDir, "PCSX2"),
-        path.join(shareDir, "PCSX2"),
-        path.join(shareDir, "pcsx2"),
-      ];
-    case "rpcs3":
-      return [path.join(configDir, "rpcs3"), path.join(shareDir, "rpcs3")];
-    case "ppsspp":
-      // PPSSPP keeps its whole memstick (PSP/SYSTEM/ppsspp.ini plus
-      // PSP/SAVEDATA) under the config dir; see `ppssppConfigCandidates`.
-      return [
-        path.join(configDir, "ppsspp"),
-        path.join(shareDir, "ppsspp"),
-        flatpakAppDir("org.ppsspp.PPSSPP"),
-      ];
-    case "dolphin":
-      // Mirrors `dolphinUserDirectoryCandidates` (GC memory cards live in
-      // <user>/GC/<region>/Card A, Wii saves in <user>/Wii).
-      return [
-        path.join(configDir, "dolphin-emu"),
-        path.join(shareDir, "dolphin-emu"),
-        path.join(cacheDir, "dolphin-emu"),
-        path.join(home, ".dolphin-emu"),
-        flatpakAppDir("org.DolphinEmu.dolphin-emu"),
-      ];
-  }
+  return [
+    ...(useGamemode ? ["gamemoderun"] : []),
+    ...(useGamescope ? [buildGamescopeWrapper()] : []),
+    ...(useMangohud ? ["mangohud"] : []),
+  ];
 };
 
 export const launchClassicsGame = async (
@@ -294,10 +234,7 @@ export const launchClassicsGame = async (
     })
     .catch(() => null);
 
-  const { wrapperCommands, useGamescope } = resolveEmulatorWrappers(
-    userPreferences,
-    game
-  );
+  const wrapperCommands = resolveEmulatorWrappers(userPreferences, game);
 
   const selectedDisc = game?.discs?.find((d) => d.path === discPath) ?? null;
 
@@ -342,68 +279,23 @@ export const launchClassicsGame = async (
     ...buildEmulatorArgs(config.binary, bootTarget),
   ];
 
+  const resolvedLaunchCommand = resolveLaunchCommand({
+    baseCommand: executableTarget,
+    baseArgs,
+    launchOptions: null,
+    wrapperCommands,
+  });
+
   const workingDirectory = path.dirname(executableTarget);
 
   let sessionStarted = false;
 
-  const emulatorAdditionalBinds = [
-    ...resolveEmulatorDataDirs(config.binary),
-    path.dirname(bootTarget),
-    path.dirname(discPath),
-    ...(config.biosPath ? [config.biosPath] : []),
-  ];
-
-  const resolvedLaunchCommand = wrapWithSandbox(
-    resolveLaunchCommand({
-      baseCommand: executableTarget,
-      baseArgs,
-      launchOptions: null,
-      wrapperCommands,
-    }),
-    {
-      userPreferences,
-      game,
-      gameKey,
-      gameDir: workingDirectory,
-      additionalBinds: emulatorAdditionalBinds,
-      hideX11: useGamescope && isWaylandSessionAvailable(),
-    }
-  );
-
-  const seccompFd = openSeccompFd(resolvedLaunchCommand);
   try {
-    const processRef = spawn(
-      resolvedLaunchCommand.command,
-      resolvedLaunchCommand.args,
-      {
-        shell: false,
-        detached: true,
-        stdio: withSeccompStdio(["ignore", "ignore", "ignore"], seccompFd),
-        cwd: workingDirectory,
-        env: {
-          ...(Sandbox.isEnabled(userPreferences, game)
-            ? buildSandboxEnv(process.env)
-            : process.env),
-          ...resolvedLaunchCommand.env,
-        },
-      }
+    const processRef = await spawnDetachedEmulator(
+      resolvedLaunchCommand,
+      workingDirectory,
+      () => new EmulatorNotConfiguredError(system)
     );
-
-    // Sandboxed spawn kept inline (spawnDetachedEmulator has no sandbox env or
-    // seccomp fd); surface a spawn failure as "emulator not configured" like
-    // upstream instead of an unref'd silent error.
-    await new Promise<void>((resolve, reject) => {
-      const onSpawn = () => {
-        processRef.off("error", onError);
-        resolve();
-      };
-      const onError = () => {
-        processRef.off("spawn", onSpawn);
-        reject(new EmulatorNotConfiguredError(system));
-      };
-      processRef.once("spawn", onSpawn);
-      processRef.once("error", onError);
-    });
 
     if (game) {
       await emulators.startEmulatorSession({
@@ -424,8 +316,5 @@ export const launchClassicsGame = async (
     }
     logger.error("Failed to spawn classics emulator", error);
     throw error;
-  } finally {
-    // The child inherited its own dup at fd 3; release the parent's copy.
-    closeSeccompFd(seccompFd);
   }
 };

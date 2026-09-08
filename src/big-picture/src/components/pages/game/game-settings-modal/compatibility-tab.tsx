@@ -386,7 +386,11 @@ export function GameCompatibilitySettingsTab({
       : networkIsolationDisabled === false
         ? true
         : userPreferences?.disableNetworkIsolation !== true;
-  const showSandboxOptions = isLinux && sandboxEnabled && sandboxAvailable;
+  // Emulator games (shop "launchbox") are launched unsandboxed by design, so
+  // the sandbox/seccomp/network-isolation controls are hidden for them.
+  const showSandboxSettings = isLinux && game.shop !== "launchbox";
+  const showSandboxOptions =
+    showSandboxSettings && sandboxEnabled && sandboxAvailable;
   const seccompSelectValue: SeccompSelectValue = seccompLevel ?? "";
 
   const gamemodeDisabled = !gamemodeAvailable || globalAutoRunGamemode;
@@ -563,7 +567,7 @@ export function GameCompatibilitySettingsTab({
         ) : null}
       </SettingsSection>
 
-      {isLinux ? (
+      {showSandboxSettings ? (
         <SettingsSection
           className="game-compatibility-settings-tab__section"
           title={t("enable_sandbox")}

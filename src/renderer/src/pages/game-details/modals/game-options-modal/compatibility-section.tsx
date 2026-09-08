@@ -96,6 +96,9 @@ export function CompatibilitySettingsSection({
   const { t } = useTranslation("game_details");
 
   const showWinetricksUnavailableTooltip = !winetricksAvailable;
+  // Emulator games (shop "launchbox") are launched unsandboxed by design, so
+  // the sandbox/seccomp/network-isolation controls are hidden for them.
+  const showSandboxSettings = game.shop !== "launchbox";
   const gamemodeToggleDisabled = !gamemodeAvailable || globalAutoRunGamemode;
   const mangohudToggleDisabled = !mangohudAvailable || globalAutoRunMangohud;
 
@@ -333,179 +336,199 @@ export function CompatibilitySettingsSection({
           </h4>
         </div>
 
-        <div className="game-options-modal__sandbox-toggle">
-          <CheckboxField
-            label={
-              <span
-                className={`game-options-modal__sandbox-label ${
-                  !sandboxAvailable
-                    ? "game-options-modal__sandbox-label--disabled"
-                    : ""
-                }`}
-                data-tooltip-id={
-                  !sandboxAvailable ? "sandbox-unavailable-tooltip" : undefined
-                }
-                data-tooltip-content={
-                  !sandboxAvailable
-                    ? t("sandbox_unavailable_tooltip")
-                    : undefined
-                }
-              >
-                {t("enable_sandbox")}
-              </span>
-            }
-            checked={sandboxEnabled && sandboxAvailable}
-            disabled={!sandboxAvailable}
-            onChange={(event) => onChangeSandboxState(event.target.checked)}
-          />
-
-          {!sandboxAvailable && <Tooltip id="sandbox-unavailable-tooltip" />}
-
-          <h4 className="game-options-modal__header-description">
-            {t("sandbox_description")}
-          </h4>
-        </div>
-
-        {sandboxEnabled && sandboxAvailable && (
+        {showSandboxSettings && (
           <>
-            <div className="game-options-modal__sandbox-ipc-toggle">
-              <CheckboxField
-                label={t("sandbox_share_ipc")}
-                checked={sandboxShareIpc}
-                onChange={(event) =>
-                  onChangeSandboxShareIpc(event.target.checked)
-                }
-              />
-              <h4 className="game-options-modal__header-description">
-                {t("sandbox_share_ipc_description")}
-              </h4>
-            </div>
-
-            <div className="game-options-modal__sandbox-ipc-toggle">
+            <div className="game-options-modal__sandbox-toggle">
               <CheckboxField
                 label={
                   <span
                     className={`game-options-modal__sandbox-label ${
-                      !networkIsolationAvailable
+                      !sandboxAvailable
                         ? "game-options-modal__sandbox-label--disabled"
                         : ""
                     }`}
                     data-tooltip-id={
-                      !networkIsolationAvailable
-                        ? "network-isolation-unavailable-tooltip"
+                      !sandboxAvailable
+                        ? "sandbox-unavailable-tooltip"
                         : undefined
                     }
                     data-tooltip-content={
-                      !networkIsolationAvailable
-                        ? t("network_isolation_unavailable_tooltip")
+                      !sandboxAvailable
+                        ? t("sandbox_unavailable_tooltip")
                         : undefined
                     }
                   >
-                    {t("enable_network_isolation")}
+                    {t("enable_sandbox")}
                   </span>
                 }
-                checked={networkIsolationEnabled && networkIsolationAvailable}
-                disabled={!networkIsolationAvailable}
-                onChange={(event) =>
-                  onChangeNetworkIsolation(event.target.checked)
-                }
+                checked={sandboxEnabled && sandboxAvailable}
+                disabled={!sandboxAvailable}
+                onChange={(event) => onChangeSandboxState(event.target.checked)}
               />
 
-              {!networkIsolationAvailable && (
-                <Tooltip id="network-isolation-unavailable-tooltip" />
+              {!sandboxAvailable && (
+                <Tooltip id="sandbox-unavailable-tooltip" />
               )}
 
               <h4 className="game-options-modal__header-description">
-                {t("network_isolation_description")}
+                {t("sandbox_description")}
               </h4>
             </div>
 
-            <div className="game-options-modal__sandbox-ipc-toggle">
-              <SelectField
-                label={t("seccomp_level")}
-                value={seccompLevel ?? ""}
-                options={[
-                  {
-                    key: "follow-global",
-                    value: "",
-                    label: t("seccomp_level_follow_global"),
-                  },
-                  { key: "off", value: "off", label: t("seccomp_level_off") },
-                  { key: "low", value: "low", label: t("seccomp_level_low") },
-                  {
-                    key: "medium",
-                    value: "medium",
-                    label: t("seccomp_level_medium"),
-                  },
-                  {
-                    key: "high",
-                    value: "high",
-                    label: t("seccomp_level_high"),
-                  },
-                ]}
-                onChange={(event) => {
-                  const raw = event.target.value;
-                  onChangeSeccompLevel(
-                    raw === ""
-                      ? null
-                      : (raw as "off" | "low" | "medium" | "high")
-                  );
-                }}
-              />
+            {sandboxEnabled && sandboxAvailable && (
+              <>
+                <div className="game-options-modal__sandbox-ipc-toggle">
+                  <CheckboxField
+                    label={t("sandbox_share_ipc")}
+                    checked={sandboxShareIpc}
+                    onChange={(event) =>
+                      onChangeSandboxShareIpc(event.target.checked)
+                    }
+                  />
+                  <h4 className="game-options-modal__header-description">
+                    {t("sandbox_share_ipc_description")}
+                  </h4>
+                </div>
 
-              <h4 className="game-options-modal__header-description">
-                {t("seccomp_level_description")}
-              </h4>
+                <div className="game-options-modal__sandbox-ipc-toggle">
+                  <CheckboxField
+                    label={
+                      <span
+                        className={`game-options-modal__sandbox-label ${
+                          !networkIsolationAvailable
+                            ? "game-options-modal__sandbox-label--disabled"
+                            : ""
+                        }`}
+                        data-tooltip-id={
+                          !networkIsolationAvailable
+                            ? "network-isolation-unavailable-tooltip"
+                            : undefined
+                        }
+                        data-tooltip-content={
+                          !networkIsolationAvailable
+                            ? t("network_isolation_unavailable_tooltip")
+                            : undefined
+                        }
+                      >
+                        {t("enable_network_isolation")}
+                      </span>
+                    }
+                    checked={
+                      networkIsolationEnabled && networkIsolationAvailable
+                    }
+                    disabled={!networkIsolationAvailable}
+                    onChange={(event) =>
+                      onChangeNetworkIsolation(event.target.checked)
+                    }
+                  />
 
-              <CheckboxField
-                label={t("seccomp_audit")}
-                checked={seccompAudit}
-                disabled={seccompLevel === "off"}
-                onChange={(event) => onChangeSeccompAudit(event.target.checked)}
-              />
-              <h4 className="game-options-modal__header-description">
-                {t("seccomp_audit_description")}
-              </h4>
-            </div>
+                  {!networkIsolationAvailable && (
+                    <Tooltip id="network-isolation-unavailable-tooltip" />
+                  )}
 
-            <div className="game-options-modal__sandbox-paths">
-              <div className="game-options-modal__header">
-                <h2>{t("sandbox_extra_paths")}</h2>
-                <h4 className="game-options-modal__header-description">
-                  {t("sandbox_extra_paths_description")}
-                </h4>
-              </div>
+                  <h4 className="game-options-modal__header-description">
+                    {t("network_isolation_description")}
+                  </h4>
+                </div>
 
-              {sandboxExtraPaths.map((extraPath) => (
-                <TextField
-                  key={extraPath}
-                  value={extraPath}
-                  readOnly
-                  theme="dark"
-                  disabled
-                  rightContent={
+                <div className="game-options-modal__sandbox-ipc-toggle">
+                  <SelectField
+                    label={t("seccomp_level")}
+                    value={seccompLevel ?? ""}
+                    options={[
+                      {
+                        key: "follow-global",
+                        value: "",
+                        label: t("seccomp_level_follow_global"),
+                      },
+                      {
+                        key: "off",
+                        value: "off",
+                        label: t("seccomp_level_off"),
+                      },
+                      {
+                        key: "low",
+                        value: "low",
+                        label: t("seccomp_level_low"),
+                      },
+                      {
+                        key: "medium",
+                        value: "medium",
+                        label: t("seccomp_level_medium"),
+                      },
+                      {
+                        key: "high",
+                        value: "high",
+                        label: t("seccomp_level_high"),
+                      },
+                    ]}
+                    onChange={(event) => {
+                      const raw = event.target.value;
+                      onChangeSeccompLevel(
+                        raw === ""
+                          ? null
+                          : (raw as "off" | "low" | "medium" | "high")
+                      );
+                    }}
+                  />
+
+                  <h4 className="game-options-modal__header-description">
+                    {t("seccomp_level_description")}
+                  </h4>
+
+                  <CheckboxField
+                    label={t("seccomp_audit")}
+                    checked={seccompAudit}
+                    disabled={seccompLevel === "off"}
+                    onChange={(event) =>
+                      onChangeSeccompAudit(event.target.checked)
+                    }
+                  />
+                  <h4 className="game-options-modal__header-description">
+                    {t("seccomp_audit_description")}
+                  </h4>
+                </div>
+
+                <div className="game-options-modal__sandbox-paths">
+                  <div className="game-options-modal__header">
+                    <h2>{t("sandbox_extra_paths")}</h2>
+                    <h4 className="game-options-modal__header-description">
+                      {t("sandbox_extra_paths_description")}
+                    </h4>
+                  </div>
+
+                  {sandboxExtraPaths.map((extraPath) => (
+                    <TextField
+                      key={extraPath}
+                      value={extraPath}
+                      readOnly
+                      theme="dark"
+                      disabled
+                      rightContent={
+                        <Button
+                          type="button"
+                          theme="outline"
+                          onClick={() => onRemoveSandboxPath(extraPath)}
+                        >
+                          {t("clear")}
+                        </Button>
+                      }
+                    />
+                  ))}
+
+                  <div className="game-options-modal__row">
                     <Button
                       type="button"
                       theme="outline"
-                      onClick={() => onRemoveSandboxPath(extraPath)}
+                      onClick={onAddSandboxPath}
                     >
-                      {t("clear")}
+                      <FileDirectoryIcon />
+                      {t("sandbox_add_path")}
                     </Button>
-                  }
-                />
-              ))}
-
-              <div className="game-options-modal__row">
-                <Button
-                  type="button"
-                  theme="outline"
-                  onClick={onAddSandboxPath}
-                >
-                  <FileDirectoryIcon />
-                  {t("sandbox_add_path")}
-                </Button>
-              </div>
-            </div>
+                  </div>
+                </div>
+              </>
+            )}
           </>
         )}
       </div>

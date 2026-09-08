@@ -1,9 +1,7 @@
-import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { db, gamesSublevel, levelKeys } from "@main/level";
-import { Sandbox, emulators, logger, retroarch } from "@main/services";
+import { emulators, logger, retroarch } from "@main/services";
 import type {
   GameShop,
   RetroArchCoreName,
@@ -12,14 +10,7 @@ import type {
 } from "@types";
 import { resolveEmulatorWrappers } from "./launch-classics-game";
 import { resolveLaunchCommand } from "./resolve-launch-command";
-import {
-  wrapWithSandbox,
-  openSeccompFd,
-  withSeccompStdio,
-  closeSeccompFd,
-} from "./sandbox-launch";
-import { buildSandboxEnv } from "./sandbox-env";
-import { isWaylandSessionAvailable } from "./is-gamescope-available";
+import { spawnDetachedEmulator } from "./spawn-detached-emulator";
 import { prepareEmulatorSouvenirs } from "@main/services/emulators/prepare-emulator-souvenirs";
 import { cleanupEmulatorSouvenirSession } from "@main/services/emulators/emulator-souvenir-config";
 
@@ -83,10 +74,7 @@ export const launchRetroArchGame = async (
     })
     .catch(() => null);
 
-  const { wrapperCommands, useGamescope } = resolveEmulatorWrappers(
-    userPreferences,
-    game
-  );
+  const wrapperCommands = resolveEmulatorWrappers(userPreferences, game);
 
   const sessionGame = game
     ? {
@@ -109,69 +97,23 @@ export const launchRetroArchGame = async (
     "-f",
   ];
 
+  const resolvedLaunchCommand = resolveLaunchCommand({
+    baseCommand: executableTarget,
+    baseArgs,
+    launchOptions: null,
+    wrapperCommands,
+  });
+
   const workingDirectory = path.dirname(executableTarget);
-
-  // Same sandbox treatment as the classics emulators: RetroArch keeps its
-  // config/saves/states under ~/.config/retroarch, plus the core and ROM dirs.
-  const retroarchAdditionalBinds = [
-    path.join(os.homedir(), ".config", "retroarch"),
-    path.dirname(core.path),
-    path.dirname(romPath),
-  ];
-
-  const resolvedLaunchCommand = wrapWithSandbox(
-    resolveLaunchCommand({
-      baseCommand: executableTarget,
-      baseArgs,
-      launchOptions: null,
-      wrapperCommands,
-    }),
-    {
-      userPreferences,
-      game,
-      gameKey,
-      gameDir: workingDirectory,
-      additionalBinds: retroarchAdditionalBinds,
-      hideX11: useGamescope && isWaylandSessionAvailable(),
-    }
-  );
-
-  const seccompFd = openSeccompFd(resolvedLaunchCommand);
 
   let sessionStarted = false;
 
   try {
-    const processRef = spawn(
-      resolvedLaunchCommand.command,
-      resolvedLaunchCommand.args,
-      {
-        shell: false,
-        detached: true,
-        stdio: withSeccompStdio(["ignore", "ignore", "ignore"], seccompFd),
-        cwd: workingDirectory,
-        env: {
-          ...(Sandbox.isEnabled(userPreferences, game)
-            ? buildSandboxEnv(process.env)
-            : process.env),
-          ...resolvedLaunchCommand.env,
-        },
-      }
+    const processRef = await spawnDetachedEmulator(
+      resolvedLaunchCommand,
+      workingDirectory,
+      () => new RetroArchNotConfiguredError(platform)
     );
-
-    // Sandboxed spawn kept inline (spawnDetachedEmulator has no sandbox env or
-    // seccomp fd); surface a spawn failure like upstream's helper does.
-    await new Promise<void>((resolve, reject) => {
-      const onSpawn = () => {
-        processRef.off("error", onError);
-        resolve();
-      };
-      const onError = () => {
-        processRef.off("spawn", onSpawn);
-        reject(new RetroArchNotConfiguredError(platform));
-      };
-      processRef.once("spawn", onSpawn);
-      processRef.once("error", onError);
-    });
 
     if (sessionGame) {
       await emulators.startEmulatorSession({
@@ -192,8 +134,5 @@ export const launchRetroArchGame = async (
     }
     logger.error("Failed to spawn RetroArch", error);
     throw error;
-  } finally {
-    // The child inherited its own dup at fd 3; release the parent's copy.
-    closeSeccompFd(seccompFd);
   }
 };
