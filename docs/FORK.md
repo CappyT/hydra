@@ -104,6 +104,21 @@ error if used; everything else works. Env reads that previously assumed a value
 (`isStaging`, the cloud-iframe URL) are now null-safe, so a missing `.env` no
 longer hard-crashes boot.
 
+## Sandbox coverage
+
+Game executables launched through `launchGame` — native, Wine/Proton via umu,
+tray, deep link, Steam shortcuts — are always sandboxed; there is no bypass.
+
+**Emulator launches are intentionally exempt** (owner decision): classics discs
+(`src/main/helpers/launch-classics-game.ts`) and RetroArch ROMs
+(`src/main/helpers/launch-retroarch-game.ts`) spawn the emulator directly and
+unsandboxed, like upstream, because emulator binaries have verifiable
+provenance and are mostly open source — they are not treated as hostile the way
+a downloaded game binary is. The only fork addition on those paths is the
+gamescope wrapper. Consequently the per-game sandbox / seccomp /
+network-isolation controls are hidden for `launchbox` games in both the desktop
+game options modal and the Big Picture compatibility tab.
+
 ## Sandbox selftest
 
 The game sandbox (bubblewrap) ships with an adversarial verifier that runs the

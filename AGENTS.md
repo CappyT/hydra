@@ -35,7 +35,11 @@ Target hardware: Fedora desktop (AMD/Wayland/GNOME) and a Steam Deck
   sidebar double-click, Steam shortcuts via deep link, CLI) must route through
   `launchGame` → `wrapWithSandbox`. When merging upstream, audit any new or
   changed launch path for bypasses (a raw `shell.openPath(exe)` in the tray
-  was a real security hole once).
+  was a real security hole once). **Emulator launches are the one intentional
+  exemption** (owner decision): classics discs and RetroArch ROMs spawn the
+  emulator unsandboxed like upstream, because emulator binaries have verifiable
+  provenance and are mostly open source. The sandbox covers game executables
+  launched through `launchGame`.
 - **Gate, don't delete.** Account-only features are guarded behind
   `ACCOUNTLESS`, never removed — deleting diverges harder than gating.
   Cloud/subscription upsell UI (buttons, banners, "Hydra Cloud benefit"
@@ -61,7 +65,9 @@ All of this is on `main` and shipped; docs/FORK.md has the operational detail.
 - **bwrap sandbox** per game: isolated home per game
   (`<userData>/sandbox-homes/`), env-var scrub allowlist (no host secrets leak
   into game env), per-game spoofed `/etc/machine-id`, `--die-with-parent`,
-  fail-closed launch guard. Per-game and global toggles (default ON).
+  fail-closed launch guard. Per-game and global toggles (default ON). Applies
+  to game executables launched through `launchGame`; emulator launches
+  (classics + RetroArch) are intentionally NOT sandboxed — see the policy above.
 - **seccomp filter** (pure-Node cBPF assembler, `sandbox-seccomp.ts`):
   cumulative levels low/medium(default)/high, per-rule errno, multi-arch
   (x86_64 + i386), per-game override + audit mode (blocks → kernel log,
