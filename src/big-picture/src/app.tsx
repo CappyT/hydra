@@ -26,6 +26,7 @@ import {
   NavigationDiagnostics,
   VerticalFocusGroup,
   BigPictureToastHost,
+  CloudGiftNotificationModal,
   VirtualKeyboardProvider,
 } from "./components";
 import { getItemFocusTarget } from "./helpers";
@@ -35,6 +36,7 @@ import {
 } from "./stores";
 import { NavigationAudioService, type FocusOverrides } from "./services";
 import { BigPictureI18nBridge, ensureBigPictureI18nResources } from "./i18n";
+import { ACCOUNTLESS } from "@shared";
 
 import "./styles/globals.scss";
 
@@ -212,6 +214,7 @@ export default function App() {
           <InputModeProvider />
           <NavigationDiagnostics />
           <BigPictureToastHost />
+          {!ACCOUNTLESS && <CloudGiftNotificationModal />}
         </div>
       </NavigationInputProvider>
     </Fragment>

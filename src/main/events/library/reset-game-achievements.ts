@@ -54,6 +54,13 @@ const resetGameAchievements = async (
       });
     }
 
+    if (game.reportedUnlockedAchievementCount !== undefined) {
+      await gamesSublevel.put(levelKey, {
+        ...game,
+        reportedUnlockedAchievementCount: undefined,
+      });
+    }
+
     if (!ACCOUNTLESS) {
       await HydraApi.delete(
         `/profile/games/achievements/${game.remoteId}`

@@ -21,7 +21,7 @@ import {
 import { buildSandboxEnv } from "./sandbox-env";
 import { isWaylandSessionAvailable } from "./is-gamescope-available";
 import { prepareEmulatorSouvenirs } from "@main/services/emulators/prepare-emulator-souvenirs";
-import { cleanupRetroArchSouvenirSession } from "@main/services/emulators/emulator-souvenir-config";
+import { cleanupEmulatorSouvenirSession } from "@main/services/emulators/emulator-souvenir-config";
 
 export class RetroArchNotConfiguredError extends Error {
   code = "RETROARCH_NOT_CONFIGURED" as const;
@@ -102,9 +102,7 @@ export const launchRetroArchGame = async (
     ? await prepareEmulatorSouvenirs(platform, config.executablePath)
     : null;
   const baseArgs = [
-    ...(souvenirSession
-      ? ["--appendconfig", souvenirSession.appendConfigPath]
-      : []),
+    ...(souvenirSession?.launchArguments ?? []),
     "-L",
     core.path,
     romPath,
@@ -190,7 +188,7 @@ export const launchRetroArchGame = async (
     processRef.unref();
   } catch (error) {
     if (!sessionStarted) {
-      await cleanupRetroArchSouvenirSession(souvenirSession);
+      await cleanupEmulatorSouvenirSession(souvenirSession);
     }
     logger.error("Failed to spawn RetroArch", error);
     throw error;

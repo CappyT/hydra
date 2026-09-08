@@ -18,6 +18,7 @@ import { ACCOUNTLESS } from "@shared";
 import { achievementsLogger } from "../logger";
 import { db, levelKeys } from "@main/level";
 import { getGameAchievementData } from "./get-game-achievement-data";
+import { mergeUnlockedAchievementLists } from "./merge-unlocked-achievements";
 import { AchievementWatcherManager } from "./achievement-watcher-manager";
 import { buildAchievementNotificationInfo } from "./build-achievement-notification-info";
 import { AchievementMemoryStore } from "./achievement-memory-store";
@@ -28,6 +29,10 @@ import { PendingGroupedSouvenirStore } from "./grouped-souvenir-store";
 import { groupedSouvenirWorker } from "./grouped-souvenir-worker";
 import { launchedGamePids } from "../launched-game-pids";
 import { Wine } from "../wine";
+import {
+  getGroupedSouvenirErrorCode,
+  SOUVENIR_LIMIT_ERROR_CODE,
+} from "./grouped-souvenir-retry-policy";
 
 const captureAchievementSouvenirs = async (
   game: Game,
@@ -223,14 +228,31 @@ const publishAchievementUnlockNotifications = ({
       publishOsNotification();
     }
   } else if (customEnabled) {
+    // No OS fallback: the user opted into the custom notification, so a failure
+    // must not surface as a duplicate system toast.
     achievementNotificationPresenter.enqueueAchievements(
       position,
-      achievementsInfo,
-      publishOsNotification
+      achievementsInfo
     );
   } else {
     publishOsNotification();
   }
+};
+
+const getAchievementsForSouvenirLimitRetry = (
+  error: unknown,
+  achievements: UnlockedAchievement[]
+) => {
+  if (
+    getGroupedSouvenirErrorCode(error) !== SOUVENIR_LIMIT_ERROR_CODE ||
+    !achievements.some((achievement) => achievement.imageKey)
+  ) {
+    throw error;
+  }
+
+  return achievements.map(
+    ({ imageKey: _imageKey, ...achievement }) => achievement
+  );
 };
 
 export const mergeAchievements = async (
@@ -316,52 +338,78 @@ export const mergeAchievements = async (
     AchievementWatcherManager.hasFinishedPreSearch;
 
   if (shouldSyncWithRemote) {
-    await HydraApi.put<UpdatedUnlockedAchievements | undefined>(
-      "/profile/games/achievements",
-      {
-        id: game.remoteId,
-        achievements: achievementsToSync,
+    let syncedAchievements = achievementsToSync;
+
+    try {
+      let response: UpdatedUnlockedAchievements | undefined;
+
+      try {
+        response = await HydraApi.put<UpdatedUnlockedAchievements | undefined>(
+          "/profile/games/achievements",
+          {
+            id: game.remoteId,
+            achievements: syncedAchievements,
+          }
+        );
+      } catch (error) {
+        syncedAchievements = getAchievementsForSouvenirLimitRetry(
+          error,
+          syncedAchievements
+        );
+        achievementsLogger.warn(
+          "Souvenir limit reached, synchronizing achievements without souvenirs",
+          game.objectId,
+          game.title
+        );
+        response = await HydraApi.put<UpdatedUnlockedAchievements | undefined>(
+          "/profile/games/achievements",
+          {
+            id: game.remoteId,
+            achievements: syncedAchievements,
+          }
+        );
       }
-    )
-      .then(async (response) => {
-        AchievementWatcherManager.alreadySyncedGames.set(gameKey, true);
-        await PendingAchievementSouvenirStore.clearSynced(
-          gameKey,
-          achievementsToSync
-        );
 
-        if (response) {
-          return saveAchievementsInMemory(
-            response.objectId,
-            response.shop,
+      AchievementWatcherManager.alreadySyncedGames.set(gameKey, true);
+      await PendingAchievementSouvenirStore.clearSynced(
+        gameKey,
+        achievementsToSync
+      );
+
+      if (response) {
+        await saveAchievementsInMemory(
+          response.objectId,
+          response.shop,
+          mergeUnlockedAchievementLists(
             response.achievements,
-            publishNotification
-          );
-        }
-
-        return saveAchievementsInMemory(
-          game.objectId,
-          game.shop,
-          achievementsToSync,
+            syncedAchievements
+          ),
           publishNotification
         );
-      })
-      .catch((err) => {
-        AchievementWatcherManager.alreadySyncedGames.delete(gameKey);
-        achievementsLogger.error(
-          "Failed to reconcile achievements with API",
-          game.objectId,
-          game.title,
-          err
-        );
-
-        return saveAchievementsInMemory(
+      } else {
+        await saveAchievementsInMemory(
           game.objectId,
           game.shop,
-          achievementsToSync,
+          syncedAchievements,
           publishNotification
         );
-      });
+      }
+    } catch (error) {
+      AchievementWatcherManager.alreadySyncedGames.delete(gameKey);
+      achievementsLogger.error(
+        "Failed to reconcile achievements with API",
+        game.objectId,
+        game.title,
+        error
+      );
+
+      await saveAchievementsInMemory(
+        game.objectId,
+        game.shop,
+        syncedAchievements,
+        publishNotification
+      );
+    }
   } else if (newAchievements.length) {
     await saveAchievementsInMemory(
       game.objectId,

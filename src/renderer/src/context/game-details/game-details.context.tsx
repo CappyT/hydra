@@ -72,6 +72,7 @@ export interface GameDetailsContextProps {
   objectId: string;
   gameTitle: string;
   shop: GameShop;
+  syncHeaderTitle?: boolean;
 }
 
 export function GameDetailsContextProvider({
@@ -79,6 +80,7 @@ export function GameDetailsContextProvider({
   objectId,
   gameTitle,
   shop,
+  syncHeaderTitle = true,
 }: Readonly<GameDetailsContextProps>) {
   const [shopDetails, setShopDetails] = useState<ShopDetailsWithAssets | null>(
     null
@@ -291,8 +293,8 @@ export function GameDetailsContextProvider({
     setAchievements(null);
     setGameOptionsInitialCategory("general");
     hasAttemptedLocateRef.current = false;
-    dispatch(setHeaderTitle(gameTitle));
-  }, [objectId, gameTitle, dispatch]);
+    if (syncHeaderTitle) dispatch(setHeaderTitle(gameTitle));
+  }, [objectId, gameTitle, syncHeaderTitle, dispatch]);
 
   // On Linux, a game installed by running its Windows installer under
   // Proton/wine lands inside the per-game wine prefix, so its executablePath is
@@ -337,10 +339,10 @@ export function GameDetailsContextProvider({
   }, [location]);
 
   useEffect(() => {
-    if (game?.title) {
+    if (syncHeaderTitle && game?.title) {
       dispatch(setHeaderTitle(game.title));
     }
-  }, [game?.title, dispatch]);
+  }, [game?.title, syncHeaderTitle, dispatch]);
 
   useEffect(() => {
     const unsubscribe = window.electron.onGamesRunning((gamesIds) => {

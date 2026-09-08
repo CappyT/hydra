@@ -1,65 +1,85 @@
-import axios from "axios";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { levelDBService } from "@renderer/services/leveldb.service";
 import type { DownloadSource } from "@types";
 import { useAppDispatch } from "./redux";
 import { setGenres, setTags } from "@renderer/features";
 
-export const externalResourcesInstance = axios.create({
-  baseURL: import.meta.env.RENDERER_VITE_EXTERNAL_RESOURCES_URL,
-});
+const SUPPORTED_STEAM_METADATA_LANGUAGES = new Set([
+  "en",
+  "es",
+  "pt",
+  "ru",
+  "fr",
+]);
 
-/**
- * Fetches an optional external catalogue resource. These resources only feed
- * non-critical catalogue-filter UI, so a failure (e.g. a 403 from an
- * unreachable CDN) must never bubble up to the global error handler and show
- * an "Unexpected error" modal. On failure we log and resolve to `null` so the
- * caller can keep its state at the default value.
- */
-const fetchExternalResource = async <T>(path: string): Promise<T | null> => {
-  try {
-    const response = await externalResourcesInstance.get<T>(path);
-    return response.data;
-  } catch (error) {
-    console.warn(`Failed to fetch external resource "${path}"`, error);
-    return null;
-  }
-};
+async function getLocalizedSteamMetadata<T>(endpoint: string, locale: string) {
+  const language = locale.split("-")[0] || "en";
+  const requestLanguage = SUPPORTED_STEAM_METADATA_LANGUAGES.has(language)
+    ? language
+    : "en";
+  const languages = requestLanguage === "en" ? ["en"] : ["en", requestLanguage];
+  const entries = await Promise.all(
+    languages.map(async (currentLanguage) => {
+      const data = await window.electron.hydraApi.get<T>(endpoint, {
+        params: { language: currentLanguage },
+        needsAuth: false,
+      });
+
+      return [currentLanguage, data] as const;
+    })
+  );
+  const metadata = Object.fromEntries(entries) as Record<string, T>;
+
+  metadata[language] ??= metadata[requestLanguage];
+
+  return metadata;
+}
 
 export function useCatalogue() {
   const dispatch = useAppDispatch();
+  const { i18n } = useTranslation();
 
   const [steamPublishers, setSteamPublishers] = useState<string[]>([]);
   const [steamDevelopers, setSteamDevelopers] = useState<string[]>([]);
   const [downloadSources, setDownloadSources] = useState<DownloadSource[]>([]);
 
-  const getSteamUserTags = useCallback(async () => {
-    const data = await fetchExternalResource<
-      Record<string, Record<string, number>>
-    >("/steam-user-tags.json");
-    if (data) dispatch(setTags(data));
-  }, [dispatch]);
+  const getSteamFilters = useCallback(async () => {
+    try {
+      const [tags, genres] = await Promise.all([
+        getLocalizedSteamMetadata<Record<string, number>>(
+          "/catalogue/steam/tags",
+          i18n.language
+        ),
+        getLocalizedSteamMetadata<string[]>(
+          "/catalogue/steam/genres",
+          i18n.language
+        ),
+      ]);
 
-  const getSteamGenres = useCallback(async () => {
-    const data =
-      await fetchExternalResource<Record<string, string[]>>(
-        "/steam-genres.json"
-      );
-    if (data) dispatch(setGenres(data));
-  }, [dispatch]);
+      dispatch(setTags(tags));
+      dispatch(setGenres(genres));
+    } catch (error) {
+      console.warn("Failed to fetch Steam catalogue filters", error);
+    }
+  }, [dispatch, i18n.language]);
 
-  const getSteamPublishers = useCallback(async () => {
-    const data = await fetchExternalResource<string[]>(
-      "/steam-publishers.json"
-    );
-    if (data) setSteamPublishers(data);
+  const getSteamPublishers = useCallback(() => {
+    window.electron.hydraApi
+      .get<string[]>("/catalogue/steam/publishers", { needsAuth: false })
+      .then(setSteamPublishers)
+      .catch((error) => {
+        console.warn("Failed to fetch Steam publishers", error);
+      });
   }, []);
 
-  const getSteamDevelopers = useCallback(async () => {
-    const data = await fetchExternalResource<string[]>(
-      "/steam-developers.json"
-    );
-    if (data) setSteamDevelopers(data);
+  const getSteamDevelopers = useCallback(() => {
+    window.electron.hydraApi
+      .get<string[]>("/catalogue/steam/developers", { needsAuth: false })
+      .then(setSteamDevelopers)
+      .catch((error) => {
+        console.warn("Failed to fetch Steam developers", error);
+      });
   }, []);
 
   const getDownloadSources = useCallback(() => {
@@ -70,14 +90,12 @@ export function useCatalogue() {
   }, []);
 
   useEffect(() => {
-    getSteamUserTags();
-    getSteamGenres();
+    getSteamFilters();
     getSteamPublishers();
     getSteamDevelopers();
     getDownloadSources();
   }, [
-    getSteamUserTags,
-    getSteamGenres,
+    getSteamFilters,
     getSteamPublishers,
     getSteamDevelopers,
     getDownloadSources,

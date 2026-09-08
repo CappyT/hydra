@@ -34,13 +34,10 @@ import "./library/transfer-game-files";
 import "./emulators";
 import "./retroarch";
 
-import { isPortableVersion } from "@main/helpers";
-
 ipcMain.handle("ping", () => "pong");
 ipcMain.handle("getVersion", () => appVersion);
 ipcMain.handle("getDeviceId", () => getDeviceId());
 ipcMain.handle("isStaging", () => isStaging);
-ipcMain.handle("isPortableVersion", () => isPortableVersion());
 ipcMain.handle("getDefaultDownloadsPath", () => {
   // The launcher-owned default may not exist yet (unlike the system
   // Downloads folder) — ensure it does before handing it to the renderer.

@@ -6,39 +6,69 @@ import path from "node:path";
 import type {
   EmulationCloudSave,
   EmulationSaveEmulator,
+  EmulationSaveMetadata,
   EmulationSavePlatform,
   EmulatorBinary,
 } from "@types";
 
 /*
- * Local emulation-saves store. Persists PS1/PS2 memory-card saves ("emulation
- * saves") on the user's own filesystem, replacing the paid Hydra Cloud
- * `/profile/emulation-saves` API. Layout mirrors the save-game
- * `LocalDirectoryBackend`:
+ * Local emulation-saves store. Persists emulator saves on the user's own
+ * filesystem, replacing the paid Hydra Cloud `/profile/emulation-saves` API:
+ * PS1/PS2 memory-card exports plus the file-based saves upstream added for
+ * PSP (PPSSPP savedata zip), GameCube (Dolphin .gci) and Wii (Dolphin
+ * data.bin). Layout mirrors the save-game `LocalDirectoryBackend`:
  *
- *   <root>/emulation-saves/<platform>/<uuid>.<psu|mcs>   (raw artifact bytes)
- *   <root>/emulation-saves/<platform>/<uuid>.json        (sidecar metadata)
+ *   <root>/emulation-saves/<platform>/<uuid>.<ext>   (raw artifact bytes)
+ *   <root>/emulation-saves/<platform>/<uuid>.json    (sidecar metadata)
  *
  * The sidecar keeps the existing {@link EmulationCloudSave} shape so the
- * renderer needs no type changes. This module is intentionally free of any
- * electron / HydraApi dependency so it can be unit-tested directly.
+ * renderer needs no type changes — including the `metadata` discriminator the
+ * PSP/GameCube/Wii restore paths read back. This module is intentionally free
+ * of any electron / HydraApi dependency so it can be unit-tested directly.
  */
 
-const PLATFORMS: EmulationSavePlatform[] = ["ps1", "ps2"];
+const PLATFORMS: EmulationSavePlatform[] = [
+  "ps1",
+  "ps2",
+  "psp",
+  "gamecube",
+  "wii",
+];
 const SAVE_KIND = "game_save" as const;
 const EMULATION_SAVES_DIRNAME = "emulation-saves";
 
-/** Raw artifact extension per platform (.psu for PS2, .mcs for PS1). */
-const artifactExt = (platform: EmulationSavePlatform): "psu" | "mcs" =>
-  platform === "ps2" ? "psu" : "mcs";
+type ArtifactExtension = "psu" | "mcs" | "zip" | "gci" | "bin";
+
+/**
+ * Raw artifact extension per platform: .psu (PS2 memory-card export),
+ * .mcs (PS1), .zip (PPSSPP savedata archive), .gci (Dolphin GameCube card
+ * file), .bin (Dolphin Wii `data.bin` export).
+ */
+const ARTIFACT_EXTENSIONS: Record<EmulationSavePlatform, ArtifactExtension> = {
+  ps2: "psu",
+  ps1: "mcs",
+  psp: "zip",
+  gamecube: "gci",
+  wii: "bin",
+};
+
+const artifactExt = (platform: EmulationSavePlatform): ArtifactExtension =>
+  ARTIFACT_EXTENSIONS[platform] ?? "bin";
+
+const EMULATORS_WITH_SAVES: EmulationSaveEmulator[] = [
+  "duckstation",
+  "pcsx2",
+  "ppsspp",
+  "dolphin",
+];
 
 export const toEmulationSaveEmulator = (
   binary: EmulatorBinary
 ): EmulationSaveEmulator => {
-  if (binary !== "duckstation" && binary !== "pcsx2") {
+  if (!EMULATORS_WITH_SAVES.includes(binary as EmulationSaveEmulator)) {
     throw new Error(`Emulator "${binary}" has no emulation saves`);
   }
-  return binary;
+  return binary as EmulationSaveEmulator;
 };
 
 export interface UploadEmulationSaveInput {
@@ -49,10 +79,22 @@ export interface UploadEmulationSaveInput {
   objectId: string | null;
   /** Stable per-game slot id — the on-card folder name / save identifier. */
   saveIdentity: string;
-  fileName: string; // must end in .psu (PS2) or .mcs (PS1)
+  /**
+   * Original file name of the artifact (`.psu`/`.mcs` for memory cards,
+   * `<savedata>.zip` for PSP, `<name>.gci` for GameCube, `data.bin` for Wii).
+   * The restore path uses it to name the file it writes back.
+   */
+  fileName: string;
   label: string;
   localLastModifiedAt: string; // ISO 8601
   buffer: Buffer;
+  /**
+   * Format discriminator for file-based saves (PSP/GameCube/Wii). Persisted in
+   * the sidecar verbatim: the restore paths validate it and derive the target
+   * directory/file name from it, so dropping it would make those saves
+   * unrestorable.
+   */
+  metadata?: EmulationSaveMetadata;
 }
 
 /** Minimal logger surface so the store stays electron-free (defaults to console). */
@@ -100,7 +142,7 @@ export class EmulationSaveStore {
       hostname: os.hostname(),
       localLastModifiedAt: input.localLastModifiedAt,
       label: input.label,
-      metadata: null,
+      metadata: input.metadata ?? null,
       shop: hasShop ? input.shop : null,
       objectId: hasShop ? input.objectId : null,
       lastUploadedAt: now,

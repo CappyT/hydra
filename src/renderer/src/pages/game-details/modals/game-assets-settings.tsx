@@ -17,7 +17,6 @@ import {
 import { Button, ImageCropModal } from "@renderer/components";
 import { useToast, useAppSelector, useUserDetails } from "@renderer/hooks";
 import { useSubscription } from "@renderer/hooks/use-subscription";
-import { generateRandomGradient } from "@renderer/helpers";
 import { ACCOUNTLESS } from "@shared";
 import type {
   Game,
@@ -163,22 +162,6 @@ const getCustomAssetUrl = (
   if (assetPath) return `local:${assetPath}`;
 
   return currentUrl;
-};
-
-const getCustomHeroImageUrl = (
-  removed: boolean,
-  assetPath: string,
-  currentUrl: string | null | undefined
-) => {
-  if (!removed) {
-    return getCustomAssetUrl(false, assetPath, currentUrl);
-  }
-
-  if (currentUrl?.startsWith("data:image/svg+xml")) {
-    return currentUrl;
-  }
-
-  return generateRandomGradient();
 };
 
 const getGameCustomAssetUrl = (
@@ -819,7 +802,7 @@ export function GameAssetsSettings({
         assetPaths.logo,
         currentGame.logoImageUrl
       );
-      const libraryHeroImageUrl = getCustomHeroImageUrl(
+      const libraryHeroImageUrl = getCustomAssetUrl(
         removedAssets.hero,
         assetPaths.hero,
         currentGame.libraryHeroImageUrl
@@ -1070,7 +1053,7 @@ export function GameAssetsSettings({
             className="game-assets-settings__preview-frame"
             style={{
               width: previewFrameSize.width,
-              height: previewFrameSize.height,
+              aspectRatio: `${previewFrameSize.width} / ${previewFrameSize.height}`,
             }}
             onClick={() =>
               hasCustomAsset

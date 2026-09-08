@@ -6,6 +6,7 @@ import { after, before, beforeEach, describe, it } from "node:test";
 
 import {
   EmulationSaveStore,
+  toEmulationSaveEmulator,
   type UploadEmulationSaveInput,
 } from "./emulation-save-store.ts";
 
@@ -135,5 +136,123 @@ describe("EmulationSaveStore (local emulation saves)", () => {
       (await store.downloadBytes(saved.id)).toString(),
       "mcs payload"
     );
+  });
+
+  it("maps every emulator that has saves and rejects the others", () => {
+    assert.equal(toEmulationSaveEmulator("pcsx2"), "pcsx2");
+    assert.equal(toEmulationSaveEmulator("duckstation"), "duckstation");
+    assert.equal(toEmulationSaveEmulator("ppsspp"), "ppsspp");
+    assert.equal(toEmulationSaveEmulator("dolphin"), "dolphin");
+    assert.throws(() => toEmulationSaveEmulator("rpcs3"));
+  });
+
+  it("round-trips a PPSSPP savedata archive with its metadata", async () => {
+    const metadata = {
+      schemaVersion: 1,
+      artifactFormat: "ppsspp-savedata-zip",
+      discId: "ULUS10041",
+      savedataDirectory: "ULUS10041SYSTEM",
+    } as const;
+
+    const saved = await store.upload(
+      makeInput({
+        platform: "psp",
+        emulator: "ppsspp",
+        saveIdentity: "ULUS10041SYSTEM",
+        fileName: "ULUS10041SYSTEM.zip",
+        buffer: Buffer.from("zip payload"),
+        metadata,
+      })
+    );
+
+    assert.deepEqual(saved.metadata, metadata);
+    assert.ok(
+      fs.existsSync(
+        path.join(root, "emulation-saves", "psp", `${saved.id}.zip`)
+      )
+    );
+
+    // The restore path reads the format discriminator back off the listing.
+    const [listed] = await store.list("psp", "ppsspp", "12345");
+    assert.deepEqual(listed.metadata, metadata);
+    assert.equal(listed.fileName, "ULUS10041SYSTEM.zip");
+    assert.equal(
+      (await store.downloadBytes(saved.id)).toString(),
+      "zip payload"
+    );
+
+    await store.delete(saved.id);
+    assert.equal((await store.list("psp", "ppsspp")).length, 0);
+  });
+
+  it("round-trips a Dolphin GameCube .gci with its metadata", async () => {
+    const metadata = {
+      schemaVersion: 1,
+      artifactFormat: "dolphin-gci",
+      gameId: "GALE01",
+      slot: "A",
+      region: "USA",
+      internalFileName: "MetroidPrime A",
+    } as const;
+
+    const saved = await store.upload(
+      makeInput({
+        platform: "gamecube",
+        emulator: "dolphin",
+        saveIdentity: "GALE01-MetroidPrime A",
+        fileName: "GALE01-GM8E-MetroidPrime A.gci",
+        buffer: Buffer.from("gci payload"),
+        metadata,
+      })
+    );
+
+    assert.deepEqual(saved.metadata, metadata);
+    assert.ok(
+      fs.existsSync(
+        path.join(root, "emulation-saves", "gamecube", `${saved.id}.gci`)
+      )
+    );
+    assert.equal(
+      (await store.downloadBytes(saved.id)).toString(),
+      "gci payload"
+    );
+
+    const [listed] = await store.list("gamecube", "dolphin");
+    assert.equal(listed.fileName, "GALE01-GM8E-MetroidPrime A.gci");
+  });
+
+  it("round-trips a Dolphin Wii data.bin with its metadata", async () => {
+    const metadata = {
+      schemaVersion: 1,
+      artifactFormat: "dolphin-wii-data-bin",
+      titleId: "0001000053554d45",
+      gameId: "SUMENS",
+    } as const;
+
+    const saved = await store.upload(
+      makeInput({
+        platform: "wii",
+        emulator: "dolphin",
+        saveIdentity: "0001000053554d45",
+        fileName: "data.bin",
+        buffer: Buffer.from("data.bin payload"),
+        metadata,
+      })
+    );
+
+    assert.deepEqual(saved.metadata, metadata);
+    assert.ok(
+      fs.existsSync(
+        path.join(root, "emulation-saves", "wii", `${saved.id}.bin`)
+      )
+    );
+    assert.equal(
+      (await store.downloadBytes(saved.id)).toString(),
+      "data.bin payload"
+    );
+
+    // Renaming must not drop the format discriminator.
+    const renamed = await store.update(saved.id, { label: "Wii Sports" });
+    assert.deepEqual(renamed.metadata, metadata);
   });
 });

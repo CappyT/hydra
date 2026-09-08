@@ -29,6 +29,7 @@ import {
 import { buildGamescopeWrapper } from "./resolve-gamescope-wrapper";
 import { resolveLaunchCommand } from "./resolve-launch-command";
 import { prepareEmulatorSouvenirs } from "@main/services/emulators/prepare-emulator-souvenirs";
+import { cleanupEmulatorSouvenirSession } from "@main/services/emulators/emulator-souvenir-config";
 
 export class EmulatorNotConfiguredError extends Error {
   code = "EMULATOR_NOT_CONFIGURED" as const;
@@ -143,6 +144,10 @@ const buildEmulatorArgs = (
       return ["-batch", "-fullscreen", "--", discPath];
     case "rpcs3":
       return ["--no-gui", discPath];
+    case "ppsspp":
+      return ["--pause-menu-exit", "--fullscreen", discPath];
+    case "dolphin":
+      return ["--batch", "--exec", discPath];
   }
 };
 
@@ -215,10 +220,19 @@ export const resolveEmulatorWrappers = (
   };
 };
 
+/**
+ * Config/save directories the emulator needs read-write access to inside the
+ * sandbox. Native (XDG) and flatpak locations are both listed: the flatpak app
+ * dir is where a Flathub-installed emulator keeps its user data, and binding a
+ * missing path is a no-op for bwrap.
+ */
 const resolveEmulatorDataDirs = (binary: EmulatorBinary): string[] => {
   const home = os.homedir();
   const configDir = path.join(home, ".config");
   const shareDir = path.join(home, ".local", "share");
+  const cacheDir = path.join(home, ".cache");
+  const flatpakAppDir = (appId: string) =>
+    path.join(home, ".var", "app", appId);
 
   switch (binary) {
     case "duckstation":
@@ -234,6 +248,24 @@ const resolveEmulatorDataDirs = (binary: EmulatorBinary): string[] => {
       ];
     case "rpcs3":
       return [path.join(configDir, "rpcs3"), path.join(shareDir, "rpcs3")];
+    case "ppsspp":
+      // PPSSPP keeps its whole memstick (PSP/SYSTEM/ppsspp.ini plus
+      // PSP/SAVEDATA) under the config dir; see `ppssppConfigCandidates`.
+      return [
+        path.join(configDir, "ppsspp"),
+        path.join(shareDir, "ppsspp"),
+        flatpakAppDir("org.ppsspp.PPSSPP"),
+      ];
+    case "dolphin":
+      // Mirrors `dolphinUserDirectoryCandidates` (GC memory cards live in
+      // <user>/GC/<region>/Card A, Wii saves in <user>/Wii).
+      return [
+        path.join(configDir, "dolphin-emu"),
+        path.join(shareDir, "dolphin-emu"),
+        path.join(cacheDir, "dolphin-emu"),
+        path.join(home, ".dolphin-emu"),
+        flatpakAppDir("org.DolphinEmu.dolphin-emu"),
+      ];
   }
 };
 
@@ -302,11 +334,17 @@ export const launchClassicsGame = async (
     });
   }
 
-  const baseArgs = buildEmulatorArgs(config.binary, bootTarget);
+  const souvenirSession = game
+    ? await prepareEmulatorSouvenirs(system, executableTarget)
+    : null;
+  const baseArgs = [
+    ...(souvenirSession?.launchArguments ?? []),
+    ...buildEmulatorArgs(config.binary, bootTarget),
+  ];
 
   const workingDirectory = path.dirname(executableTarget);
 
-  await prepareEmulatorSouvenirs(system, config.executablePath);
+  let sessionStarted = false;
 
   const emulatorAdditionalBinds = [
     ...resolveEmulatorDataDirs(config.binary),
@@ -374,11 +412,16 @@ export const launchClassicsGame = async (
         executablePath: config.executablePath,
         sku: selectedDisc?.sku ?? null,
         child: processRef,
+        souvenirSession,
       });
+      sessionStarted = true;
     }
 
     processRef.unref();
   } catch (error) {
+    if (!sessionStarted) {
+      await cleanupEmulatorSouvenirSession(souvenirSession);
+    }
     logger.error("Failed to spawn classics emulator", error);
     throw error;
   } finally {
