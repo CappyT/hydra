@@ -121,17 +121,13 @@ game options modal and the Big Picture compatibility tab.
 
 ## Sandbox selftest
 
-For the 2026-09-10 security assessment, reproduced weaknesses and supplemental
-failure-path audit, see [the security review](SECURITY-AUDIT-2026-09-10.md).
-The original selftest below exercises the base filesystem/PID/IPC profile; it
-does not supply the production seccomp, pasta or environment-scrubbing options.
-
-The game sandbox (bubblewrap) ships with an adversarial verifier that runs the
-baseline profile end-to-end. It lives in the sibling repo
-[`hydra-sandbox-probe`](https://github.com/CappyT/hydra-sandbox-probe) and is
-driven by `yarn sandbox:selftest`, which calls the app's unmodified
-`buildSandboxArgs` and runs the probe inside the resulting profile with the
-baseline options described above.
+See [the security audit](SECURITY-AUDIT-2026-09-10.md) and
+[the subsequent hardening](SECURITY-HARDENING.md) for the threat model and limits.
+The selftest consumes the updated sibling
+[`hydra-sandbox-probe`](https://github.com/CappyT/hydra-sandbox-probe) and the
+app's unmodified `buildSandboxArgs`, with medium seccomp, pasta/DNS, machine-id
+and the production environment scrubber. It requires the five new hardening
+checks and verifies four negative controls with intentionally weakened fixtures.
 
 ```bash
 # 1. build the probe once (sibling checkout, next to this repo)
@@ -154,8 +150,8 @@ default-ALLOW**: only a small set of kernel-LPE / sandbox-escape syscalls are
 turned into an errno (`ENOSYS` so a probing game degrades, or `EPERM` where a
 permission-denied is the honest failure); everything else — including the
 namespace/mount/prctl/seccomp calls the nested pressure-vessel and wine need —
-is allowed automatically. A write failure is fail-open (the game launches
-without the filter): seccomp is a hardening layer, not the sandbox boundary.
+is allowed automatically. Required filter write/open failures refuse launch.
+Unsupported ABIs and x32 syscall encodings are rejected even in audit mode.
 
 ### Protection levels (cumulative, low ⊂ medium ⊂ high)
 
@@ -207,12 +203,13 @@ once the offending call is identified.
 
 ## Network isolation (pasta)
 
-When the sandbox is enabled and `pasta` (the `passt` package) is on `PATH`,
+When the sandbox is enabled and trusted `pasta` (the `passt` package) is installed,
 sandboxed games run in their own network namespace instead of the host's.
 Global toggle in **Settings → Compatibility** (default **on**), per-game
 tri-state override in the game options modal (a per-game choice wins over the
 global default). If isolation is wanted but `pasta` is missing, the game
-launches with the host network and a one-time warning is logged.
+launch is refused. Failed or incomplete setup also refuses to execute the game;
+only an explicit opt-out can select the host network.
 
 **Architecture — a single user namespace (podman-rootless style).** The obvious
 design (`bwrap --unshare-net` + pasta attaching from the init user namespace)
@@ -227,7 +224,7 @@ The working design keeps ONE user namespace (bwrap's). bwrap is NOT given
 phase and its payload is an in-sandbox wrapper
 (`NETWORK_ISOLATION_WRAPPER` in `src/main/services/sandbox-command-builder.ts`)
 that: (1) opens a fresh netns in bwrap's own userns via an `unshare --net`
-placeholder, (2) services it with `pasta --config-net --netns <ns>` in ATTACH
+placeholder and verifies a distinct namespace identity, (2) services it with `pasta --config-net --netns <ns>` in ATTACH
 mode (pasta does not exec the game), and (3) runs the game inside that netns with
 ALL capabilities dropped (`nsenter` + `setpriv --inh-caps=-all
 --ambient-caps=-all`), so the game ends up at `CapEff=0`. All port forwarding is
@@ -246,7 +243,7 @@ sets.
 Every sandboxed launch logs one concise line each for both hardening layers
 (via the app's `main` logger, `logs.txt`/`info.txt`): the effective seccomp
 state — `level/mode (from game|global)` or `disabled` — and the network state —
-`isolated (pasta)`, `disabled (pasta unavailable)`, or `disabled`.
+`isolated (pasta)` or explicitly `disabled`. Missing required tools fail before launch.
 
 ## Gamescope integration
 
@@ -395,8 +392,11 @@ WSI.
 
 ## Startup dependency check
 
-At startup the main process checks whether `bwrap`, `pasta` and `gamescope` are
-on `PATH` (`src/main/helpers/host-dependencies.ts`) and, if any are missing,
+At startup the main process checks for trusted `bwrap`, `pasta` and `gamescope`
+binaries (`src/main/helpers/host-dependencies.ts`) and, if any are missing,
 shows one non-blocking warning toast naming what each absence disables (bwrap →
-sandbox can't run; pasta → network isolation disabled; gamescope → wrapper
+sandbox can't run; pasta → isolated launches blocked; gamescope → wrapper
 unavailable). Linux-only; silent when all three are present.
+
+Security-sensitive path, input and restore policies are described in
+[the hardening implementation](SECURITY-HARDENING.md).

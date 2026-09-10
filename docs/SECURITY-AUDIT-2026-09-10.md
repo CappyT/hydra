@@ -1,5 +1,9 @@
 # Game sandbox security review — 2026-09-10
 
+For the subsequent fixes, verification and remaining limits, see
+[the hardening implementation](SECURITY-HARDENING.md). The findings below are
+the original observations, preserved for comparison.
+
 Reviewed Hydra `d8705a537` (4.1.3) and sandbox-probe `e80e33f`.
 
 **Verdict:** useful containment, but not sufficient yet for the stated threat
