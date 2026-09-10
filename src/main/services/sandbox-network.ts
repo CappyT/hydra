@@ -32,6 +32,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { resolveSystemBinary } from "../helpers/resolve-system-binary.js";
 import type { Game, UserPreferences } from "@types";
 
 /**
@@ -59,42 +60,9 @@ export interface SandboxNetworkIsolationOptions {
   resolvConfDest?: string;
 }
 
-const isExecutableFile = (candidate: string): boolean => {
-  try {
-    if (!fs.statSync(candidate).isFile()) return false;
-    fs.accessSync(candidate, fs.constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-let pastaPathCache: string | null | undefined;
-
-/**
- * Resolves the pasta binary on PATH, cached for the process lifetime. Returns
- * the absolute path, or null when pasta (the `passt` package) is not installed.
- * Kept self-contained (a plain PATH scan) so this module has no cross-module
- * dependency and stays loadable by the ts-node test runner.
- */
-export const resolvePastaPath = (): string | null => {
-  if (pastaPathCache !== undefined) return pastaPathCache;
-
-  const pathDirectories = (process.env.PATH ?? "")
-    .split(path.delimiter)
-    .filter(Boolean);
-
-  for (const directory of pathDirectories) {
-    const candidate = path.join(directory, "pasta");
-    if (isExecutableFile(candidate)) {
-      pastaPathCache = candidate;
-      return pastaPathCache;
-    }
-  }
-
-  pastaPathCache = null;
-  return pastaPathCache;
-};
+/** Re-evaluate trusted locations so installing passt takes effect without restarting. */
+export const resolvePastaPath = (): string | null =>
+  resolveSystemBinary(["pasta"]);
 
 /** True when pasta is available to provide the isolated network namespace. */
 export const isNetworkIsolationAvailable = (): boolean =>

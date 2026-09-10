@@ -41,6 +41,7 @@ const BPF_RET = 0x06;
 
 const OP_LD_W_ABS = BPF_LD | BPF_W | BPF_ABS; // 0x20 — A = *(u32*)(data + k)
 const OP_JEQ_K = BPF_JMP | BPF_JEQ | BPF_K; //   0x15 — pc += (A == k) ? jt : jf
+const OP_JGE_K = 0x35; // Unsigned comparison rejects x32 and negative syscall encodings.
 const OP_JA = BPF_JMP | BPF_JA; //               0x05 — pc += k
 const OP_RET_K = BPF_RET | BPF_K; //             0x06 — return k
 
@@ -447,6 +448,7 @@ const LABEL_I386 = "i386_block";
 const LABEL_DENY_ENOSYS = "deny_enosys";
 const LABEL_DENY_EPERM = "deny_eperm";
 const LABEL_ALLOW = "allow";
+const LABEL_UNSUPPORTED = "unsupported_abi";
 const LABEL_PERSONALITY = "personality_block";
 const LABEL_PERSONALITY_HIGH = "personality_high";
 
@@ -482,7 +484,7 @@ const matchTargetFor = (entry: SyscallNumbers): string =>
  * mis-filtered):
  *   load arch
  *   if arch == x86_64  -> x86_64 block
- *   if arch == i386    -> i386 block   else -> allow
+ *   if arch == i386    -> i386 block   else -> unsupported_abi
  *   [x86_64 block] load nr; for each n: if nr == n -> deny(n.errno)/personality
  *   [i386 block]   load nr; for each n: if nr == n -> deny(n.errno)/personality
  *   [personality]  load args[0]; allow benign personas, else -> deny_eperm
@@ -494,7 +496,7 @@ const matchTargetFor = (entry: SyscallNumbers): string =>
  * entry is never wrongly denied. Argument-filtered entries (personality) jump
  * to a shared sub-block instead of a deny return. The EPERM return and the
  * personality block are emitted only when a selected entry needs them, so `low`
- * stays byte-identical to the flat Tier-A filter.
+ * retains the Tier-A policy for the supported native ABIs.
  */
 export const buildSeccompFilter = (
   level: ProtectionLevel = DEFAULT_PROTECTION_LEVEL,
@@ -518,10 +520,11 @@ export const buildSeccompFilter = (
   // Arch dispatch.
   program.push(load(SECCOMP_DATA_ARCH_OFFSET));
   program.push(jeq(AUDIT_ARCH_X86_64, LABEL_X86_64, 0));
-  program.push(jeq(AUDIT_ARCH_I386, LABEL_I386, LABEL_ALLOW));
+  program.push(jeq(AUDIT_ARCH_I386, LABEL_I386, LABEL_UNSUPPORTED));
 
   // x86_64 block.
   program.push(load(SECCOMP_DATA_NR_OFFSET, LABEL_X86_64));
+  program.push({ code: OP_JGE_K, k: 0x40000000, jt: LABEL_UNSUPPORTED, jf: 0 });
   for (const entry of entries) {
     program.push(jeq(entry.x86_64, matchTargetFor(entry), 0));
   }
@@ -560,11 +563,13 @@ export const buildSeccompFilter = (
   // Shared returns. The ENOSYS deny is always present (Tier-A is in every
   // level); the EPERM deny is emitted only when a selected entry routes to it
   // (an EPERM syscall or the personality fallback), so a level with no EPERM
-  // entry (low) stays byte-identical to the flat Tier-A filter.
+  // entry (low) keeps its native syscall policy without an unused EPERM return.
   program.push(ret(denyEnosysAction, LABEL_DENY_ENOSYS));
   if (usesEperm) {
     program.push(ret(denyEpermAction, LABEL_DENY_EPERM));
   }
+  // Unsupported ABIs are never enabled by diagnostic audit mode.
+  program.push(ret(SECCOMP_RET_ERRNO_ENOSYS, LABEL_UNSUPPORTED));
   program.push(ret(SECCOMP_RET_ALLOW, LABEL_ALLOW));
 
   return assemble(program);

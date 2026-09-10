@@ -17,7 +17,7 @@
     "cloud_sync_conflict_message": "Conflict detected: this PC's saves were kept as a backup and the newer backup from {{hostname}} was loaded; restore this PC's from the backup list if you prefer.",
     "cloud_sync_conflict_kept_local_message": "Conflict detected with the backup from {{hostname}}, but this PC's saves could not be backed up — they were kept as-is and the remote was NOT loaded. Free up space and relaunch to retry.",
     "host_tool_missing_bwrap": "bwrap (bubblewrap) not found — the sandbox can't run, so sandboxed games won't launch until you install bubblewrap or disable the sandbox.",
-    "host_tool_missing_pasta": "pasta (passt) not found — network isolation is disabled; install the passt package to isolate games.",
+    "host_tool_missing_pasta": "pasta (passt) not found — games requiring network isolation cannot launch; install the passt package.",
     "host_tool_missing_gamescope": "gamescope not found — the gamescope wrapper is unavailable; games run without it."
   },
   "home": {

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { listSandboxInputDevices } from "./sandbox-input.js";
 import type { Game, UserPreferences } from "@types";
 // Type-only (erased at runtime) so this pure, unit-testable module keeps no
 // cross-module runtime dependency — the ts-node test runner cannot resolve
@@ -29,35 +30,44 @@ export const WRAPPER_SHELL_PATH = "/usr/bin/bash";
  * pressure-vessel — still work. pasta's path and DNS targets arrive via env
  * (`HYDRA_PASTA_*`, set with bwrap `--setenv`) so nothing is interpolated into
  * this script; the game command + args arrive as the script's positional
- * parameters (`"$@"`). On any setup failure it fails OPEN (runs the game in the
- * host netns) so isolation never turns a launch into a dead one, and every wait
- * is bounded so it can never hang.
+ * parameters (`"$@"`). Setup failures refuse to execute the game. Every wait
+ * is bounded and namespace identity is verified before pasta or the game starts.
  */
 export const NETWORK_ISOLATION_WRAPPER = `set -u
 _pasta="\${HYDRA_PASTA_BIN:-/usr/bin/pasta}"
 _ph=""
 _pasta_pid=""
 
-# Fail-open: run the game unisolated (host netns) rather than block the launch.
-_fail_open() {
-  msg="$1"; shift
-  echo "[hydra-net] \${msg}; launching without network isolation" >&2
-  [ -n "$_ph" ] && kill "$_ph" 2>/dev/null
+# Never execute a payload after a setup failure.
+_cleanup() {
   [ -n "$_pasta_pid" ] && kill "$_pasta_pid" 2>/dev/null
-  exec "$@"
+  [ -n "$_ph" ] && kill "$_ph" 2>/dev/null
+  :
 }
+_fail_closed() {
+  echo "[hydra-net] $1; refusing game launch" >&2
+  exit 125
+}
+trap _cleanup EXIT
+trap 'exit 125' HUP INT TERM
 
-# 1) Placeholder holding a fresh netns in THIS userns (needs CAP_SYS_ADMIN).
+# A /proc namespace entry exists before unshare finishes. Compare identities.
+_host_netns=$(/usr/bin/readlink /proc/self/ns/net) || _fail_closed "cannot inspect host netns"
 /usr/bin/unshare --net -- /usr/bin/sleep infinity &
 _ph=$!
 _netns="/proc/\${_ph}/ns/net"
 
 _ready=0
 for ((i = 0; i < 50; i++)); do
-  [ -e "$_netns" ] && { _ready=1; break; }
+  kill -0 "$_ph" 2>/dev/null || break
+  _identity=$(/usr/bin/readlink "$_netns" 2>/dev/null) || _identity=""
+  if [ -n "$_identity" ] && [ "$_identity" != "$_host_netns" ]; then
+    _ready=1
+    break
+  fi
   /usr/bin/sleep 0.1
 done
-[ "$_ready" = 1 ] || _fail_open "unshare --net produced no netns" "$@"
+[ "$_ready" = 1 ] || _fail_closed "unshare --net did not create an isolated namespace"
 
 # 2) pasta services that netns in ATTACH mode (does NOT exec the game). Run it
 # in the FOREGROUND (-f) so the captured pid is the real, long-lived pasta (by
@@ -71,27 +81,26 @@ done
   --netns "$_netns" &
 _pasta_pid=$!
 
-# Wait (bounded) for pasta. Fail open ONLY if pasta exits during setup (e.g.
-# bad args): as long as it is alive it is servicing the netns. Once a
-# non-loopback interface shows up we proceed immediately (fast path); if the
-# probe stays inconclusive but pasta is alive we still proceed, isolated.
-_alive=0
-for ((i = 0; i < 30; i++)); do
-  kill -0 "$_pasta_pid" 2>/dev/null || { _alive=0; break; }
-  _alive=1
+# Require a configured non-loopback interface, not merely a live helper.
+_ready=0
+for ((i = 0; i < 50; i++)); do
+  kill -0 "$_pasta_pid" 2>/dev/null || break
+  kill -0 "$_ph" 2>/dev/null || break
   if /usr/bin/nsenter --net="$_netns" -- /usr/bin/cat /proc/net/dev 2>/dev/null \\
       | /usr/bin/grep -qvE '^(Inter-|[[:space:]]*face|[[:space:]]*lo:)'; then
+    _ready=1
     break
   fi
   /usr/bin/sleep 0.1
 done
-[ "$_alive" = 1 ] || _fail_open "pasta exited during setup" "$@"
+[ "$_ready" = 1 ] || _fail_closed "pasta failed to configure the isolated network"
+kill -0 "$_pasta_pid" 2>/dev/null || _fail_closed "pasta exited during setup"
 
 # 3) Enter the netns (CAP_SYS_ADMIN), then drop ALL capabilities before the
 # game: clearing the ambient+inheritable sets leaves CapEff=CapPrm=0, which the
 # game's own nested bwrap (gamescope/pressure-vessel) requires.
 /usr/bin/nsenter --net="$_netns" -- \\
-  /usr/bin/setpriv --inh-caps=-all --ambient-caps=-all -- "$@"
+  /usr/bin/setpriv --inh-caps=-all --ambient-caps=-all --no-new-privs -- "$@"
 _rc=$?
 
 kill "$_ph" 2>/dev/null
@@ -123,10 +132,11 @@ export const buildNetworkIsolationPayload = (
 export class SandboxUnavailableError extends Error {
   code = "SANDBOX_UNAVAILABLE" as const;
 
-  constructor() {
+  constructor(message?: string) {
     super(
-      "bubblewrap (bwrap) is not available, but the sandbox is enabled. " +
-        "Install bubblewrap or disable the sandbox to launch this game."
+      message ??
+        "bubblewrap (bwrap) is not available, but the sandbox is enabled. " +
+          "Install bubblewrap or disable the sandbox to launch this game."
     );
   }
 }
@@ -217,8 +227,8 @@ export interface SandboxWrapOptions {
    * capabilities dropped. bwrap is deliberately NOT given `--unshare-net`. Unlike
    * the old outermost-`pasta` design, no second user namespace is ever created,
    * so the game's own nested unprivileged userns (gamescope/pressure-vessel)
-   * keeps working. Omitted when isolation is disabled or pasta is unavailable —
-   * then the game keeps the host network namespace, the exact previous behavior.
+   * keeps working. Omitted only on explicit opt-out; the launch resolver rejects
+   * unavailable pasta when isolation is requested.
    */
   networkIsolation?: SandboxNetworkIsolationOptions;
 }
@@ -228,11 +238,6 @@ const isExistingPath = (
 ): candidate is string =>
   Boolean(candidate) && fs.existsSync(candidate as string);
 
-const getUmuRuntimeDir = (home: string): string | null => {
-  if (!home) return null;
-  return path.join(home, ".local", "share", "umu");
-};
-
 const listNvidiaDevices = (): string[] => {
   try {
     return fs.readdirSync("/dev").filter((entry) => entry.startsWith("nvidia"));
@@ -241,24 +246,24 @@ const listNvidiaDevices = (): string[] => {
   }
 };
 
-const listHidrawDevices = (): string[] => {
+const listRuntimeSockets = (
+  runtimeDir: string,
+  env: SandboxWrapOptions["env"]
+): string[] => {
   try {
-    return fs.readdirSync("/dev").filter((entry) => entry.startsWith("hidraw"));
-  } catch {
-    return [];
-  }
-};
-
-const listRuntimeSockets = (runtimeDir: string): string[] => {
-  try {
-    return fs.readdirSync(runtimeDir).filter(
-      (entry) =>
-        entry.startsWith("wayland-") ||
-        entry.startsWith("pipewire-") ||
-        // gamescope-N is the SteamOS Game Mode compositor socket; the
-        // gamescope WSI Vulkan layer needs it for direct presentation.
-        entry.startsWith("gamescope-") ||
-        entry === "pulse"
+    const entries = fs.readdirSync(runtimeDir).sort();
+    const activeWayland =
+      env.WAYLAND_DISPLAY || entries.find((name) => /^wayland-\d+$/.test(name));
+    const activeGamescope = env.GAMESCOPE_WAYLAND_DISPLAY || "gamescope-0";
+    return [
+      activeWayland,
+      activeGamescope,
+      "pipewire-0",
+      "pulse/native",
+    ].filter(
+      (name): name is string =>
+        Boolean(name) &&
+        (name === "pulse/native" || /^[a-zA-Z0-9_-]+$/.test(name!))
     );
   } catch {
     return [];
@@ -433,19 +438,8 @@ export const buildSandboxArgs = (
     bwrapArgs.push("--dev-bind", devicePath, devicePath);
   }
 
-  // Game input. The minimal --dev /dev hides evdev/hidraw, so controllers
-  // (including SteamOS Steam Input virtual pads, which surface as
-  // /dev/input/event*) would not exist inside the sandbox. Bind the whole
-  // /dev/input directory so nodes that appear/disappear at hotplug stay
-  // visible. /dev/uinput is intentionally left out: virtual pads are created
-  // by the host-side Steam daemon, not by games, so games only need to read
-  // the resulting event nodes above.
-  if (isExistingPath("/dev/input")) {
-    bwrapArgs.push("--dev-bind", "/dev/input", "/dev/input");
-  }
-
-  for (const deviceName of listHidrawDevices()) {
-    const devicePath = path.join("/dev", deviceName);
+  // Expose only udev-classified controllers. Keyboard/mouse nodes stay hidden.
+  for (const devicePath of listSandboxInputDevices()) {
     bwrapArgs.push("--dev-bind", devicePath, devicePath);
   }
 
@@ -520,7 +514,6 @@ export const buildSandboxArgs = (
   const readWriteBinds: (string | null | undefined)[] = [
     gameDir,
     winePrefix,
-    getUmuRuntimeDir(home),
     ...extraBinds,
   ];
 
@@ -535,6 +528,7 @@ export const buildSandboxArgs = (
   const readOnlyBinds: (string | null | undefined)[] = [
     protonDir,
     ...extraRoBinds,
+    networkIsolation?.pastaPath,
     ...(hideX11
       ? []
       : [
@@ -546,7 +540,7 @@ export const buildSandboxArgs = (
   ];
 
   if (runtimeDir) {
-    for (const socketName of listRuntimeSockets(runtimeDir)) {
+    for (const socketName of listRuntimeSockets(runtimeDir, env)) {
       readOnlyBinds.push(path.join(runtimeDir, socketName));
     }
   }

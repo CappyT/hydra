@@ -27,6 +27,7 @@ const UNISTD_32 = "/usr/include/asm/unistd_32.h";
 // (offsets 16/20) for the personality argument filter.
 const OP_LD_W_ABS = 0x20;
 const OP_JEQ_K = 0x15;
+const OP_JGE_K = 0x35;
 const OP_JA = 0x05;
 const OP_RET_K = 0x06;
 
@@ -65,6 +66,8 @@ const runFilter = (filter, data) => {
       pc += 1;
     } else if (code === OP_JEQ_K) {
       pc += (a === k ? jt : jf) + 1;
+    } else if (code === OP_JGE_K) {
+      pc += (a >= k ? jt : jf) + 1;
     } else if (code === OP_JA) {
       pc += k + 1;
     } else if (code === OP_RET_K) {
@@ -328,24 +331,45 @@ describe("buildSeccompFilter behavior (default/medium level, enforce)", () => {
     );
   });
 
-  it("does not filter an unknown arch (conservative ALLOW)", () => {
+  it("rejects an unsupported architecture", () => {
     const AUDIT_ARCH_AARCH64 = 0xc00000b7;
     assert.equal(
       runFilter(filter, {
         nr: BLOCKED_SYSCALLS.keyctl.x86_64,
         arch: AUDIT_ARCH_AARCH64,
       }),
-      SECCOMP_RET_ALLOW
+      SECCOMP_RET_ERRNO_ENOSYS
     );
   });
 });
 
 describe("protection levels", () => {
-  it("level low is byte-identical to the pre-levels Tier-A filter", () => {
-    assert.equal(
-      Buffer.compare(buildSeccompFilter("low"), buildLegacyLowFilter()),
-      0
-    );
+  it("preserves the legacy low policy for supported native syscall numbers", () => {
+    for (const arch of [AUDIT_ARCH_X86_64, AUDIT_ARCH_I386]) {
+      for (let nr = 0; nr < 450; nr++) {
+        assert.equal(
+          runFilter(buildSeccompFilter("low"), { arch, nr }),
+          runFilter(buildLegacyLowFilter(), { arch, nr })
+        );
+      }
+    }
+  });
+
+  it("rejects x32 and unsupported architectures at every level, including audit", () => {
+    for (const level of PROTECTION_LEVELS)
+      for (const mode of MODES) {
+        const filter = buildSeccompFilter(level, mode);
+        for (const nr of [0x40000000, 0x40000141, 0x40000209, 0xffffffff]) {
+          assert.equal(
+            runFilter(filter, { arch: AUDIT_ARCH_X86_64, nr }),
+            SECCOMP_RET_ERRNO_ENOSYS
+          );
+        }
+        assert.equal(
+          runFilter(filter, { arch: 0xc00000b7, nr: 0 }),
+          SECCOMP_RET_ERRNO_ENOSYS
+        );
+      }
   });
 
   it("levels are cumulative and add exactly the decided syscalls", () => {
@@ -555,7 +579,11 @@ describe("audit mode", () => {
         assert.equal(a.code, e.code, `code[${i}] at ${level}`);
         assert.equal(a.jt, e.jt, `jt[${i}] at ${level}`);
         assert.equal(a.jf, e.jf, `jf[${i}] at ${level}`);
-        if (e.code === OP_RET_K && e.k !== SECCOMP_RET_ALLOW) {
+        if (
+          e.code === OP_RET_K &&
+          e.k !== SECCOMP_RET_ALLOW &&
+          i !== enforce.length - 2
+        ) {
           // Deny slot: enforce carries an errno, audit carries RET_LOG.
           assert.ok(
             e.k === SECCOMP_RET_ERRNO_ENOSYS || e.k === SECCOMP_RET_ERRNO_EPERM,

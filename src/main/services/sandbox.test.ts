@@ -311,28 +311,14 @@ describe("Sandbox.wrapCommand", () => {
     assert.ok(args.includes("/run/user/1000"));
   });
 
-  it("binds /dev/input and hidraw nodes when present, never /dev/uinput", () => {
+  it("never exposes the entire input directory or virtual input injection", () => {
     const { args } = buildSandboxArgs({
       command: "/usr/bin/game",
       args: [],
       env: baseEnv,
       gameDir,
     });
-
-    // The host /dev is the real one here, so only assert the binds that the
-    // host actually exposes (mirrors how nvidia devices are tolerated absent).
-    if (fs.existsSync("/dev/input")) {
-      assert.ok(hasBind(args, "--dev-bind", "/dev/input"));
-    }
-
-    for (const entry of fs.readdirSync("/dev")) {
-      if (entry.startsWith("hidraw")) {
-        assert.ok(hasBind(args, "--dev-bind", path.join("/dev", entry)));
-      }
-    }
-
-    // /dev/uinput is deliberately never bound: games read virtual pads as
-    // event nodes, they do not create them.
+    assert.ok(!hasBind(args, "--dev-bind", "/dev/input"));
     assert.ok(!hasBind(args, "--dev-bind", "/dev/uinput"));
   });
 

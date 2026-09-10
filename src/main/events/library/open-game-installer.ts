@@ -14,7 +14,18 @@ import {
   withSeccompStdio,
   closeSeccompFd,
 } from "@main/helpers/sandbox-launch";
+import {
+  isGamescopeAvailable,
+  isGamescopeSessionActive,
+  isWaylandSessionAvailable,
+} from "@main/helpers/is-gamescope-available";
+import { buildGamescopeWrapper } from "@main/helpers/resolve-gamescope-wrapper";
 import { buildSandboxEnv } from "@main/helpers/sandbox-env";
+
+const shouldUsePrivateInstallerDisplay = () =>
+  isGamescopeAvailable() &&
+  isWaylandSessionAvailable() &&
+  !isGamescopeSessionActive();
 
 interface InstallerSandboxContext {
   userPreferences?: UserPreferences | null;
@@ -40,10 +51,13 @@ const launchInstallerWithWine = async (
     fs.mkdirSync(winePrefixPath, { recursive: true });
   }
 
+  const gamescope = shouldUsePrivateInstallerDisplay()
+    ? buildGamescopeWrapper()
+    : null;
   const resolved = wrapWithSandbox(
     {
-      command: "wine",
-      args: [filePath],
+      command: gamescope ? gamescope[0] : "wine",
+      args: gamescope ? [...gamescope.slice(1), "wine", filePath] : [filePath],
       env: winePrefixPath ? { WINEPREFIX: winePrefixPath } : {},
     },
     {
@@ -52,6 +66,7 @@ const launchInstallerWithWine = async (
       gameKey: sandbox?.gameKey,
       gameDir: path.dirname(filePath),
       winePrefix: sandbox?.winePrefixPath,
+      hideX11: Boolean(gamescope),
     }
   );
 
@@ -136,6 +151,7 @@ const executeGameInstaller = async (
     try {
       await Umu.launchExecutable(filePath, [], {
         gameId: options?.gameId,
+        useGamescope: shouldUsePrivateInstallerDisplay(),
         winePrefixPath: options?.winePrefixPath,
         protonPath: options?.protonPath,
         userPreferences: options?.userPreferences,
@@ -156,7 +172,7 @@ const executeGameInstaller = async (
         return true;
       }
 
-      return await openPathAndCheck(filePath);
+      return false;
     }
   }
 

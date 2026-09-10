@@ -3,7 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Game, UserPreferences } from "@types";
 import { Sandbox } from "@main/services/sandbox";
-import { assertSandboxAvailable } from "@main/services/sandbox-command-builder";
+import {
+  assertSandboxAvailable,
+  SandboxUnavailableError,
+} from "@main/services/sandbox-command-builder";
 import {
   buildSeccompFilter,
   resolveSeccomp,
@@ -27,6 +30,7 @@ import {
   sandboxResolvConfPath,
   sandboxSeccompFilterPath,
 } from "@main/constants";
+import { assertSafeSandboxPath } from "./sandbox-paths";
 import type { ResolvedLaunchCommand } from "./resolve-launch-command";
 
 /**
@@ -92,26 +96,16 @@ export interface SandboxLaunchContext {
   hideX11?: boolean;
 }
 
-const ensureUmuRuntimeDir = () => {
-  const home = process.env.HOME;
-  if (!home) return;
-
-  try {
-    fs.mkdirSync(path.join(home, ".local", "share", "umu"), {
-      recursive: true,
-    });
-  } catch (error) {
-    logger.warn("Failed to ensure umu runtime dir for sandbox", error);
-  }
-};
-
 const ensureWinePrefixDir = (winePrefix?: string | null) => {
   if (!winePrefix) return;
 
   try {
     fs.mkdirSync(winePrefix, { recursive: true });
   } catch (error) {
-    logger.warn("Failed to ensure wine prefix dir for sandbox", error);
+    logger.error("Failed to ensure wine prefix dir for sandbox", error);
+    throw new SandboxUnavailableError(
+      "Could not prepare the game prefix. Launch refused."
+    );
   }
 };
 
@@ -137,8 +131,10 @@ const ensureSandboxHome = (gameKey?: string | null): string | undefined => {
     fs.mkdirSync(homePersistDir, { recursive: true });
     return homePersistDir;
   } catch (error) {
-    logger.warn("Failed to ensure sandbox home dir", error);
-    return undefined;
+    logger.error("Failed to ensure sandbox home dir", error);
+    throw new SandboxUnavailableError(
+      "Could not prepare the game sandbox home. Launch refused."
+    );
   }
 };
 
@@ -147,8 +143,7 @@ const ensureSandboxHome = (gameKey?: string | null): string | undefined => {
  * is a deterministic hash of the game key rendered as 32 lowercase hex chars +
  * newline (the machine-id format): stable per game so the game is not confused
  * by an id changing under it, yet different across games so two titles cannot
- * correlate to a single host fingerprint. Guards fs errors like
- * ensureSandboxHome: on failure the launch simply keeps the host machine-id.
+ * correlate to a single host fingerprint. Storage failures refuse launch rather than expose the host identity.
  */
 const ensureSandboxMachineId = (
   gameKey?: string | null
@@ -167,8 +162,10 @@ const ensureSandboxMachineId = (
     fs.writeFileSync(machineIdFile, fakeMachineId);
     return machineIdFile;
   } catch (error) {
-    logger.warn("Failed to write sandbox machine-id", error);
-    return undefined;
+    logger.error("Failed to write sandbox machine-id", error);
+    throw new SandboxUnavailableError(
+      "Could not prepare the game sandbox identity. Launch refused."
+    );
   }
 };
 
@@ -188,18 +185,11 @@ const seccompFilterVariantPath = (
 // app update always refreshes it) then reused.
 const cachedSeccompFilterPaths = new Map<string, string>();
 
-/**
- * Writes the compiled seccomp cBPF filter for `level`/`mode` to its per-variant
- * file under userData and returns the path, or undefined on failure. Written
- * once per process per variant, then memoized. On failure the launch proceeds
- * WITHOUT `--seccomp` (the path is undefined, so no fd is wired and no
- * `--seccomp` flag is emitted): seccomp is a hardening layer, not the sandbox
- * boundary, so a write failure must not block launches.
- */
+/** Writes and caches an enforcing/audit filter. Storage errors refuse launch. */
 const ensureSeccompFilterFile = (
   level: ProtectionLevel,
   mode: FilterMode
-): string | undefined => {
+): string => {
   const variantKey = `${level}-${mode}`;
   const cached = cachedSeccompFilterPaths.get(variantKey);
   if (cached) return cached;
@@ -211,8 +201,10 @@ const ensureSeccompFilterFile = (
     cachedSeccompFilterPaths.set(variantKey, filterPath);
     return filterPath;
   } catch (error) {
-    logger.warn("Failed to write seccomp filter, launching without it", error);
-    return undefined;
+    logger.error("Failed to write required seccomp filter", error);
+    throw new SandboxUnavailableError(
+      "Could not prepare the required seccomp filter. Game launch refused."
+    );
   }
 };
 
@@ -242,15 +234,7 @@ const ensureSandboxResolvConf = (): string | undefined => {
   }
 };
 
-let loggedPastaMissing = false;
-
-/**
- * Resolves the network-isolation options for a sandboxed launch, or undefined
- * when the game should keep the host network namespace. Isolation applies when
- * it is not disabled (globally or per game) AND pasta is available. When pasta
- * is desired but missing, logs once and returns undefined (the game launches
- * with the host network, the previous behavior).
- */
+/** Only an explicit opt-out may select the host network. Missing tools fail closed. */
 const resolveNetworkIsolation = (
   userPreferences: UserPreferences | null | undefined,
   game: SandboxGame | null | undefined
@@ -259,14 +243,9 @@ const resolveNetworkIsolation = (
 
   const pastaPath = resolvePastaPath();
   if (!pastaPath || !isNetworkIsolationAvailable()) {
-    if (!loggedPastaMissing) {
-      loggedPastaMissing = true;
-      logger.warn(
-        "Network isolation is enabled but pasta (passt) is not available; " +
-          "launching with the host network namespace. Install passt to isolate."
-      );
-    }
-    return undefined;
+    throw new SandboxUnavailableError(
+      "Network isolation is enabled but a trusted pasta (passt) binary is unavailable. Install passt or explicitly disable network isolation for this game."
+    );
   }
 
   // Determine the host resolver up front (before the sandbox overlays its own
@@ -330,10 +309,11 @@ export const openSeccompFd = (
   try {
     return fs.openSync(launch.seccompFilterPath, "r");
   } catch (error) {
-    // The bwrap args already carry `--seccomp <fd>`; without the fd bwrap fails
-    // and the game does not launch. This is a rare fs race and fails closed.
-    logger.error("Failed to open seccomp filter fd", error);
-    return null;
+    // Never spawn a command whose required filter could not be opened.
+    logger.error("Failed to open required seccomp filter fd", error);
+    throw new SandboxUnavailableError(
+      "Could not open the required seccomp filter. Game launch refused."
+    );
   }
 };
 
@@ -390,10 +370,23 @@ export const wrapWithSandbox = (
     return resolved;
   }
 
+  for (const target of [
+    gameDir,
+    winePrefix,
+    ...additionalBinds,
+    ...(game?.sandboxExtraPaths ?? []),
+  ]) {
+    if (target)
+      assertSafeSandboxPath(
+        target,
+        process.env.HOME || "/home",
+        path.dirname(sandboxHomesPath)
+      );
+  }
+
   // Fail closed: never let a launch escape the sandbox when bwrap is missing.
   assertSandboxAvailable(sandboxEnabled, Sandbox.isAvailable());
 
-  ensureUmuRuntimeDir();
   // On a first launch the wine prefix dir does not exist yet; create it before
   // binding so Proton writes the prefix (saves, achievements) to the host and
   // not into the sandbox tmpfs.

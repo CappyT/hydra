@@ -6,6 +6,7 @@
     "src/shared/**/*",
     "src/types/**/*"
   ],
+  "ts-node": { "experimentalResolver": true, "experimentalSpecifierResolution": "node" },
   "compilerOptions": {
     "allowImportingTsExtensions": true,
     "noEmit": true,

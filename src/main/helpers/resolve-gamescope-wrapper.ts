@@ -68,10 +68,11 @@ export const buildGamescopeWrapper = (): string[] => {
   // `resolveSystemBinary`, which also searches `~/.local/bin` (the XDG user bin
   // dir Steam gaming mode drops from PATH); emitting the bare `"gamescope"` here
   // would be resolved by the spawn-time PATH instead, so a gamescope installed
-  // only in `~/.local/bin` would probe available yet fail to spawn. Fall back to
-  // the bare name if resolution unexpectedly returns null (callers already gate
-  // on availability) rather than crashing.
-  const gamescopeBinary = resolveSystemBinary(["gamescope"]) ?? "gamescope";
+  // only in `~/.local/bin` would probe available yet fail to spawn. Refuse a
+  // launch if the trusted binary disappears after the availability check.
+  const gamescopeBinary = resolveSystemBinary(["gamescope"]);
+  if (!gamescopeBinary)
+    throw new Error("Trusted gamescope binary is unavailable");
   const wrapper = [gamescopeBinary, "-f"];
 
   try {

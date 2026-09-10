@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import subprocess
 import sys
 
 
@@ -69,6 +70,10 @@ def main():
         "runtime_writable": runtime_writable,
         "readonly_remounted": remounted,
         "readonly_writable": readonly_writable,
+        "nested_user_namespace": subprocess.run(
+            ["/usr/bin/unshare", "--user", "--map-root-user", "--mount", "/usr/bin/true"],
+            capture_output=True, timeout=3, check=False,
+        ).returncode == 0,
         "secret_present": "AUDIT_FAKE_SECRET" in os.environ,
     }))
 

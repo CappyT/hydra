@@ -4,9 +4,8 @@ import { logger } from "@main/services/logger";
 import { isGamescopeAvailable } from "./is-gamescope-available";
 
 /**
- * Optional host binaries the sandbox / launch stack relies on. None of them are
- * hard requirements — each MISSING tool merely degrades a feature (see
- * getMissingHostTools) — so a missing tool is a warning, never a crash.
+ * Host tools required by the selected launch protections. Startup warns;
+ * a launch with a missing required protection fails closed.
  */
 export type HostTool = "bwrap" | "pasta" | "gamescope";
 
@@ -18,7 +17,7 @@ export type HostTool = "bwrap" | "pasta" | "gamescope";
  *    the fail-closed policy (SandboxUnavailableError) until bubblewrap is
  *    installed or the sandbox is disabled.
  *  - `pasta` (passt): {@link isNetworkIsolationAvailable}. Missing = network
- *    isolation cannot run; games keep the host network namespace.
+ *    isolation cannot run; isolated launches are blocked.
  *  - `gamescope`: {@link isGamescopeAvailable}. Missing = the gamescope wrapper
  *    is unavailable; games run without it.
  *
@@ -58,7 +57,7 @@ export const logMissingHostToolsOnce = (): void => {
   logger.warn(
     `Missing optional host tools: ${missing.join(", ")}. ` +
       "bwrap -> sandbox cannot run (sandboxed launches blocked while enabled); " +
-      "pasta -> network isolation disabled; " +
+      "pasta -> isolated launches blocked; " +
       "gamescope -> gamescope wrapper unavailable."
   );
 };

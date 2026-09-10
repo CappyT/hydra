@@ -36,6 +36,8 @@ const filterAction = (filter, nr) => {
       pc++;
     } else if (op === 0x15) {
       pc += 1 + filter.readUInt8(offset + (accumulator === k ? 2 : 3));
+    } else if (op === 0x35) {
+      pc += 1 + filter.readUInt8(offset + (accumulator >= k ? 2 : 3));
     } else if (op === 0x05) {
       pc += 1 + k;
     } else if (op === 0x06) {
@@ -184,6 +186,10 @@ const main = async () => {
       check(`${name}: host home hidden`, !observed.sentinel_readable);
       check(`${name}: inherited secret scrubbed`, !observed.secret_present);
       check(`${name}: no new privileges`, observed.no_new_privs === "1");
+      check(
+        `${name}: nested user namespaces remain usable`,
+        observed.nested_user_namespace
+      );
       check(
         `${name}: seccomp bpf/keyctl denied`,
         Object.values(observed.seccomp_blocked).every(Boolean)

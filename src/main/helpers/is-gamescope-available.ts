@@ -3,7 +3,7 @@ import { resolveSystemBinary } from "./resolve-system-binary";
 
 /**
  * Detects whether the `gamescope` compositor binary is available on the host.
- * resolveSystemBinary walks PATH and fs.stat()s each candidate, so this is
+ * resolveSystemBinary checks trusted directories and each candidate, so this is
  * re-evaluated on every call and picks up a gamescope installed mid-session on
  * the next launch. Linux-only: returns false everywhere else.
  */

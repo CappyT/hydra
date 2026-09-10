@@ -2,47 +2,57 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const isExecutableFile = (filePath: string): boolean => {
+export const TRUSTED_SYSTEM_BIN_DIRS = [
+  "/usr/bin",
+  "/bin",
+  "/usr/sbin",
+  "/sbin",
+  "/usr/local/bin",
+  "/usr/local/sbin",
+];
+
+/** Reject writable ancestors and symlink targets outside the selected trust root. */
+export const isTrustedExecutable = (
+  candidate: string,
+  root: string,
+  owner: number
+): boolean => {
   try {
-    if (!fs.statSync(filePath).isFile()) return false;
-    fs.accessSync(filePath, fs.constants.X_OK);
+    const canonicalRoot = fs.realpathSync(root);
+    const canonical = fs.realpathSync(candidate);
+    if (!canonical.startsWith(canonicalRoot + path.sep)) return false;
+    if (!fs.statSync(canonical).isFile()) return false;
+    fs.accessSync(canonical, fs.constants.X_OK);
+    for (let current = canonical; ; current = path.dirname(current)) {
+      const stat = fs.statSync(current);
+      if ((stat.uid !== 0 && stat.uid !== owner) || (stat.mode & 0o022) !== 0)
+        return false;
+      if (current === path.dirname(current)) break;
+    }
     return true;
   } catch {
     return false;
   }
 };
 
-/**
- * Resolves the first of the given executables available on the system, so that
- * a distro-packaged (signed) binary is preferred over any bundled copy. Each
- * candidate may be a bare command name (looked up on PATH) or an absolute path.
- * Returns the resolved absolute path, or null when none is found.
- */
+/** Ignore PATH entirely. System tools win; the owner-controlled SteamOS fallback is last. */
 export const resolveSystemBinary = (candidates: string[]): string | null => {
-  const pathDirectories = (process.env.PATH ?? "")
-    .split(path.delimiter)
-    .filter(Boolean);
-
-  // Steam gaming mode launches the app with a minimal PATH that lacks the XDG
-  // user bin dir — the standard install location for user CLI tools on SteamOS,
-  // where /usr is read-only (e.g. rclone in ~/.local/bin). Search it last so
-  // distro-packaged binaries still win when both exist.
-  const userBinDir = path.join(os.homedir(), ".local", "bin");
-  if (!pathDirectories.includes(userBinDir)) {
-    pathDirectories.push(userBinDir);
-  }
-
-  for (const candidate of candidates) {
-    if (candidate.includes(path.sep)) {
-      if (isExecutableFile(candidate)) return candidate;
-      continue;
-    }
-
-    for (const directory of pathDirectories) {
-      const candidatePath = path.join(directory, candidate);
-      if (isExecutableFile(candidatePath)) return candidatePath;
+  const roots = [
+    ...TRUSTED_SYSTEM_BIN_DIRS.map((directory) => ({ directory, owner: 0 })),
+    {
+      directory: path.join(os.homedir(), ".local", "bin"),
+      owner: process.getuid?.() ?? 0,
+    },
+  ];
+  for (const { directory, owner } of roots) {
+    for (const candidate of candidates) {
+      if (!candidate || candidate.includes("\0")) continue;
+      const target = path.isAbsolute(candidate)
+        ? candidate
+        : path.join(directory, candidate);
+      if (candidate.includes(path.sep) && !path.isAbsolute(candidate)) continue;
+      if (isTrustedExecutable(target, directory, owner)) return target;
     }
   }
-
   return null;
 };
