@@ -121,12 +121,17 @@ game options modal and the Big Picture compatibility tab.
 
 ## Sandbox selftest
 
+For the 2026-09-10 security assessment, reproduced weaknesses and supplemental
+failure-path audit, see [the security review](SECURITY-AUDIT-2026-09-10.md).
+The original selftest below exercises the base filesystem/PID/IPC profile; it
+does not supply the production seccomp, pasta or environment-scrubbing options.
+
 The game sandbox (bubblewrap) ships with an adversarial verifier that runs the
-real profile end-to-end. It lives in the sibling repo
+baseline profile end-to-end. It lives in the sibling repo
 [`hydra-sandbox-probe`](https://github.com/CappyT/hydra-sandbox-probe) and is
-driven by `yarn sandbox:selftest`, which builds the exact bwrap profile the app
-uses for real games (via the unmodified `buildSandboxArgs`) and runs the probe
-inside it, so there is zero drift between what is tested and what ships.
+driven by `yarn sandbox:selftest`, which calls the app's unmodified
+`buildSandboxArgs` and runs the probe inside the resulting profile with the
+baseline options described above.
 
 ```bash
 # 1. build the probe once (sibling checkout, next to this repo)
