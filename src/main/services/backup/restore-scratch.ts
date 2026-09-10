@@ -1,3 +1,4 @@
+import { assertStorageComponent } from "./artifact-validation.js";
 import fs from "node:fs";
 import path from "node:path";
 import * as tar from "tar";
@@ -26,15 +27,18 @@ export const getRestoreScratchDir = (
   backupsRoot: string,
   shop: string,
   objectId: string
-) => path.join(backupsRoot, RESTORE_TMP_DIRNAME, `${shop}-${objectId}`);
+) => {
+  assertStorageComponent(shop);
+  assertStorageComponent(objectId);
+  return path.join(backupsRoot, RESTORE_TMP_DIRNAME, `${shop}-${objectId}`);
+};
 
 /**
  * Extracts a stored artifact tar into a fresh scratch directory, runs the
  * provided restore step against it, then removes the scratch directory.
  *
- * The scratch directory can never collide with backend storage, so no stored
- * backup is ever deleted. Only the scratch directory itself is rm-ed (before
- * extraction to start clean, and in a `finally` afterwards).
+ * A unique scratch directory avoids races between simultaneous restores and
+ * never collides with backend storage. Archive links and traversal are rejected.
  */
 export const restoreFromArtifactTar = async (options: {
   backupsRoot: string;
@@ -45,15 +49,29 @@ export const restoreFromArtifactTar = async (options: {
 }): Promise<void> => {
   const { backupsRoot, shop, objectId, tarLocation, restore } = options;
 
-  const scratchDir = getRestoreScratchDir(backupsRoot, shop, objectId);
-
-  if (fs.existsSync(scratchDir)) {
-    fs.rmSync(scratchDir, { recursive: true, force: true });
-  }
-  fs.mkdirSync(scratchDir, { recursive: true });
+  const prefix = getRestoreScratchDir(backupsRoot, shop, objectId);
+  fs.mkdirSync(path.dirname(prefix), { recursive: true });
+  const scratchDir = fs.mkdtempSync(prefix + "-");
 
   try {
-    await tar.x({ file: tarLocation, cwd: scratchDir });
+    let unsafeEntry = false;
+    await tar.x({
+      file: tarLocation,
+      cwd: scratchDir,
+      strict: true,
+      filter: (entryPath, entry) => {
+        if (
+          entryPath.startsWith("/") ||
+          entryPath.split("/").includes("..") ||
+          !("type" in entry && ["File", "Directory"].includes(entry.type))
+        ) {
+          unsafeEntry = true;
+          return false;
+        }
+        return true;
+      },
+    });
+    if (unsafeEntry) throw new Error("Unsafe backup archive entry");
     await restore(scratchDir);
   } finally {
     fs.rmSync(scratchDir, { recursive: true, force: true });

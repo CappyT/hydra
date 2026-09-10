@@ -98,6 +98,7 @@ describe("restoreFromArtifactTar (local backup restore preservation)", () => {
 
     let restoredContents: string | null = null;
     const scratchDir = getRestoreScratchDir(backupsRoot, SHOP, OBJECT_ID);
+    let actualScratchDir = "";
 
     await restoreFromArtifactTar({
       backupsRoot,
@@ -105,7 +106,8 @@ describe("restoreFromArtifactTar (local backup restore preservation)", () => {
       objectId: OBJECT_ID,
       tarLocation,
       restore: (dir) => {
-        assert.equal(dir, scratchDir);
+        assert.ok(dir.startsWith(scratchDir + "-"));
+        actualScratchDir = dir;
         // (a) the extracted files exist in the scratch dir during restore.
         restoredContents = fs.readFileSync(path.join(dir, "save.dat"), "utf8");
       },
@@ -131,7 +133,7 @@ describe("restoreFromArtifactTar (local backup restore preservation)", () => {
 
     // Scratch dir is cleaned up afterwards.
     assert.ok(
-      !fs.existsSync(scratchDir),
+      actualScratchDir && !fs.existsSync(actualScratchDir),
       "restore scratch dir was not cleaned up"
     );
   });
@@ -146,7 +148,7 @@ describe("restoreFromArtifactTar (local backup restore preservation)", () => {
       `${SHOP}-${OBJECT_ID}`,
       `${id}.tar`
     );
-    const scratchDir = getRestoreScratchDir(backupsRoot, SHOP, OBJECT_ID);
+    let actualScratchDir = "";
 
     await assert.rejects(() =>
       restoreFromArtifactTar({
@@ -154,7 +156,8 @@ describe("restoreFromArtifactTar (local backup restore preservation)", () => {
         shop: SHOP,
         objectId: OBJECT_ID,
         tarLocation: downloadArtifact(backupsRoot, id),
-        restore: () => {
+        restore: (dir) => {
+          actualScratchDir = dir;
           throw new Error("restore blew up");
         },
       })
@@ -166,7 +169,7 @@ describe("restoreFromArtifactTar (local backup restore preservation)", () => {
       "stored tar destroyed on restore error"
     );
     assert.ok(
-      !fs.existsSync(scratchDir),
+      actualScratchDir && !fs.existsSync(actualScratchDir),
       "scratch dir leaked on restore error"
     );
   });
@@ -185,4 +188,30 @@ describe("restoreFromArtifactTar (local backup restore preservation)", () => {
     assert.equal(isBackupStorageDir(".rclone-cache"), false);
     assert.equal(isBackupStorageDir(`${SHOP}-${OBJECT_ID}`), true);
   });
+});
+
+it("rejects archive links before calling the restore writer", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "restore-unsafe-tar-"));
+  try {
+    const tree = path.join(root, "tree");
+    fs.mkdirSync(tree);
+    fs.symlinkSync("/tmp", path.join(tree, "escape"));
+    const archive = path.join(root, "unsafe.tar");
+    tar.c({ cwd: tree, file: archive, sync: true }, ["escape"]);
+    let called = false;
+    await assert.rejects(
+      restoreFromArtifactTar({
+        backupsRoot: path.join(root, "backups"),
+        shop: "steam",
+        objectId: "1",
+        tarLocation: archive,
+        restore: () => {
+          called = true;
+        },
+      })
+    );
+    assert.equal(called, false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

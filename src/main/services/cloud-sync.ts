@@ -11,12 +11,15 @@ import type {
   LudusaviBackupMapping,
   UserPreferences,
 } from "@types";
-import { backupsPath, publicProfilePath } from "@main/constants";
 import {
-  addTrailingSlash,
-  getDeviceId,
-  normalizePath,
-} from "@main/helpers";
+  backupsPath,
+  publicProfilePath,
+  sandboxHomesPath,
+} from "@main/constants";
+import { addTrailingSlash, getDeviceId, normalizePath } from "@main/helpers";
+import { restoreLinuxBackup } from "./backup/linux-restore";
+import { assertSafeSandboxPath } from "@main/helpers/sandbox-paths";
+import { sanitizeSandboxGameKey } from "@main/helpers/sandbox-launch";
 import { logger } from "./logger";
 import { WindowManager } from "./window-manager";
 import { Ludusavi } from "./ludusavi";
@@ -200,14 +203,42 @@ export class CloudSync {
       shop,
       objectId,
       tarLocation,
-      restore: (scratchDir) =>
-        CloudSync.restoreLudusaviBackup(
+      restore: (scratchDir) => {
+        if (process.platform === "linux" && shop !== "launchbox") {
+          const wine =
+            !game?.executablePath || /\.exe$/i.test(game.executablePath);
+          const destinationRoot = wine
+            ? effectiveWinePrefixPath
+            : path.join(
+                sandboxHomesPath,
+                sanitizeSandboxGameKey(levelKeys.game(shop, objectId))
+              );
+          if (!destinationRoot) throw new Error("No approved save destination");
+          assertSafeSandboxPath(
+            destinationRoot,
+            SystemPath.getPath("home"),
+            SystemPath.getPath("userData")
+          );
+          fs.mkdirSync(destinationRoot, { recursive: true });
+          return restoreLinuxBackup({
+            sourceRoot: path.join(scratchDir, objectId),
+            destinationRoot: fs.realpathSync(destinationRoot),
+            artifactHome: artifact.homeDir,
+            artifactWinePrefix: artifact.winePrefixPath,
+            wineUserHome: wine
+              ? CloudSync.getWindowsLikeUserProfilePath(effectiveWinePrefixPath)
+              : undefined,
+            wine,
+          });
+        }
+        return CloudSync.restoreLudusaviBackup(
           scratchDir,
           objectId,
           normalizePath(artifact.homeDir),
           effectiveWinePrefixPath,
           artifact.winePrefixPath
-        ),
+        );
+      },
     });
 
     return { createdAt: artifact.createdAt };

@@ -1,3 +1,8 @@
+import {
+  assertStorageComponent,
+  assertArtifactId,
+  validateArtifact,
+} from "./artifact-validation";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -27,10 +32,11 @@ interface RcloneLsjsonEntry {
  * Legacy sidecars predate the device id; default it to "" so old remote
  * backups never crash and simply compare unequal to any real device id.
  */
-const normalizeArtifact = (artifact: LocalArtifact): LocalArtifact => ({
-  ...artifact,
-  deviceId: artifact.deviceId ?? "",
-});
+const normalizeArtifact = (artifact: LocalArtifact): LocalArtifact =>
+  validateArtifact({
+    ...artifact,
+    deviceId: artifact.deviceId ?? "",
+  });
 
 /**
  * Stores save-game backups on any rclone remote (S3, Drive, Dropbox, WebDAV,
@@ -55,11 +61,17 @@ export class RcloneBackend implements ArtifactStorageBackend {
   }
 
   private remotePath(shop: GameShop, objectId: string, file?: string) {
+    assertStorageComponent(shop);
+    assertStorageComponent(objectId);
+    if (file && !/^[a-f0-9-]+\.(json|tar)$/i.test(file))
+      throw new Error("Invalid artifact filename");
     const base = `${this.remote}/${shop}-${objectId}`;
     return file ? `${base}/${file}` : base;
   }
 
   private cacheDir(shop: GameShop, objectId: string) {
+    assertStorageComponent(shop);
+    assertStorageComponent(objectId);
     return path.join(this.cacheRoot, `${shop}-${objectId}`);
   }
 
@@ -92,6 +104,7 @@ export class RcloneBackend implements ArtifactStorageBackend {
   }
 
   private writeCacheSidecar(artifact: LocalArtifact) {
+    validateArtifact(artifact);
     const dir = this.cacheDir(artifact.shop, artifact.objectId);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(
@@ -102,6 +115,7 @@ export class RcloneBackend implements ArtifactStorageBackend {
 
   /** Resolves an artifact from the local sidecar cache. */
   private resolveFromCache(artifactId: string): LocalArtifact | null {
+    assertArtifactId(artifactId);
     if (!fs.existsSync(this.cacheRoot)) return null;
 
     for (const entry of fs.readdirSync(this.cacheRoot, {
@@ -165,7 +179,13 @@ export class RcloneBackend implements ArtifactStorageBackend {
           ["cat", this.remotePath(shop, objectId, entry.Name)],
           META_TIMEOUT_MS
         );
-        const artifact = normalizeArtifact(JSON.parse(stdout) as LocalArtifact);
+        const artifact = validateArtifact(
+          normalizeArtifact(JSON.parse(stdout) as LocalArtifact),
+          shop,
+          objectId
+        );
+        if (entry.Name !== `${artifact.id}.json`)
+          throw new Error("Backup filename mismatch");
         this.writeCacheSidecar(artifact);
         artifacts.push(artifact);
       } catch (error) {

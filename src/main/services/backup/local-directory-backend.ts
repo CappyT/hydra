@@ -1,3 +1,8 @@
+import {
+  assertStorageComponent,
+  assertArtifactId,
+  validateArtifact,
+} from "./artifact-validation";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -27,11 +32,14 @@ export class LocalDirectoryBackend implements ArtifactStorageBackend {
   }
 
   private gameDir(shop: GameShop, objectId: string) {
+    assertStorageComponent(shop);
+    assertStorageComponent(objectId);
     return path.join(this.root, `${shop}-${objectId}`);
   }
 
   /** Finds the sidecar path for an artifact id by scanning game folders. */
   private resolveSidecar(artifactId: string): string | null {
+    assertArtifactId(artifactId);
     if (!fs.existsSync(this.root)) return null;
 
     for (const entry of fs.readdirSync(this.root, { withFileTypes: true })) {
@@ -55,7 +63,7 @@ export class LocalDirectoryBackend implements ArtifactStorageBackend {
 
     // Legacy sidecars predate the device id; default to "" so they never crash
     // and simply compare unequal to any real device id.
-    return { ...artifact, deviceId: artifact.deviceId ?? "" };
+    return validateArtifact({ ...artifact, deviceId: artifact.deviceId ?? "" });
   }
 
   async list(shop: GameShop, objectId: string): Promise<LocalArtifact[]> {
@@ -67,7 +75,14 @@ export class LocalDirectoryBackend implements ArtifactStorageBackend {
       .filter((file) => file.endsWith(".json"))
       .map((file) => {
         try {
-          return this.readSidecar(path.join(dir, file));
+          const artifact = validateArtifact(
+            this.readSidecar(path.join(dir, file)),
+            shop,
+            objectId
+          );
+          if (file !== `${artifact.id}.json`)
+            throw new Error("Backup filename mismatch");
+          return artifact;
         } catch (error) {
           logger.error("Failed to read backup sidecar", { file, error });
           return null;
