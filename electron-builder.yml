@@ -5,11 +5,12 @@ directories:
   buildResources: build
 extraResources:
   - ludusavi
-  - hydra-python-rpc
   - hydra-native
   - seeds
   - from: resources/achievement.wav
 files:
+  - "!.cache/**"
+  - "!native/torrent-bridge/**"
   - "!**/.vscode/*"
   - "!src/*"
   - "!native/hydra-native/target"

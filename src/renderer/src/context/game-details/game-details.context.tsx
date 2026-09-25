@@ -32,6 +32,7 @@ import {
   ACCOUNTLESS,
   applyHosterAvailability,
   fetchHosterAvailability,
+  filterDownloadableRepacks,
   getGameExecutableFilters,
   SteamContentDescriptor,
 } from "@shared";
@@ -472,9 +473,11 @@ export function GameDetailsContextProvider({
 
         if (cancelled) return;
 
-        const downloadOptions = ensureArray<GameRepack>(
-          downloads,
-          `/games/${shop}/${objectId}/download-sources`
+        const downloadOptions = filterDownloadableRepacks(
+          ensureArray<GameRepack>(
+            downloads,
+            `/games/${shop}/${objectId}/download-sources`
+          )
         );
 
         setRepacks(downloadOptions);

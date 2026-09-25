@@ -43,9 +43,11 @@ import "./styles/globals.scss";
 export default function App() {
   ensureBigPictureI18nResources();
 
+  const { t } = useTranslation();
   const { pathname } = useLocation();
-  const { t } = useTranslation("app");
+  const { t: tApp } = useTranslation("app");
   const navigate = useNavigate();
+  const { showErrorToast } = useBigPictureToast();
   const { nodes, regions, setFocusRegion } = useNavigation();
   const { showWarningToast } = useBigPictureToast();
   const userPreferences = useUserPreferences();
@@ -80,6 +82,61 @@ export default function App() {
       }
     });
   }, [navigate]);
+
+  useEffect(() => {
+    if (!IS_DESKTOP) return;
+
+    const unsubscribeExtractionFailed =
+      globalThis.window.electron.onExtractionFailed(
+        (_shop, _objectId, failure) => {
+          if (failure?.reason === "unsupported-format") {
+            showErrorToast(
+              t("extraction_unsupported_format_title", { ns: "downloads" }),
+              {
+                message: t("extraction_unsupported_format_description", {
+                  ns: "downloads",
+                  format: failure.format,
+                }),
+              }
+            );
+            return;
+          }
+
+          if (failure?.reason === "file-not-found") {
+            showErrorToast(
+              t("extraction_file_not_found_title", { ns: "downloads" }),
+              {
+                message: t("extraction_file_not_found_description", {
+                  ns: "downloads",
+                }),
+              }
+            );
+            return;
+          }
+
+          showErrorToast(t("extraction_failed_title", { ns: "downloads" }), {
+            message: t("extraction_failed_description", { ns: "downloads" }),
+          });
+        }
+      );
+
+    const unsubscribeExecutableNotFound =
+      globalThis.window.electron.onGameExecutableNotFound(() => {
+        showErrorToast(
+          t("executable_not_found_title", { ns: "game_details" }),
+          {
+            message: t("executable_not_found_big_picture_description", {
+              ns: "game_details",
+            }),
+          }
+        );
+      });
+
+    return () => {
+      unsubscribeExtractionFailed();
+      unsubscribeExecutableNotFound();
+    };
+  }, [showErrorToast, t]);
 
   useEffect(() => {
     setPendingRouteFocusPathname(pathname);
@@ -130,10 +187,10 @@ export default function App() {
         if (!missing.length) return;
 
         const message = missing
-          .map((tool) => t(`host_tool_missing_${tool}`))
+          .map((tool) => tApp(`host_tool_missing_${tool}`))
           .join(" ");
 
-        showWarningToast(t("host_tools_missing_title"), {
+        showWarningToast(tApp("host_tools_missing_title"), {
           message,
           duration: 10000,
           fallbackVisual: "settings",
@@ -142,7 +199,7 @@ export default function App() {
       .catch(() => {
         // Best-effort only: a failed probe must never disrupt startup.
       });
-  }, [t, showWarningToast]);
+  }, [tApp, showWarningToast]);
 
   // Non-blocking cloud-save conflict notice. "kept-both": local was backed up
   // and the newer remote loaded. "kept-local": the local backup failed, so the
@@ -157,8 +214,8 @@ export default function App() {
             ? "cloud_sync_conflict_kept_local_message"
             : "cloud_sync_conflict_message";
 
-        showWarningToast(t("cloud_sync_conflict_title"), {
-          message: t(messageKey, { hostname: payload.hostname }),
+        showWarningToast(tApp("cloud_sync_conflict_title"), {
+          message: tApp(messageKey, { hostname: payload.hostname }),
           duration: 10000,
           fallbackVisual: "settings",
         });
@@ -166,7 +223,7 @@ export default function App() {
     );
 
     return () => unsubscribe();
-  }, [t, showWarningToast]);
+  }, [tApp, showWarningToast]);
 
   return (
     <Fragment>

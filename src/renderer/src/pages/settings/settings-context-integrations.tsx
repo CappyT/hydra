@@ -2,6 +2,8 @@ import { useTranslation } from "react-i18next";
 import { SettingsDebrid } from "./settings-debrid";
 import { SettingsRetroAchievements } from "./settings-retroachievements";
 import { SettingsSteamGridDb } from "./settings-steamgriddb";
+import { SettingsSteam } from "./settings-steam";
+import { ACCOUNTLESS } from "@shared";
 
 export function SettingsContextIntegrations() {
   const { t } = useTranslation("settings");
@@ -9,6 +11,7 @@ export function SettingsContextIntegrations() {
   return (
     <div className="settings-context-panel">
       <div className="settings-context-panel__group">
+        {!ACCOUNTLESS && <SettingsSteam />}
         <SettingsRetroAchievements />
         <SettingsSteamGridDb />
       </div>

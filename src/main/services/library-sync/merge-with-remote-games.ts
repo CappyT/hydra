@@ -25,6 +25,13 @@ import {
   mergeImportedProfileGame,
   type ImportedProfileGame,
 } from "./merge-imported-profile-game";
+import {
+  resolveLibraryIsDeleted,
+  resolveMissingSteamImport,
+  resolveLibrarySource,
+} from "./resolve-library-source";
+import { mergeLocalAndRemotePlayTime } from "@shared";
+import { mergePersistedAchievementTotals } from "../achievements/achievement-memory-store";
 
 type ProfileGame = {
   id: string;
@@ -33,12 +40,16 @@ type ProfileGame = {
   collectionId?: string | null;
   lastTimePlayed: Date | null;
   playTimeInMilliseconds: number;
+  playTimeInSeconds?: number;
+  runtimeByPlatform?: { hydra?: number; steam?: number } | null;
   hasManuallyUpdatedPlaytime: boolean;
   isFavorite?: boolean;
   isPinned?: boolean;
   achievementCount: number;
   unlockedAchievementCount: number;
   platform?: string | null;
+  source?: string | null;
+  hasActiveSteamImport?: boolean;
   customLibraryImageUrl?: string | null;
   customLibraryHeroImageUrl?: string | null;
   customLogoImageUrl?: string | null;
@@ -198,6 +209,8 @@ const fetchRemoteGames = async (): Promise<ProfileGame[]> => {
   return [...defaultGames, ...classicsGames];
 };
 
+export const fetchRemoteProfileGames = fetchRemoteGames;
+
 const mergeExistingGame = (
   localGame: Game,
   remoteGame: ProfileGame,
@@ -209,16 +222,24 @@ const mergeExistingGame = (
   remoteId: remoteGame.id,
   addedToLibraryAt: localGame.addedToLibraryAt ?? remoteAddedToLibraryAt,
   lastTimePlayed: getLatestLastTimePlayed(localGame, remoteGame),
-  playTimeInMilliseconds: Math.max(
-    localGame.playTimeInMilliseconds,
-    remoteGame.playTimeInMilliseconds
-  ),
+  ...mergeLocalAndRemotePlayTime(localGame, remoteGame),
   favorite: remoteGame.isFavorite ?? localGame.favorite,
   isPinned: remoteGame.isPinned ?? localGame.isPinned,
   collectionIds,
-  achievementCount: remoteGame.achievementCount,
-  unlockedAchievementCount: remoteGame.unlockedAchievementCount,
+  ...mergePersistedAchievementTotals(
+    remoteGame.shop,
+    remoteGame.objectId,
+    localGame,
+    remoteGame
+  ),
   platform: remoteGame.platform ?? localGame.platform,
+  source: resolveLibrarySource(localGame.source, remoteGame.source),
+  hasActiveSteamImport: remoteGame.hasActiveSteamImport === true,
+  isDeleted: resolveLibraryIsDeleted(
+    localGame.isDeleted,
+    remoteGame.source,
+    remoteGame.hasActiveSteamImport === true
+  ),
   ...(canReconcileCustomArtwork
     ? {
         customIconUrl: reconcileCustomAsset(
@@ -255,15 +276,21 @@ const createLocalGame = (
   logoImageUrl: remoteGame.logoImageUrl,
   addedToLibraryAt,
   lastTimePlayed: remoteGame.lastTimePlayed,
-  playTimeInMilliseconds: remoteGame.playTimeInMilliseconds,
+  ...mergeLocalAndRemotePlayTime({ playTimeInMilliseconds: 0 }, remoteGame),
   hasManuallyUpdatedPlaytime: remoteGame.hasManuallyUpdatedPlaytime,
   isDeleted: false,
   favorite: remoteGame.isFavorite ?? false,
   isPinned: remoteGame.isPinned ?? false,
   collectionIds,
-  achievementCount: remoteGame.achievementCount,
-  unlockedAchievementCount: remoteGame.unlockedAchievementCount,
+  ...mergePersistedAchievementTotals(
+    remoteGame.shop,
+    remoteGame.objectId,
+    {},
+    remoteGame
+  ),
   platform: remoteGame.platform ?? null,
+  source: resolveLibrarySource(undefined, remoteGame.source),
+  hasActiveSteamImport: remoteGame.hasActiveSteamImport === true,
   customIconUrl: remoteGame.customIconUrl ?? null,
   customLogoImageUrl: remoteGame.customLogoImageUrl ?? null,
   customHeroImageUrl: remoteGame.customLibraryHeroImageUrl ?? null,
@@ -328,8 +355,28 @@ export const mergeWithRemoteGames = async () => {
     for (const game of remoteGames) {
       await mergeRemoteGame(game, canReconcileCustomArtwork);
     }
+
+    // Keep installations, but hide games removed by destructive Steam cleanup.
+    const remoteKeys = new Set(
+      remoteGames.map((game) => levelKeys.game(game.shop, game.objectId))
+    );
+    for (const [key, game] of await gamesSublevel.iterator().all()) {
+      const missingImportResolution = resolveMissingSteamImport(
+        game,
+        remoteKeys.has(key)
+      );
+      if (missingImportResolution) {
+        await gamesSublevel.put(key, {
+          ...game,
+          ...missingImportResolution,
+        });
+      }
+    }
+
+    return true;
   } catch {
     // Keep local library available when remote sync fails.
+    return false;
   }
 };
 

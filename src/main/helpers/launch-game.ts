@@ -30,6 +30,7 @@ import {
   CloudSync,
   markGameLaunching,
 } from "@main/services";
+import { updateGameRecord } from "@main/services/game-record-updater";
 import { CommonRedistManager } from "@main/services/common-redist-manager";
 import { runAchievementMetadataExport } from "@main/services/achievements/metadata-export";
 import { parseExecutablePath } from "../events/helpers/parse-executable-path";
@@ -696,12 +697,12 @@ const launchGameWithCloudSaveChecks = async (
   }
 
   const updatedGame = game
-    ? { ...updateGameExecutablePath(game, parsedPath), launchOptions }
+    ? await updateGameRecord(gameKey, (currentGame) => ({
+        ...updateGameExecutablePath(currentGame, parsedPath),
+        launchOptions,
+      }))
     : null;
-
-  if (updatedGame) {
-    await gamesSublevel.put(gameKey, updatedGame);
-  }
+  const launchGameRecord = updatedGame ?? game;
 
   await WindowManager.createGameLauncherWindow(shop, objectId);
 
@@ -716,7 +717,7 @@ const launchGameWithCloudSaveChecks = async (
     prefixGenerationOverride,
   } = await prepareLinuxCompatibilityForLaunch(
     parsedPath,
-    game,
+    launchGameRecord,
     objectId,
     shop,
     shouldRunV2AutomaticSync
@@ -758,7 +759,7 @@ const launchGameWithCloudSaveChecks = async (
     redirectBlockedCloudSaveLaunch(
       shop,
       objectId,
-      game?.title ?? objectId,
+      launchGameRecord?.title ?? objectId,
       "openCloudSavePathApproval"
     );
     return null;
@@ -800,7 +801,7 @@ const launchGameWithCloudSaveChecks = async (
       redirectBlockedCloudSaveLaunch(
         shop,
         objectId,
-        game?.title ?? objectId,
+        launchGameRecord?.title ?? objectId,
         "openCloudSaveConflict"
       );
     } else {
@@ -916,7 +917,32 @@ const launchGameWithCloudSaveChecks = async (
   );
 };
 
-export const launchGame = (options: LaunchGameOptions) =>
-  runWithCloudSaveLaunchGate(options.objectId, options.shop, () =>
+const hasLaunchableExecutable = (executablePath: string) => {
+  if (!executablePath || !fs.existsSync(executablePath)) return false;
+
+  try {
+    return fs.existsSync(parseExecutablePath(executablePath));
+  } catch {
+    return false;
+  }
+};
+
+export const launchGame = async (options: LaunchGameOptions) => {
+  if (!hasLaunchableExecutable(options.executablePath)) {
+    logger.warn("Game executable not found", {
+      shop: options.shop,
+      objectId: options.objectId,
+      executablePath: options.executablePath,
+    });
+    WindowManager.sendToAppWindows(
+      "on-game-executable-not-found",
+      options.shop,
+      options.objectId
+    );
+    return null;
+  }
+
+  return runWithCloudSaveLaunchGate(options.objectId, options.shop, () =>
     launchGameWithCloudSaveChecks(options)
   );
+};
