@@ -11,7 +11,7 @@ import { Button, GuideLink } from "@renderer/components";
 import { DropdownMenu } from "@renderer/components/dropdown-menu/dropdown-menu";
 import { getSkuRegion, getSkuRegionFlag } from "@renderer/helpers";
 import { useToast, useUserDetails } from "@renderer/hooks";
-import { formatBytes } from "@shared";
+import { ACCOUNTLESS, formatBytes } from "@shared";
 import type {
   EmulationSavePlatform,
   EmulatorConfig,
@@ -194,7 +194,7 @@ export function LocalEmulatorSavesSection({
                   </span>
                 </div>
 
-                {hasActiveSubscription && (
+                {(ACCOUNTLESS || hasActiveSubscription) && (
                   <DropdownMenu
                     align="end"
                     items={[
