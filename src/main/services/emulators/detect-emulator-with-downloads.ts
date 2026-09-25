@@ -1,7 +1,6 @@
 import path from "node:path";
 
 import { getDownloadsPath } from "../../events/helpers/get-downloads-path.js";
-import { SystemPath } from "../system-path.js";
 import {
   detectEmulator,
   type DetectableBinary,
@@ -13,10 +12,11 @@ export const detectEmulatorWithDownloads = async (
   options?: { resolveVersion?: boolean }
 ): Promise<DetectionResult | null> => {
   const configuredDownloads = await getDownloadsPath().catch(() => null);
-  const defaultDownloads = SystemPath.getPath("downloads");
+  // Emulators install under the configured downloads dir; the user's
+  // ~/Downloads holds arbitrary untrusted files.
   const downloadDirectories = Array.from(
     new Set(
-      [configuredDownloads, defaultDownloads]
+      [configuredDownloads]
         .filter((directory): directory is string => Boolean(directory))
         .map((directory) => path.normalize(directory))
     )

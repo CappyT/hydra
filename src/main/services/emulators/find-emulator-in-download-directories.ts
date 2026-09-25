@@ -149,29 +149,14 @@ const findInDownloadDirectory = (
   executableNames: string[],
   platform: NodeJS.Platform
 ): string | null => {
-  const direct = findDirect(
-    downloadDirectory,
-    [...executableNames, ...binary.macosBundleNames],
-    binary
-  );
-  if (direct) return direct;
-
-  const managed = findInNamedEmulatorDirectories(
+  // Game downloads are hostile, and detection probes the found binary with
+  // --version outside the sandbox: only trust the emulator install directory.
+  return findInNamedEmulatorDirectories(
     downloadDirectory,
     binary,
     executableNames,
     platform
   );
-  if (managed) return managed;
-
-  const portable = findInNestedDirectories(
-    downloadDirectory,
-    [...executableNames, ...binary.macosBundleNames],
-    binary,
-    platform
-  );
-  if (portable) return portable;
-  return null;
 };
 
 export const findEmulatorInDownloadDirectories = (
