@@ -35,11 +35,12 @@ Target hardware: Fedora desktop (AMD/Wayland/GNOME) and a Steam Deck
   sidebar double-click, Steam shortcuts via deep link, CLI) must route through
   `launchGame` → `wrapWithSandbox`. When merging upstream, audit any new or
   changed launch path for bypasses (a raw `shell.openPath(exe)` in the tray
-  was a real security hole once). **Emulator launches are the one intentional
-  exemption** (owner decision): classics discs and RetroArch ROMs spawn the
-  emulator unsandboxed like upstream, because emulator binaries have verifiable
-  provenance and are mostly open source. The sandbox covers game executables
-  launched through `launchGame`.
+  was a real security hole once; upstream's `steam://rungameid` launch for
+  Steam-library games is another bypass and stays disabled). **Emulator
+  launches are the one intentional exemption** (owner decision): classics discs
+  and RetroArch ROMs spawn the emulator unsandboxed like upstream, because
+  emulator binaries have verifiable provenance and are mostly open source. The
+  sandbox covers game executables launched through `launchGame`.
 - **Gate, don't delete.** Account-only features are guarded behind
   `ACCOUNTLESS`, never removed — deleting diverges harder than gating.
   Cloud/subscription upsell UI (buttons, banners, "Hydra Cloud benefit"

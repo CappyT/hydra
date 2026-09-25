@@ -61,10 +61,15 @@ The fork's CI is kept lean for fast release turnaround:
   lets Gear Lever / AppImageUpdate discover updates) and a `.zsync` file, derives the tag
   `v<package.json version>`, and creates a **draft** release with the
   AppImage + `latest-linux.yml` + `.zsync` (all needed for auto-update). Publish the draft
-  manually, or via `gh release edit v<version> --draft=false --latest`. Redundant steps
-  (rpm tooling, a duplicate Python-RPC build already done by `build:linux`, and the
-  duplicate `upload-artifact`) were removed; Python setup + `build:linux` (which builds the
-  Python RPC and native addon) are retained.
+  manually, or via `gh release edit v<version> --draft=false --latest`.
+
+Both workflows build the native addon during `yarn install` (postinstall runs
+`build:native`). The addon includes the torrent engine: a Rust wrapper around a C++
+bridge that links libtorrent, Boost and OpenSSL statically. vcpkg builds them from
+source at a pinned baseline (`native/torrent-bridge/vcpkg.json`), so the jobs install
+`build-essential cmake ninja-build pkg-config autoconf automake libtool` first and
+cache the vcpkg binary packages per runner image. For a local build on Fedora, install
+`gcc-c++ cmake ninja-build autoconf automake libtool perl`.
 
 To cut a release: `git push origin main:release/<version>` (fast-forward), let the workflow
 build the draft, then publish it. To replace a bad release, delete the release + tag first
@@ -321,6 +326,22 @@ clicks through `launchGame` — the same path as the library Play button and the
 deep link — so Proton/umu wrapping, the bwrap sandbox, gamescope and save sync
 all apply. It must never `shell.openPath` the raw executable, which would hand
 the `.exe` to the desktop handler and bypass the sandbox entirely.
+
+## Steam games
+
+Upstream launches games from a Steam library through `steam://rungameid/<id>`
+(`resolveSteamProtocolLaunch`). That hands the launch to the Steam client and
+bypasses bwrap, seccomp and pasta, so the fork does not call it: `launchGame`
+runs Steam-library executables through the same sandboxed path as every other
+game. Steam account integration (OAuth, library import, playtime sync) needs a
+Hydra account and stays hidden under `ACCOUNTLESS`.
+
+## Emulator detection
+
+Emulator detection runs the found binary with `--version` on the host. It
+searches the emulator install directory under the configured downloads dir
+(`<downloads>/<Emulator name>`), never the game download folders or
+`~/Downloads`, because a game archive can contain a file with an emulator name.
 
 ## Big Picture launch flag
 
