@@ -326,15 +326,17 @@ export function SettingsContextContentGameplay() {
           }
         />
 
-        <CheckboxField
-          label={t("hide_library_steam_badges")}
-          checked={form.hideSteamLibraryBadges}
-          onChange={() =>
-            handleChange({
-              hideSteamLibraryBadges: !form.hideSteamLibraryBadges,
-            })
-          }
-        />
+        {!ACCOUNTLESS && (
+          <CheckboxField
+            label={t("hide_library_steam_badges")}
+            checked={form.hideSteamLibraryBadges}
+            onChange={() =>
+              handleChange({
+                hideSteamLibraryBadges: !form.hideSteamLibraryBadges,
+              })
+            }
+          />
+        )}
 
         <CheckboxField
           label={t("hide_library_achievement_progress")}

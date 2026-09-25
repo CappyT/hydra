@@ -1,6 +1,7 @@
 import { StackIcon, DeviceDesktopIcon } from "@primer/octicons-react";
 import { useTranslation } from "react-i18next";
 import { SteamIcon } from "@renderer/components/steam-library-badge/steam-library-badge";
+import { ACCOUNTLESS } from "@shared";
 import "./category-filter.scss";
 
 import type { LibraryCategory } from "./library-category";
@@ -73,11 +74,15 @@ export function CategoryFilter({
       label: t("category_pc"),
       icon: <DeviceDesktopIcon size={14} />,
     },
-    {
-      value: "steam_library",
-      label: t("category_steam_library"),
-      icon: <SteamIcon size={14} />,
-    },
+    ...(ACCOUNTLESS
+      ? []
+      : [
+          {
+            value: "steam_library" as const,
+            label: t("category_steam_library"),
+            icon: <SteamIcon size={14} />,
+          },
+        ]),
     {
       value: "classics",
       label: t("category_classics"),

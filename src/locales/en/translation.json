@@ -1846,6 +1846,7 @@
     "step2_body": "Point us at the folders where you keep your games, that's it. Your files stay on your machine.",
     "step3_heading": "Launch, play, sync",
     "step3_body": "Hydra Classics works with a wide range of emulators. Launch any matched game in one click. Hydra Cloud members can safely back up their save data, on all supported emulators, across any devices.",
+    "step3_body_accountless": "Hydra Classics works with a wide range of emulators. Launch any matched game in one click. Back up your save data locally, on all supported emulators.",
     "next": "Next",
     "explore": "Explore",
     "dont_show_again": "Don't show again"

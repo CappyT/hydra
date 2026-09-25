@@ -13,6 +13,7 @@ import {
 import { useId, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Tooltip } from "react-tooltip";
+import { ACCOUNTLESS } from "@shared";
 import {
   ClassicsIcon,
   type LibraryCategory,
@@ -84,11 +85,15 @@ export function SidebarFilterMenu({
       label: t("category_pc", { ns: "library" }),
       icon: <DeviceDesktopIcon size={14} />,
     },
-    {
-      value: "steam_library",
-      label: t("category_steam_library", { ns: "library" }),
-      icon: <SteamIcon size={14} />,
-    },
+    ...(ACCOUNTLESS
+      ? []
+      : [
+          {
+            value: "steam_library" as const,
+            label: t("category_steam_library", { ns: "library" }),
+            icon: <SteamIcon size={14} />,
+          },
+        ]),
     {
       value: "classics",
       label: t("category_classics", { ns: "library" }),

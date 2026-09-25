@@ -9,6 +9,7 @@ import {
   StepTwoIllustration,
 } from "./illustrations";
 
+import { ACCOUNTLESS } from "@shared";
 import "./classics-onboarding-modal.scss";
 
 const STORAGE_KEY = "hydra-classics-onboarding-dismissed";
@@ -70,7 +71,7 @@ export function ClassicsOnboardingModal({
     {
       illustration: <StepThreeIllustration />,
       headingKey: "step3_heading",
-      bodyKey: "step3_body",
+      bodyKey: ACCOUNTLESS ? "step3_body_accountless" : "step3_body",
     },
   ];
 
