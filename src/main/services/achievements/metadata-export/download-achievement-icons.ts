@@ -118,7 +118,11 @@ const downloadIcon = async (icon: ResolvedIcon, signal?: AbortSignal) => {
     signal,
   });
 
-  await fs.promises.writeFile(icon.filePath, Buffer.from(response.data));
+  // The game dir is writable by the sandboxed game: "wx" refuses to follow a
+  // symlink planted after the readdir check and never overwrites a file.
+  await fs.promises.writeFile(icon.filePath, Buffer.from(response.data), {
+    flag: "wx",
+  });
 };
 
 export const downloadAchievementIcons = async ({
