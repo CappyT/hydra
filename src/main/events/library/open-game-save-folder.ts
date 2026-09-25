@@ -13,7 +13,11 @@ const openGameSaveFolder = async (
   return openExistingGameSaveFolder({
     saveFolderPath,
     platform: process.platform,
-    exists: fs.existsSync,
+    // Save paths live in dirs the sandboxed game can write: never hand a
+    // file to xdg-open, it would run with the host's default handler.
+    exists: (folderPath) =>
+      fs.statSync(folderPath, { throwIfNoEntry: false })?.isDirectory() ??
+      false,
     openPath: (folderPath) => shell.openPath(folderPath),
   });
 };
