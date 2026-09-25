@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import type { LibraryGame } from "@types";
+import { ACCOUNTLESS } from "@shared";
 import { Button, VerticalFocusGroup } from "../../../common";
 import { ConfirmationModal } from "../../../modals";
 import { SettingsSection } from "../../../../pages/settings/settings-section";
@@ -28,9 +29,11 @@ function getConfirmationConfig(
       return {
         title: t("reset_achievements"),
         description: t(
-          game.shop === "steam"
-            ? "reset_achievements_steam_description"
-            : "reset_achievements_souvenirs_description",
+          ACCOUNTLESS
+            ? "reset_achievements_description"
+            : game.shop === "steam"
+              ? "reset_achievements_steam_description"
+              : "reset_achievements_souvenirs_description",
           { game: game.title }
         ),
         confirmLabel: t("reset_achievements"),
@@ -154,7 +157,7 @@ export function GameDangerZoneSettingsTab({
           className="game-danger-zone-settings-tab__section"
           title={t("reset_achievements")}
           description={t(
-            game.shop === "steam"
+            !ACCOUNTLESS && game.shop === "steam"
               ? "reset_achievements_steam_description"
               : "reset_achievements_description",
             { game: game.title }

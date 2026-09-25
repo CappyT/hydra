@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { LinkExternalIcon } from "@primer/octicons-react";
 import { Button, CheckboxField, Link, Modal } from "@renderer/components";
 import type { Game } from "@types";
+import { ACCOUNTLESS } from "@shared";
 import "./reset-achievements-modal.scss";
 
 const RETRO_ACHIEVEMENTS_SETTINGS_URL =
@@ -49,9 +50,11 @@ export function ResetAchievementsModal({
       onClose={handleClose}
       title={t("reset_achievements_title")}
       description={t(
-        game.shop === "steam"
-          ? "reset_achievements_hydra_souvenirs_description"
-          : "reset_achievements_souvenirs_description",
+        ACCOUNTLESS
+          ? "reset_achievements_description"
+          : game.shop === "steam"
+            ? "reset_achievements_hydra_souvenirs_description"
+            : "reset_achievements_souvenirs_description",
         { game: game.title }
       )}
     >
