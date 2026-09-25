@@ -125,6 +125,7 @@ import {
   shouldShowSouvenirContentWarning,
   useSouvenirContentWarning,
   getDisplayedPlayTimeInMilliseconds,
+  ACCOUNTLESS,
 } from "@shared";
 
 const SOUVENIR_REPORT_RESPONSE_STATUSES = [201, 400, 404, 429];
@@ -574,21 +575,22 @@ function getExternalProfileActions(
 ): ProfileHeroAction[] {
   if (!profile) return [];
 
-  const giftActions: ProfileHeroAction[] = profile.canReceiveCloudGift
-    ? [
-        {
-          label: "Gift Hydra Cloud",
-          variant: "secondary",
-          icon: <GiftIcon size={20} />,
-          onClick: () => {
-            void globalThis.window.electron.openCheckout({
-              path: "/gift",
-              recipientId: profile.id,
-            });
+  const giftActions: ProfileHeroAction[] =
+    !ACCOUNTLESS && profile.canReceiveCloudGift
+      ? [
+          {
+            label: "Gift Hydra Cloud",
+            variant: "secondary",
+            icon: <GiftIcon size={20} />,
+            onClick: () => {
+              void globalThis.window.electron.openCheckout({
+                path: "/gift",
+                recipientId: profile.id,
+              });
+            },
           },
-        },
-      ]
-    : [];
+        ]
+      : [];
 
   if (profile.relation === null) {
     return [
