@@ -15,6 +15,7 @@ import "./auth";
 import "./autoupdater";
 import "./big-picture";
 import "./catalogue";
+import "./chat";
 import "./cloud-save";
 import "./connectivity";
 import "./download-sources";
@@ -33,6 +34,7 @@ import "./user-preferences";
 import "./library/transfer-game-files";
 import "./emulators";
 import "./retroarch";
+import "./epic";
 
 ipcMain.handle("ping", () => "pong");
 ipcMain.handle("getVersion", () => appVersion);

@@ -25,8 +25,10 @@ import {
 } from "@main/services";
 import resources from "@locales";
 import { TorrentService } from "./services/torrent-service";
+import { DownloadManager } from "./services/download/download-manager";
 import { db, gamesSublevel, levelKeys } from "./level";
 import { GameShop, UserPreferences } from "@types";
+import { ACCOUNTLESS } from "@shared";
 import { launchGame, openClassicsGame } from "./helpers";
 import { logMissingHostToolsOnce } from "./helpers/host-dependencies";
 import { refreshPortableShortcutLauncher } from "./helpers/shortcut-launch";
@@ -42,6 +44,12 @@ import {
   parseSteamOpenIdReturn,
 } from "./services/steam-integration/steam-openid-return";
 import { steamSyncOrchestrator } from "./services/steam-integration/steam-sync-orchestrator";
+import {
+  initializeEpicIntegration,
+  shutdownEpicIntegration,
+  suspendEpicPlaytime,
+  resumeEpicPlaytime,
+} from "./services/epic";
 
 crashReporter.start({
   uploadToServer: false,
@@ -60,9 +68,7 @@ autoUpdater.logger = logger;
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) app.quit();
 
-if (process.platform !== "linux") {
-  app.commandLine.appendSwitch("--no-sandbox");
-} else {
+if (process.platform === "linux") {
   app.commandLine.appendSwitch("ozone-platform-hint", "auto");
 
   // Under Steam's gamescope session (Steam Deck gaming mode), disable Chromium's
@@ -226,6 +232,12 @@ const initializeApp = async () => {
   } catch (error) {
     logger.error("Failed to load app state during startup", error);
   }
+  // Optional integration failures must not interrupt launcher startup.
+  if (!ACCOUNTLESS) {
+    await initializeEpicIntegration().catch(() => {
+      logger.warn("Epic integration initialization unavailable");
+    });
+  }
 
   // One-time startup probe: warn (in the launch log) about any missing optional
   // host tools (bwrap / pasta / gamescope). The user-facing toast is shown by
@@ -233,7 +245,9 @@ const initializeApp = async () => {
   logMissingHostToolsOnce();
 
   // Suspend can outlive the 60s stall watchdog; reconnect right away instead
+  powerMonitor.on("suspend", suspendEpicPlaytime);
   powerMonitor.on("resume", () => {
+    resumeEpicPlaytime();
     SSEClient.reconnectNow();
     DownloadOrchestrator.onNetworkStatusChanged({
       online: true,
@@ -467,7 +481,26 @@ app.on("before-quit", async (e) => {
     e.preventDefault();
     if (isAppClosing) return;
     isAppClosing = true;
+    try {
+      await shutdownEpicIntegration();
+    } catch {
+      isAppClosing = false;
+      logger.error(
+        "Epic operation shutdown is unconfirmed; application remains open"
+      );
+      dialog.showErrorBox(
+        i18n.t("settings.epic_games"),
+        i18n.t("settings.epic_shutdown_failed")
+      );
+      return;
+    }
+    DownloadOrchestrator.cancelPendingDebridPreparations();
     PowerSaveBlockerManager.reset();
+    try {
+      await DownloadManager.pauseDownload();
+    } catch (error) {
+      logger.error("Could not save active download before quitting", error);
+    }
     const results = await Promise.allSettled([
       Lock.releaseLock(),
       TorrentService.shutdown(),

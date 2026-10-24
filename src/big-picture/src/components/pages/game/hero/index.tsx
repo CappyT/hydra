@@ -8,7 +8,7 @@ import {
   XCircleIcon,
 } from "@phosphor-icons/react";
 import type { LibraryGame, ShopDetailsWithAssets } from "@types";
-import { isCloudSaveV2Eligible } from "@shared";
+import { isCloudSaveV2Eligible, isLibraryGameDownloading } from "@shared";
 import { useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -44,6 +44,7 @@ import cn from "classnames";
 export interface HeroProps {
   shopDetails: ShopDetailsWithAssets;
   game: LibraryGame | null;
+  downloadGame?: LibraryGame | null;
   isGameRunning: boolean;
   isFavorite: boolean;
   toggleFavorite: () => void;
@@ -87,6 +88,7 @@ function getSettingsLeftTargetId(
 export function Hero({
   shopDetails,
   game,
+  downloadGame = game,
   isGameRunning,
   isFavorite,
   toggleFavorite,
@@ -135,6 +137,7 @@ export function Hero({
   );
   const isPlayableClassicsGame =
     game?.shop === "launchbox" && (game.discs?.length ?? 0) > 0;
+  const isDownloading = isLibraryGameDownloading(downloadGame);
   const hasPrimaryAction =
     isGameRunning ||
     Boolean(game?.executablePath) ||
@@ -343,6 +346,7 @@ export function Hero({
               color={dominantColor ?? undefined}
               icon={<DownloadSimpleIcon size={24} />}
               onClick={onDownload}
+              disabled={isDownloading}
             >
               Download Game
             </Button>
@@ -406,6 +410,7 @@ export function Hero({
       heroDownNavigationTarget,
       isAddingToLibrary,
       isGameRunning,
+      isDownloading,
       isPlayableClassicsGame,
       installActionType,
       onAddToLibrary,

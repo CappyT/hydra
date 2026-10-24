@@ -4,6 +4,7 @@ import path from "node:path";
 import type { GameShop } from "@types";
 
 import { addTrailingSlash } from "@main/helpers";
+import { runWithHydraSaveGuard } from "@main/services/epic/cloud-saves";
 
 /**
  * Retained for upstream mergeability. The canonical restore implementation now
@@ -36,21 +37,23 @@ const downloadGameArtifact = async (
   shop: GameShop,
   gameArtifactId: string
 ) => {
-  try {
-    await CloudSync.restoreArtifact(shop, objectId, gameArtifactId);
+  return runWithHydraSaveGuard(async () => {
+    try {
+      await CloudSync.restoreArtifact(shop, objectId, gameArtifactId);
 
-    WindowManager.sendToAppWindows(
-      `on-backup-download-complete-${objectId}-${shop}`,
-      true
-    );
-  } catch (err) {
-    logger.error("Failed to download game artifact", err);
+      WindowManager.sendToAppWindows(
+        `on-backup-download-complete-${objectId}-${shop}`,
+        true
+      );
+    } catch (err) {
+      logger.error("Failed to download game artifact", err);
 
-    WindowManager.sendToAppWindows(
-      `on-backup-download-complete-${objectId}-${shop}`,
-      false
-    );
-  }
+      WindowManager.sendToAppWindows(
+        `on-backup-download-complete-${objectId}-${shop}`,
+        false
+      );
+    }
+  });
 };
 
 registerEvent("downloadGameArtifact", downloadGameArtifact);

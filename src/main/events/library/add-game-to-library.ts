@@ -55,6 +55,7 @@ const addGameToLibrary = async (
     game.isDeleted = false;
     game.addedToLibraryAt ??= new Date();
     game.source = "hydra";
+    if (shop === "epic") game.remoteId = null;
     if (resolvedPlatform && !game.platform) game.platform = resolvedPlatform;
 
     await gamesSublevel.put(gameKey, game);

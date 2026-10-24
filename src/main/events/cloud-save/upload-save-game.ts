@@ -1,6 +1,7 @@
 import { CloudSync } from "@main/services";
 import { registerEvent } from "../register-event";
 import type { GameShop } from "@types";
+import { runWithHydraSaveGuard } from "@main/services/epic/cloud-saves";
 
 const uploadSaveGame = async (
   _event: Electron.IpcMainInvokeEvent,
@@ -8,11 +9,13 @@ const uploadSaveGame = async (
   shop: GameShop,
   downloadOptionTitle: string | null
 ) => {
-  const artifact = await CloudSync.uploadSaveGame(
-    objectId,
-    shop,
-    downloadOptionTitle,
-    CloudSync.getBackupLabel(false)
+  const artifact = await runWithHydraSaveGuard(() =>
+    CloudSync.uploadSaveGame(
+      objectId,
+      shop,
+      downloadOptionTitle,
+      CloudSync.getBackupLabel(false)
+    )
   );
 
   // Advance the sync marker to this manual backup and enforce retention so the

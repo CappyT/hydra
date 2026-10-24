@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+
 import { describe, it } from "node:test";
 import { runInNewContext } from "node:vm";
 import type { IpcMainInvokeEvent } from "electron";
@@ -132,6 +133,9 @@ const runDownload = async (
     "@shared": { ACCOUNTLESS: true, formatDate: () => "" },
     "./cloud-save/legacy-cloud-save-policy": {
       assertLegacyCloudSaveWriteAllowed: () => {},
+    },
+    "@main/services/epic/cloud-saves": {
+      runWithHydraSaveGuard: <T>(task: () => Promise<T>) => task(),
     },
     i18next: { language: "en", t: () => "" },
     "./system-path": {

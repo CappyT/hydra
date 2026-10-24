@@ -4,6 +4,7 @@ import { Trans, useTranslation } from "react-i18next";
 import {
   Button,
   CheckboxField,
+  GuideLink,
   Link,
   Modal,
   TextField,
@@ -11,23 +12,14 @@ import {
 import { ACCOUNTLESS } from "@shared";
 import { useAppSelector, useToast } from "@renderer/hooks";
 import { settingsContext } from "@renderer/context";
-import {
-  AlertIcon,
-  CheckCircleFillIcon,
-  ChevronRightIcon,
-  LinkExternalIcon,
-  PersonIcon,
-  QuestionIcon,
-  SyncIcon,
-} from "@primer/octicons-react";
+import { LinkExternalIcon, PersonIcon, SyncIcon } from "@primer/octicons-react";
 
 import retroAchievementsLogo from "@renderer/assets/icons/retroachievements.png";
 import {
-  readStoredSectionCollapsed,
-  storeSectionCollapsed,
-} from "./collapsed-sections";
+  SettingsIntegrationCard,
+  SettingsIntegrationLastSynced,
+} from "./settings-integration-card";
 
-import "./settings-debrid.scss";
 import "./settings-retroachievements.scss";
 
 const RETRO_ACHIEVEMENTS_URL = "https://retroachievements.org";
@@ -40,7 +32,6 @@ const RETRO_ACHIEVEMENTS_USER_PIC_URL =
   "https://media.retroachievements.org/UserPic";
 
 const STATUS_ICON_SIZE = 14;
-const CHEVRON_ICON_SIZE = 16;
 const AVATAR_FALLBACK_ICON_SIZE = 28;
 
 type RetroAchievementsIntegration =
@@ -65,6 +56,7 @@ export function SettingsRetroAchievements() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
   const [integration, setIntegration] = useState<RetroAchievementsIntegration>({
     connected: false,
   });
@@ -73,12 +65,6 @@ export function SettingsRetroAchievements() {
     password: "",
     webApiKey: userPreferences?.retroAchievementsWebApiKey ?? "",
   }));
-  const [isCollapsed, setIsCollapsed] = useState(() =>
-    readStoredSectionCollapsed(
-      "retroachievements",
-      !userPreferences?.retroAchievementsWebApiKey
-    )
-  );
   const [avatarError, setAvatarError] = useState(false);
   const [showDisconnectModal, setShowDisconnectModal] = useState(false);
   const [showDeleteAchievementsModal, setShowDeleteAchievementsModal] =
@@ -87,6 +73,9 @@ export function SettingsRetroAchievements() {
     useState(true);
 
   const connectedUsername = integration.connected ? integration.username : null;
+  const isInvalid =
+    integration.connected &&
+    integration.retroAchievementsAccountStatus === "invalid_credentials";
 
   useEffect(() => {
     setAvatarError(false);
@@ -119,7 +108,10 @@ export function SettingsRetroAchievements() {
     globalThis.window.electron.hydraApi
       .get<RetroAchievementsIntegration>(INTEGRATION_ENDPOINT)
       .then((status) => {
-        if (active) setIntegration(status);
+        if (active) {
+          setIntegration(status);
+          setLastCheckedAt(new Date().toISOString());
+        }
       })
       .catch(() => {
         if (active) setIntegration({ connected: false });
@@ -196,6 +188,7 @@ export function SettingsRetroAchievements() {
           retroAchievementsUserId: result.userId,
           retroAchievementsAccountStatus: "active",
         });
+        setLastCheckedAt(new Date().toISOString());
         setForm((prev) => ({ ...prev, password: "" }));
         showSuccessToast(t("retroachievements_account_linked"));
         return;
@@ -215,6 +208,7 @@ export function SettingsRetroAchievements() {
         );
 
       setIntegration(status);
+      setLastCheckedAt(new Date().toISOString());
       setForm((prev) => ({ ...prev, password: "" }));
       showSuccessToast(t("retroachievements_account_linked"));
 
@@ -265,6 +259,7 @@ export function SettingsRetroAchievements() {
         }).catch(() => {});
 
         setIntegration({ connected: false });
+        setLastCheckedAt(null);
         setForm({ username: "", password: "", webApiKey: "" });
         showSuccessToast(t("retroachievements_account_unlinked"));
         return;
@@ -285,6 +280,7 @@ export function SettingsRetroAchievements() {
       }
 
       setIntegration({ connected: false });
+      setLastCheckedAt(null);
       setForm({ username: "", password: "", webApiKey: "" });
       showSuccessToast(t("retroachievements_account_unlinked"));
 
@@ -322,6 +318,7 @@ export function SettingsRetroAchievements() {
               ? "active"
               : "invalid_credentials",
           });
+          setLastCheckedAt(new Date().toISOString());
           showSuccessToast(t("retroachievements_status_updated"));
         }
 
@@ -334,6 +331,7 @@ export function SettingsRetroAchievements() {
         );
 
       setIntegration(status);
+      setLastCheckedAt(new Date().toISOString());
       showSuccessToast(t("retroachievements_status_updated"));
 
       await updateUserPreferences({
@@ -346,13 +344,6 @@ export function SettingsRetroAchievements() {
     }
   };
 
-  const toggleCollapsed = () => {
-    const nextCollapsed = !isCollapsed;
-
-    storeSectionCollapsed("retroachievements", nextCollapsed);
-    setIsCollapsed(nextCollapsed);
-  };
-
   const isConnectDisabled =
     !form.username.trim() ||
     // Accountless connect uses only the username + Web API key (RA Web API),
@@ -363,98 +354,49 @@ export function SettingsRetroAchievements() {
 
   const emulatorNote = (
     <p className="settings-retroachievements__emulator-note">
-      {t("retroachievements_emulator_note")}{" "}
-      <small
-        className="settings-retroachievements__guide-tooltip"
-        data-open-article="retroachievements-emulators"
+      <GuideLink
+        article="retroachievements-emulators"
         title={t("retroachievements_view_guide")}
       >
-        <QuestionIcon size={12} />
-      </small>
+        {t("retroachievements_emulator_note")}
+      </GuideLink>
     </p>
   );
 
   const renderBody = () => {
-    if (isLoading) {
-      return (
-        <p className="settings-retroachievements__description">
-          {t("retroachievements_loading")}
-        </p>
-      );
-    }
-
     if (integration.connected) {
-      const isInvalid =
-        integration.retroAchievementsAccountStatus === "invalid_credentials";
-
       return (
-        <div className="settings-retroachievements__connected-container">
-          <div className="settings-retroachievements__connected">
-            <div className="settings-retroachievements__profile">
-              <div className="settings-retroachievements__avatar">
-                {avatarError ? (
-                  <PersonIcon size={AVATAR_FALLBACK_ICON_SIZE} />
-                ) : (
-                  <img
-                    src={`${RETRO_ACHIEVEMENTS_USER_PIC_URL}/${encodeURIComponent(
-                      integration.username
-                    )}.png`}
-                    alt={integration.username}
-                    onError={() => setAvatarError(true)}
-                  />
-                )}
-              </div>
-
-              <div className="settings-retroachievements__account">
-                <span className="settings-retroachievements__username">
-                  {integration.username}
-                </span>
-                <span
-                  className={`settings-retroachievements__status ${
-                    isInvalid
-                      ? "settings-retroachievements__status--warning"
-                      : ""
-                  }`}
-                >
-                  {isInvalid ? (
-                    <AlertIcon size={STATUS_ICON_SIZE} />
-                  ) : (
-                    <CheckCircleFillIcon size={STATUS_ICON_SIZE} />
-                  )}
-                  {isInvalid
-                    ? t("retroachievements_status_invalid_credentials")
-                    : t("retroachievements_status_active")}
-                </span>
-              </div>
-            </div>
-
-            <div className="settings-retroachievements__actions">
-              {!isInvalid && (
-                <Button
-                  theme="outline"
-                  onClick={handleRefresh}
-                  disabled={isRefreshing || isSubmitting}
-                >
-                  <SyncIcon size={STATUS_ICON_SIZE} />
-                  {t("retroachievements_update")}
-                </Button>
+        <>
+          <div className="settings-integration-card__profile">
+            <div className="settings-integration-card__avatar">
+              {avatarError ? (
+                <PersonIcon size={AVATAR_FALLBACK_ICON_SIZE} />
+              ) : (
+                <img
+                  src={`${RETRO_ACHIEVEMENTS_USER_PIC_URL}/${encodeURIComponent(
+                    integration.username
+                  )}.png`}
+                  alt={integration.username}
+                  onError={() => setAvatarError(true)}
+                />
               )}
-
-              <Button
-                theme="danger"
-                onClick={() => {
-                  setDeleteAchievementsOnDisconnect(true);
-                  setShowDisconnectModal(true);
-                }}
-                disabled={isSubmitting || isRefreshing}
-              >
-                {t("retroachievements_disconnect")}
-              </Button>
+            </div>
+            <div className="settings-integration-card__account">
+              <span className="settings-integration-card__username">
+                {integration.username}
+              </span>
+              <SettingsIntegrationLastSynced lastSyncedAt={lastCheckedAt} />
             </div>
           </div>
 
+          {isInvalid ? (
+            <p className="settings-integration-card__message">
+              {t("retroachievements_invalid_credentials_description")}
+            </p>
+          ) : null}
+
           {emulatorNote}
-        </div>
+        </>
       );
     }
 
@@ -525,61 +467,55 @@ export function SettingsRetroAchievements() {
     );
   };
 
+  const renderActions = () => {
+    if (!integration.connected) return null;
+
+    return (
+      <>
+        {!isInvalid && (
+          <Button
+            theme="outline"
+            onClick={handleRefresh}
+            disabled={isRefreshing || isSubmitting}
+          >
+            <SyncIcon size={STATUS_ICON_SIZE} />
+            {t("integration_sync")}
+          </Button>
+        )}
+        <Button
+          theme="danger"
+          onClick={() => {
+            setDeleteAchievementsOnDisconnect(true);
+            setShowDisconnectModal(true);
+          }}
+          disabled={isSubmitting || isRefreshing}
+        >
+          {t("integration_disconnect")}
+        </Button>
+      </>
+    );
+  };
+
+  const status = isInvalid
+    ? t("retroachievements_status_invalid_credentials")
+    : integration.connected
+      ? t("retroachievements_status_active")
+      : t("integration_status_not_connected");
+
   return (
     <>
-      <div
-        className={`settings-debrid__section ${
-          isCollapsed ? "" : "settings-debrid__section--expanded"
-        }`}
+      <SettingsIntegrationCard
+        title={t("retroachievements")}
+        logo={<img src={retroAchievementsLogo} alt="" />}
+        status={status}
+        statusTone={
+          isInvalid ? "warning" : integration.connected ? "success" : "neutral"
+        }
+        actions={renderActions()}
+        loading={isLoading}
       >
-        <div className="settings-debrid__section-header">
-          <button
-            type="button"
-            className="settings-debrid__collapse-button"
-            onClick={toggleCollapsed}
-            aria-label={
-              isCollapsed
-                ? t("expand_debrid_section", {
-                    provider: t("retroachievements"),
-                  })
-                : t("collapse_debrid_section", {
-                    provider: t("retroachievements"),
-                  })
-            }
-          >
-            <span
-              className={`settings-debrid__collapse-icon ${
-                isCollapsed ? "" : "settings-debrid__collapse-icon--expanded"
-              }`}
-            >
-              <ChevronRightIcon size={CHEVRON_ICON_SIZE} />
-            </span>
-          </button>
-          <h3 className="settings-debrid__section-title">
-            {t("retroachievements")}
-          </h3>
-          <img
-            src={retroAchievementsLogo}
-            alt=""
-            className="settings-retroachievements__title-logo"
-          />
-          {integration.connected &&
-            (integration.retroAchievementsAccountStatus ===
-            "invalid_credentials" ? (
-              <AlertIcon
-                size={CHEVRON_ICON_SIZE}
-                className="settings-retroachievements__header-icon--warning"
-              />
-            ) : (
-              <CheckCircleFillIcon
-                size={CHEVRON_ICON_SIZE}
-                className="settings-debrid__check-icon"
-              />
-            ))}
-        </div>
-
-        {!isCollapsed && renderBody()}
-      </div>
+        {renderBody()}
+      </SettingsIntegrationCard>
 
       <Modal
         visible={showDisconnectModal}

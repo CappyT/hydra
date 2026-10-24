@@ -8,6 +8,22 @@ const { getCloudSaveVisibility, isLegacyCloudSaveSettingsAvailable } =
   visibilityModule;
 
 describe("cloud save visibility", () => {
+  it("keeps local backups active and hides V2 for Epic games", () => {
+    const visibility = getCloudSaveVisibility("epic");
+    assert.deepEqual(visibility, {
+      hero: "legacy",
+      settings: {
+        showV2: false,
+        showLegacy: true,
+        legacyPurpose: "active",
+      },
+    });
+    assert.equal(
+      isLegacyCloudSaveSettingsAvailable(visibility.settings, false, 0),
+      true
+    );
+  });
+
   it("keeps the legacy local backup active for Steam (accountless fork)", () => {
     assert.deepEqual(getCloudSaveVisibility("steam"), {
       hero: "legacy",

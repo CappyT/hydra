@@ -49,6 +49,7 @@ import { ClassicsScanModal } from "./pages/settings/emulation/classics-scan-moda
 import { RetroArchScanModal } from "./pages/settings/emulation/retroarch-scan-modal";
 import { CloudGiftNotificationModal } from "./pages/shared-modals/cloud-gift-notification-modal";
 import { ACCOUNTLESS } from "@shared";
+import { playMessageSound } from "./pages/chat-window/chat-sounds";
 
 import type { UserPreferences } from "@types";
 import "./app.scss";
@@ -662,6 +663,15 @@ export function App() {
       unsubscribe();
     };
   }, [playAudio]);
+
+  // Sent here when the chat window is closed or still loading.
+  useEffect(() => {
+    if (ACCOUNTLESS) return;
+
+    return window.electron.onChatMessageSound(() => {
+      void playMessageSound();
+    });
+  }, []);
 
   const handleToastClose = useCallback(() => {
     dispatch(closeToast());

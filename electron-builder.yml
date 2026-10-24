@@ -8,6 +8,8 @@ extraResources:
   - hydra-native
   - seeds
   - from: resources/achievement.wav
+  - from: "src/big-picture/src/assets/audio/Favorite Sound.wav"
+    to: chat-message.wav
 files:
   - "!.cache/**"
   - "!native/torrent-bridge/**"

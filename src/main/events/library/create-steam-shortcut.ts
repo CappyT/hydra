@@ -1,3 +1,4 @@
+import { updateGameRecord } from "@main/services/game-record-updater";
 import { registerEvent } from "../register-event";
 import type { Game, GameShop, ShopAssets, SteamShortcut } from "@types";
 import { gamesSublevel, levelKeys } from "@main/level";
@@ -233,8 +234,7 @@ const createSteamShortcut = async (
     ]);
   }
 
-  await gamesSublevel.put(gameKey, {
-    ...game,
+  await updateGameRecord(gameKey, {
     steamShortcutAppId: newShortcut.appid,
   });
 

@@ -1,3 +1,4 @@
+import { libraryWriteQueue } from "../services/library-sync/library-write-queue";
 import {
   db,
   downloadsSublevel,
@@ -43,9 +44,15 @@ export const prepareGameEntry = async ({
   await downloadsSublevel.del(gameKey);
 
   if (game) {
-    await gamesSublevel.put(gameKey, {
-      ...game,
-      isDeleted: false,
+    await libraryWriteQueue.run(async () => {
+      const latest = await gamesSublevel.get(gameKey);
+      if (!latest) return;
+      await gamesSublevel.put(gameKey, {
+        ...latest,
+        isDeleted: false,
+        source: "hydra",
+        ...(shop === "epic" ? { remoteId: null } : {}),
+      });
     });
   } else {
     const userPreferences = await db
