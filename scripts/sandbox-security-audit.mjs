@@ -175,7 +175,12 @@ const main = async () => {
       if (result.signal)
         throw new Error(`${name}: payload timed out or was killed`);
       if (result.code !== 0) {
-        if (name === "pasta-setup-failure" && !fs.existsSync(started)) {
+        if (
+          name === "pasta-setup-failure" &&
+          result.code === 125 &&
+          result.stderr.includes("[hydra-net]") &&
+          !fs.existsSync(started)
+        ) {
           check("failed network setup refuses payload execution", true);
           continue;
         }

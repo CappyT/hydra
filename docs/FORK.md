@@ -131,8 +131,13 @@ See [the security audit](SECURITY-AUDIT-2026-09-10.md) and
 The selftest consumes the updated sibling
 [`hydra-sandbox-probe`](https://github.com/CappyT/hydra-sandbox-probe) and the
 app's unmodified `buildSandboxArgs`, with medium seccomp, pasta/DNS, machine-id
-and the production environment scrubber. It requires the five new hardening
-checks and verifies four negative controls with intentionally weakened fixtures.
+and the production environment scrubber. It requires all hardening checks,
+including SysV IPC isolation and native/i386/NUMA seccomp probes, and verifies
+host-side that game and Wine writes land in the intended directories. Negative
+controls cover missing seccomp and network isolation, shared SysV IPC, an
+exposed runtime, an injected fake secret and gateway loopback remapping.
+Payload sentinels also prove that invalid pasta and a truncated seccomp filter
+refuse execution.
 
 ```bash
 # 1. build the probe once (sibling checkout, next to this repo)
