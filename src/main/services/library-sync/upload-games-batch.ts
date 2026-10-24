@@ -5,11 +5,11 @@ import { WindowManager } from "../window-manager";
 import { AchievementWatcherManager } from "../achievements/achievement-watcher-manager";
 import { gamesSublevel } from "@main/level";
 import { ACCOUNTLESS } from "@shared";
+import { trackRemoteLibrarySync } from "./remote-library-sync-state";
 
-export const uploadGamesBatch = async () => {
-  // The remote upload/merge is skipped in accountless mode; the local
-  // achievement pre-search and the "library ready" event still run so the
-  // renderer library keeps loading normally.
+const uploadLocalGamesAndMerge = async () => {
+  // Local achievement discovery and the library-ready event still run without
+  // an account; only the remote profile upload and merge are skipped.
   if (!ACCOUNTLESS) {
     const games = await gamesSublevel
       .values()
@@ -47,3 +47,8 @@ export const uploadGamesBatch = async () => {
   if (WindowManager.mainWindow)
     WindowManager.sendToAppWindows("on-library-batch-complete");
 };
+
+export const uploadGamesBatch = () =>
+  ACCOUNTLESS
+    ? uploadLocalGamesAndMerge()
+    : trackRemoteLibrarySync(uploadLocalGamesAndMerge);

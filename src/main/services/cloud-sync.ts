@@ -23,7 +23,8 @@ import { sanitizeSandboxGameKey } from "@main/helpers/sandbox-launch";
 import { logger } from "./logger";
 import { WindowManager } from "./window-manager";
 import { Ludusavi } from "./ludusavi";
-import { formatDate } from "@shared";
+import { ACCOUNTLESS, formatDate } from "@shared";
+import { assertLegacyCloudSaveWriteAllowed } from "./cloud-save/legacy-cloud-save-policy";
 import i18next, { t } from "i18next";
 import { SystemPath } from "./system-path";
 import { Wine } from "./wine";
@@ -122,6 +123,7 @@ export class CloudSync {
     label?: string
   ): Promise<LocalArtifact> {
     const game = await gamesSublevel.get(levelKeys.game(shop, objectId));
+    if (!ACCOUNTLESS) assertLegacyCloudSaveWriteAllowed(game);
     const effectiveWinePrefixPath = Wine.getEffectivePrefixPath(
       game?.winePrefixPath,
       objectId

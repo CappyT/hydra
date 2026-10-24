@@ -3,6 +3,7 @@ import type { GameShop } from "@types";
 // runner, which resolves neither the @shared alias nor extensionless ESM.
 // @ts-ignore The Node ESM test runner requires the source extension.
 import { ACCOUNTLESS } from "../../../../shared/accountless.ts";
+import { getCloudSaveEmulatorProvider } from "../../../../shared/cloud-save-emulator-provider.js";
 
 export type CloudSaveUiMode = "legacy" | "v2";
 export type LegacyCloudSavePurpose = "active" | "archive";
@@ -27,7 +28,10 @@ export const isLegacyCloudSaveSettingsAvailable = (
   (settings.legacyPurpose === "active" ||
     (hasActiveSubscription && artifactCount > 0));
 
-export const getCloudSaveVisibility = (shop: GameShop): CloudSaveVisibility => {
+export const getCloudSaveVisibility = (
+  shop: GameShop,
+  platform?: string | null
+): CloudSaveVisibility => {
   // Accountless fork: the v2 native cloud save needs an account plus
   // subscription, while the legacy pipeline IS the local backup system —
   // it stays the active save UI for every shop.
@@ -54,6 +58,16 @@ export const getCloudSaveVisibility = (shop: GameShop): CloudSaveVisibility => {
   }
 
   if (shop === "launchbox") {
+    if (getCloudSaveEmulatorProvider(shop, platform)) {
+      return {
+        hero: "v2",
+        settings: {
+          showV2: true,
+          showLegacy: true,
+          legacyPurpose: "archive",
+        },
+      };
+    }
     return {
       hero: "legacy",
       settings: {

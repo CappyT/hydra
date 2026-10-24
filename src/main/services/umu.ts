@@ -21,6 +21,7 @@ import { buildGamescopeWrapper } from "@main/helpers/resolve-gamescope-wrapper";
 import { Sandbox } from "./sandbox";
 import { evaluateUmuPrefixPreparation } from "./umu-prefix-preparation";
 import { Wine } from "./wine";
+import { getSteamLibraryFolders } from "./steam";
 
 const isValidProtonDirectory = (directoryPath: string) => {
   const protonFilePath = path.join(directoryPath, "proton");
@@ -114,6 +115,14 @@ const ensureExecutablePermission = (binaryPath: string) => {
   }
 };
 
+const STEAM_ROOT_SEGMENTS = [
+  [".steam", "steam"],
+  [".local", "share", "Steam"],
+  [".var", "app", "com.valvesoftware.Steam", ".local", "share", "Steam"],
+  [".var", "app", "com.valvesoftware.Steam", "data", "Steam"],
+  ["snap", "steam", "common", ".local", "share", "Steam"],
+];
+
 const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 
 export class Umu {
@@ -123,33 +132,33 @@ export class Umu {
 
   public static async getInstalledProtonVersions(): Promise<ProtonVersion[]> {
     const homePath = SystemPath.getPath("home");
+    const steamRoots = STEAM_ROOT_SEGMENTS.map((segments) =>
+      path.join(homePath, ...segments)
+    );
+    const libraryFolders = await getSteamLibraryFolders().catch(() => []);
 
-    const steamCommonPath = path.join(
-      homePath,
-      ".steam",
-      "steam",
-      "steamapps",
-      "common"
-    );
-    const compatibilityToolsPath = path.join(
-      homePath,
-      ".steam",
-      "steam",
-      "compatibilitytools.d"
-    );
-    const systemCompatibilityToolsPath = path.join(
-      "/usr",
-      "share",
-      "steam",
-      "compatibilitytools.d"
-    );
+    const steamCommonPaths = [
+      ...new Set(
+        [...steamRoots, ...libraryFolders].map((root) =>
+          path.join(root, "steamapps", "common")
+        )
+      ),
+    ];
+    const compatibilityToolPaths = [
+      ...steamRoots.map((root) => path.join(root, "compatibilitytools.d")),
+      path.join("/usr", "share", "steam", "compatibilitytools.d"),
+    ];
 
     const versions: ProtonVersion[] = [];
 
-    if (fs.existsSync(steamCommonPath)) {
-      const steamCommonEntries = await fs.promises.readdir(steamCommonPath, {
-        withFileTypes: true,
-      });
+    for (const steamCommonPath of steamCommonPaths) {
+      if (!fs.existsSync(steamCommonPath)) {
+        continue;
+      }
+
+      const steamCommonEntries = await fs.promises
+        .readdir(steamCommonPath, { withFileTypes: true })
+        .catch(() => [] as fs.Dirent[]);
 
       for (const entry of steamCommonEntries) {
         if (!entry.isDirectory() || !entry.name.startsWith("Proton")) {
@@ -172,22 +181,14 @@ export class Umu {
       }
     }
 
-    const compatibilityToolPaths = [
-      compatibilityToolsPath,
-      systemCompatibilityToolsPath,
-    ];
-
     for (const compatibilityToolPath of compatibilityToolPaths) {
       if (!fs.existsSync(compatibilityToolPath)) {
         continue;
       }
 
-      const compatibilityToolEntries = await fs.promises.readdir(
-        compatibilityToolPath,
-        {
-          withFileTypes: true,
-        }
-      );
+      const compatibilityToolEntries = await fs.promises
+        .readdir(compatibilityToolPath, { withFileTypes: true })
+        .catch(() => [] as fs.Dirent[]);
 
       for (const entry of compatibilityToolEntries) {
         if (!entry.isDirectory()) {

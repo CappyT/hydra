@@ -102,7 +102,7 @@ export function GameSettingsModal({
     if (visible) {
       setActiveTabId("launch");
     }
-  }, []);
+  }, [visible]);
 
   const launchContent = useMemo(
     () => <GameLaunchSettingsTab {...launchSettings} />,
@@ -157,13 +157,19 @@ export function GameSettingsModal({
   // always available (except for custom games); the v2 tab needs an account.
   const shouldShowCloudV2Tab =
     !ACCOUNTLESS &&
-    shouldShowCloudSaveV2Tab(game.shop, isSignedIn, hasActiveSubscription);
+    shouldShowCloudSaveV2Tab(
+      game.shop,
+      isSignedIn,
+      hasActiveSubscription,
+      game.platform
+    );
   const shouldShowLegacyCloudTab = ACCOUNTLESS
     ? game.shop !== "custom"
     : shouldShowLegacyCloudSaveTab(
         game.shop,
         isSignedIn,
-        hasActiveSubscription
+        hasActiveSubscription,
+        game.platform
       );
 
   useEffect(() => {
@@ -207,7 +213,11 @@ export function GameSettingsModal({
         ? [
             {
               id: "hydra_cloud_legacy",
-              label: t("settings_category_hydra_cloud"),
+              label: t(
+                shouldShowCloudV2Tab
+                  ? "settings_category_legacy_saves"
+                  : "settings_category_hydra_cloud"
+              ),
               content: cloudContent,
             } satisfies SidebarModalTab<GameSettingsTabId>,
           ]

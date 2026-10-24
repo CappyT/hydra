@@ -17,7 +17,6 @@ import { AchievementWatcherManager } from "@main/services/achievements/achieveme
 import { createGame } from "@main/services/library-sync";
 import {
   GameExecutables,
-  getSteamLibraryFolders,
   LocalNotificationManager,
   logger,
   WindowManager,
@@ -25,15 +24,16 @@ import {
 import { getGameCandidateDirectories } from "@main/helpers/locate-game-executable";
 import { searchCandidateDirectories } from "@main/helpers/locate-game-executable-match";
 import { runAutomaticCloudSaveSync } from "@main/services/cloud-save";
+import { clearMissingExecutables } from "@main/services/clear-missing-executables";
+import { trackAchievementBatchGame } from "@main/services/achievements/achievement-batch-games";
+import { resolveSteamLaunchExecutables } from "@main/services/steam-integration/steam-app-info-core";
+import {
+  getInstalledSteamApps,
+  loadSteamAppInfo,
+} from "@main/services/steam-integration/steam-launch-executables";
 import type { Game, GameShop } from "@types";
 
-const SCAN_DIRECTORIES = [
-  String.raw`C:\Games`,
-  String.raw`D:\Games`,
-  String.raw`C:\Program Files (x86)\Steam\steamapps\common`,
-  String.raw`C:\Program Files\Steam\steamapps\common`,
-  String.raw`D:\SteamLibrary\steamapps\common`,
-];
+const SCAN_DIRECTORIES = [String.raw`C:\Games`, String.raw`D:\Games`];
 
 const DISCOVERED_GAMES_SHOP: GameShop = "steam";
 const DISCOVERED_GAMES_CHUNK_SIZE = 4;
@@ -173,12 +173,9 @@ const isWithin = (child: string, parent: string) => {
   );
 };
 
-const getDefaultScanDirectories = async () => {
-  const libraryFolders = await getSteamLibraryFolders().catch((err) => {
-    logger.error("[ScanInstalledGames] Failed to read Steam libraries:", err);
-    return [];
-  });
-
+const getDefaultScanDirectories = async (
+  steamFallbackDirectories: string[]
+) => {
   const downloadsPath = await getDownloadsPath().catch((err) => {
     logger.error(
       "[ScanInstalledGames] Failed to read the downloads path:",
@@ -189,11 +186,58 @@ const getDefaultScanDirectories = async () => {
 
   return [
     ...SCAN_DIRECTORIES,
-    ...libraryFolders.map((libraryFolder) =>
-      path.join(libraryFolder, "steamapps", "common")
-    ),
+    ...steamFallbackDirectories,
     ...(downloadsPath ? [downloadsPath] : []),
   ];
+};
+
+interface InstalledSteamGames {
+  executables: Map<string, string>;
+  unresolvedDirectories: string[];
+}
+
+const findInstalledSteamGames = async (): Promise<InstalledSteamGames> => {
+  try {
+    const installedApps = await getInstalledSteamApps();
+    if (installedApps.length === 0) {
+      return { executables: new Map(), unresolvedDirectories: [] };
+    }
+
+    const appInfos = await loadSteamAppInfo(
+      installedApps.map((app) => app.appId)
+    );
+    const gameApps = installedApps.filter((app) => {
+      const type = appInfos.get(app.appId)?.type;
+      return type === undefined || type === "game";
+    });
+    const resolved = await resolveSteamLaunchExecutables(
+      appInfos,
+      new Map(gameApps.map((app) => [app.appId, app.installDirectory]))
+    );
+    const unresolvedDirectories = gameApps
+      .filter((app) => !resolved.has(app.appId))
+      .map((app) => app.installDirectory);
+
+    logger.info(
+      `[ScanInstalledGames] Resolved ${resolved.size} of ${gameApps.length} installed Steam games from Steam's app info`
+    );
+
+    return {
+      executables: new Map(
+        [...resolved].map(([appId, executable]) => [
+          appId,
+          executable.executablePath,
+        ])
+      ),
+      unresolvedDirectories,
+    };
+  } catch (err) {
+    logger.error(
+      "[ScanInstalledGames] Failed to read installed Steam games:",
+      err
+    );
+    return { executables: new Map(), unresolvedDirectories: [] };
+  }
 };
 
 const resolveScanRoots = async (directories: string[]) => {
@@ -789,15 +833,19 @@ export const addGameOutsideLibrary = async (
   await gamesSublevel.put(gameKey, game);
   await createGame(game).catch(() => {});
 
-  AchievementWatcherManager.firstSyncWithRemoteIfNeeded(
-    DISCOVERED_GAMES_SHOP,
-    objectId
-  ).catch((err) => {
-    logger.error(
-      `[ScanInstalledGames] Failed to sync achievements for ${objectId}:`,
-      err
-    );
-  });
+  if (AchievementWatcherManager.isBatching) {
+    AchievementWatcherManager.trackBatchGame(DISCOVERED_GAMES_SHOP, objectId);
+  } else {
+    AchievementWatcherManager.firstSyncWithRemoteIfNeeded(
+      DISCOVERED_GAMES_SHOP,
+      objectId
+    ).catch((err) => {
+      logger.error(
+        `[ScanInstalledGames] Failed to sync achievements for ${objectId}:`,
+        err
+      );
+    });
+  }
 
   logger.info(
     `[ScanInstalledGames] Added ${objectId} to the library: ${executablePath}`
@@ -908,11 +956,13 @@ const scanInstalledGames = async (
   if (requestId) inflightScans.set(requestId, signal);
 
   try {
-    return await runScan(
-      signal,
-      additionalDirectories,
-      includeDefaultDirectories,
-      addGamesToLibrary
+    return await AchievementWatcherManager.runBatch(() =>
+      runScan(
+        signal,
+        additionalDirectories,
+        includeDefaultDirectories,
+        addGamesToLibrary
+      )
     );
   } finally {
     if (requestId) inflightScans.delete(requestId);
@@ -931,22 +981,13 @@ const cancelScanInstalledGames = async (
   }
 };
 
-const runScan = async (
-  signal: CancelSignal,
-  additionalDirectories: string[],
-  includeDefaultDirectories: boolean,
-  addGamesToLibrary: boolean
-): Promise<ScanResult> => {
-  if (!(await GameExecutables.ensureLoaded(true))) {
-    throw new Error("game-executable-catalogue-unavailable");
-  }
+interface LibraryGameEntry {
+  key: string;
+  game: Game;
+}
 
-  const baseDirectories = includeDefaultDirectories
-    ? await getDefaultScanDirectories()
-    : [];
-  const directories = [...baseDirectories, ...additionalDirectories];
-
-  const games = await gamesSublevel
+const loadLibraryGames = async (): Promise<LibraryGameEntry[]> => {
+  const libraryGames = await gamesSublevel
     .iterator()
     .all()
     .then((results) =>
@@ -956,13 +997,25 @@ const runScan = async (
         )
         .map(([key, game]) => ({ key, game }))
     );
-
-  const scannedDirectories = await scanDirectories(
-    directories,
-    getCatalogFileNames(),
-    signal
+  const clearedGames = new Map(
+    (await clearMissingExecutables(libraryGames.map(({ game }) => game))).map(
+      (game) => [levelKeys.game(game.shop, game.objectId), game]
+    )
   );
 
+  if (clearedGames.size > 0) {
+    logger.info(
+      `[ScanInstalledGames] Cleared ${clearedGames.size} missing executables`
+    );
+  }
+
+  return libraryGames.map(({ key, game }) => ({
+    key,
+    game: clearedGames.get(key) ?? game,
+  }));
+};
+
+const logScannedDirectories = (scannedDirectories: ScannedDirectory[]) => {
   for (const scanned of scannedDirectories) {
     logger.info(
       `[ScanInstalledGames] Scanned ${scanned.directory}: ${scanned.relativeFilePaths.length} files, ${scanned.pathsByFileName.size} known executable names`
@@ -972,51 +1025,74 @@ const runScan = async (
       `[ScanInstalledGames] Known executables under ${scanned.directory}: ${[...scanned.pathsByFileName.keys()].sort((a, b) => a.localeCompare(b)).join(", ")}`
     );
   }
+};
 
+const findLibraryGameExecutable = async (
+  key: string,
+  game: Game,
+  steamExecutables: Map<string, string>,
+  claimedPaths: Set<string>,
+  scannedDirectories: ScannedDirectory[]
+) => {
+  const steamPath =
+    game.shop === DISCOVERED_GAMES_SHOP
+      ? steamExecutables.get(game.objectId)
+      : undefined;
+  if (steamPath && !claimedPaths.has(normalizePath(steamPath))) {
+    return steamPath;
+  }
+
+  const executables = GameExecutables.getExecutablesForGame(game.objectId);
+  if (!executables) return null;
+
+  // Linux installs can live in a Wine prefix, sandbox home or download folder
+  // that the directory scan does not cover.
+  if (process.platform === "linux") {
+    const download = await downloadsSublevel.get(key).catch(() => null);
+    const candidates = await getGameCandidateDirectories(
+      game.shop,
+      game.objectId,
+      game,
+      download
+    );
+    const normalizedNames = new Set(
+      executables.map((executable) => executable.exe.toLowerCase())
+    );
+    const foundPath = await searchCandidateDirectories(
+      candidates,
+      normalizedNames,
+      logger
+    );
+
+    if (foundPath) return foundPath;
+  }
+
+  return resolveExecutablePath(executables, scannedDirectories);
+};
+
+const linkLibraryGames = async (
+  gamesToScan: LibraryGameEntry[],
+  steamExecutables: Map<string, string>,
+  scannedDirectories: ScannedDirectory[],
+  claimedPaths: Set<string>,
+  signal: CancelSignal
+): Promise<FoundGame[]> => {
   const linkedGames: FoundGame[] = [];
-  const claimedPaths = new Set(
-    games.flatMap(({ game }) =>
-      game.executablePath ? [normalizePath(game.executablePath)] : []
-    )
-  );
-  const gamesToScan = games.filter(({ game }) => !game.executablePath);
 
   for (const { key, game } of gamesToScan) {
     if (signal.cancelled) break;
 
-    const executables = GameExecutables.getExecutablesForGame(game.objectId);
-    if (!executables) continue;
-
-    let foundPath: string | null = null;
-
-    // On Linux the game lives inside its wine prefix / sandbox home / download
-    // folder, none of which the scanned directories cover. Search these
-    // per-game locations first, as they are the most likely hit.
-    if (process.platform === "linux") {
-      const download = await downloadsSublevel.get(key).catch(() => null);
-      const candidates = await getGameCandidateDirectories(
-        game.shop,
-        game.objectId,
-        game,
-        download
-      );
-      const normalizedNames = new Set(
-        executables.map((executable) => executable.exe.toLowerCase())
-      );
-
-      foundPath = await searchCandidateDirectories(
-        candidates,
-        normalizedNames,
-        logger
-      );
-    }
-
-    if (!foundPath) {
-      foundPath = resolveExecutablePath(executables, scannedDirectories);
-    }
+    const foundPath = await findLibraryGameExecutable(
+      key,
+      game,
+      steamExecutables,
+      claimedPaths,
+      scannedDirectories
+    );
     if (!foundPath) continue;
 
     await gamesSublevel.put(key, updateGameExecutablePath(game, foundPath));
+    trackAchievementBatchGame(key);
     void runAutomaticCloudSaveSync(
       game.objectId,
       game.shop,
@@ -1035,11 +1111,79 @@ const runScan = async (
     claimedPaths.add(normalizePath(foundPath));
   }
 
+  return linkedGames;
+};
+
+const collectSteamGamesToAdd = (
+  steamExecutables: Map<string, string>,
+  libraryObjectIds: Set<string>,
+  claimedPaths: Set<string>
+) => {
+  const steamPathByObjectId = new Map<string, string>();
+
+  for (const [objectId, executablePath] of steamExecutables) {
+    if (libraryObjectIds.has(objectId)) continue;
+    if (claimedPaths.has(normalizePath(executablePath))) continue;
+
+    steamPathByObjectId.set(objectId, executablePath);
+    libraryObjectIds.add(objectId);
+    claimedPaths.add(normalizePath(executablePath));
+  }
+
+  return steamPathByObjectId;
+};
+
+const runScan = async (
+  signal: CancelSignal,
+  additionalDirectories: string[],
+  includeDefaultDirectories: boolean,
+  addGamesToLibrary: boolean
+): Promise<ScanResult> => {
+  if (!(await GameExecutables.ensureLoaded(true))) {
+    throw new Error("game-executable-catalogue-unavailable");
+  }
+
+  const installedSteamGames: InstalledSteamGames = includeDefaultDirectories
+    ? await findInstalledSteamGames()
+    : { executables: new Map(), unresolvedDirectories: [] };
+  const baseDirectories = includeDefaultDirectories
+    ? await getDefaultScanDirectories(installedSteamGames.unresolvedDirectories)
+    : [];
+  const directories = [...baseDirectories, ...additionalDirectories];
+  const steamExecutables = installedSteamGames.executables;
+
+  const games = await loadLibraryGames();
+
+  const scannedDirectories = await scanDirectories(
+    directories,
+    getCatalogFileNames(),
+    signal
+  );
+  logScannedDirectories(scannedDirectories);
+
+  const claimedPaths = new Set(
+    games.flatMap(({ game }) =>
+      game.executablePath ? [normalizePath(game.executablePath)] : []
+    )
+  );
+  const gamesToScan = games.filter(({ game }) => !game.executablePath);
+  const linkedGames = await linkLibraryGames(
+    gamesToScan,
+    steamExecutables,
+    scannedDirectories,
+    claimedPaths,
+    signal
+  );
+
   const libraryObjectIds = new Set(
     games
       .filter(({ game }) => game.shop === DISCOVERED_GAMES_SHOP)
       .map(({ game }) => game.objectId)
   );
+
+  const steamPathByObjectId = addGamesToLibrary
+    ? collectSteamGamesToAdd(steamExecutables, libraryObjectIds, claimedPaths)
+    : new Map<string, string>();
 
   const outsideLibrary =
     addGamesToLibrary && !signal.cancelled
@@ -1056,7 +1200,9 @@ const runScan = async (
 
   const addedGames = signal.cancelled
     ? []
-    : await addGamesOutsideLibrary(outsideLibrary.pathByObjectId);
+    : await addGamesOutsideLibrary(
+        new Map([...steamPathByObjectId, ...outsideLibrary.pathByObjectId])
+      );
 
   logger.info(
     `[ScanInstalledGames] Linked ${linkedGames.length} of ${gamesToScan.length} games in the library, added ${addedGames.length} new ones, ${outsideLibrary.ambiguousMatches.length} need a choice`

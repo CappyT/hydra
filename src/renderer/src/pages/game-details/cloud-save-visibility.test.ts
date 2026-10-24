@@ -30,6 +30,45 @@ describe("cloud save visibility", () => {
     });
   });
 
+  it("keeps local backups active for eligible emulator platforms", () => {
+    for (const platform of [
+      "Sony PlayStation 3",
+      "Nintendo Game Boy Advance",
+    ]) {
+      assert.deepEqual(getCloudSaveVisibility("launchbox", platform), {
+        hero: "legacy",
+        settings: {
+          showV2: false,
+          showLegacy: true,
+          legacyPurpose: "active",
+        },
+      });
+    }
+    assert.equal(
+      getCloudSaveVisibility("launchbox", "Unknown Console").hero,
+      "legacy"
+    );
+  });
+
+  it("keeps legacy active for the four unsupported emulator providers", () => {
+    for (const platform of [
+      "Sony PlayStation",
+      "Sony PlayStation 2",
+      "Sony PlayStation Portable",
+      "Nintendo GameCube",
+      "Nintendo Wii",
+    ]) {
+      assert.deepEqual(getCloudSaveVisibility("launchbox", platform), {
+        hero: "legacy",
+        settings: {
+          showV2: false,
+          showLegacy: true,
+          legacyPurpose: "active",
+        },
+      });
+    }
+  });
+
   it("preserves the main-branch behavior for custom games", () => {
     assert.deepEqual(getCloudSaveVisibility("custom"), {
       hero: null,
@@ -59,5 +98,25 @@ describe("cloud save visibility", () => {
     assert.equal(isLegacyCloudSaveSettingsAvailable(settings, false, 1), false);
     assert.equal(isLegacyCloudSaveSettingsAvailable(settings, true, 0), false);
     assert.equal(isLegacyCloudSaveSettingsAvailable(settings, true, 2), true);
+  });
+
+  it("keeps RPCS3 and RetroArch local backups active without artifacts", () => {
+    for (const platform of [
+      "Sony PlayStation 3",
+      "Nintendo Entertainment System",
+      "Super Nintendo Entertainment System",
+      "Nintendo 64",
+      "Nintendo Game Boy",
+      "Nintendo Game Boy Color",
+      "Nintendo Game Boy Advance",
+    ]) {
+      const settings = getCloudSaveVisibility("launchbox", platform).settings;
+      assert.equal(isLegacyCloudSaveSettingsAvailable(settings, true, 1), true);
+      assert.equal(isLegacyCloudSaveSettingsAvailable(settings, true, 0), true);
+      assert.equal(
+        isLegacyCloudSaveSettingsAvailable(settings, false, 1),
+        true
+      );
+    }
   });
 });

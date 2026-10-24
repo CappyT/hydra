@@ -36,6 +36,9 @@ import { clearLegacyAchievementPersistence } from "./level/clear-legacy-achievem
 import { hydrateAchievementsFromDisk } from "./services/achievements/achievement-disk-store";
 import { ACCOUNTLESS } from "@shared";
 import { startSteamSyncOnStartup } from "./services/steam-integration/steam-startup-sync";
+import { migrateEmulatorCloudSaveDefaults } from "./services/cloud-save/automatic-sync-emulator-migration";
+import { watchSteamLibraries } from "./services/steam-integration/steam-install-watcher";
+import { migrateGameVisibilityFields } from "./services/library-sync/game-visibility-migration";
 
 const hasMissingSeedFiles = async (download: Download): Promise<boolean> => {
   if (!download.folderName) return false;
@@ -64,15 +67,15 @@ export const loadState = async () => {
 
   // Accountless fork: the "legacy" local achievement store is our ONLY copy
   // (no account, no cloud) — hydrate the in-memory store from it instead of
-  // wiping it. The upstream wipe only runs for account-backed installs.
-  // The cloud-save migration would also disable automaticCloudSync on Steam
-  // games, which drives our local backup sync — account-backed installs only.
+  // wiping it. Cloud migrations must not rewrite local backup preferences.
   if (ACCOUNTLESS) {
     await hydrateAchievementsFromDisk();
   } else {
     await clearLegacyAchievementPersistence();
     await migrateCloudSaveAutomaticSyncDefaults();
+    await migrateEmulatorCloudSaveDefaults();
   }
+  await migrateGameVisibilityFields();
 
   const userPreferences = await db.get<string, UserPreferences | null>(
     levelKeys.userPreferences,
@@ -118,6 +121,8 @@ export const loadState = async () => {
   if (process.platform === "linux") {
     DeckyPlugin.checkAndUpdateIfOutdated();
   }
+
+  void watchSteamLibraries();
 
   await HydraApi.setupApi().then(async () => {
     uploadGamesBatch();

@@ -97,7 +97,9 @@ export function GameDetailsContent() {
   const { library } = useLibrary();
 
   const { getGameArtifacts } = useContext(cloudSyncContext);
-  const cloudSaveVisibility = game ? getCloudSaveVisibility(game.shop) : null;
+  const cloudSaveVisibility = game
+    ? getCloudSaveVisibility(game.shop, game.platform)
+    : null;
 
   const aboutTheGame = useMemo(() => {
     const aboutTheGame = shopDetails?.about_the_game;
@@ -478,6 +480,12 @@ export function GameDetailsContent() {
             )}
 
             <GallerySlider />
+
+            {shopDetails?.about_the_game && (
+              <h2 className="game-details__description-title">
+                {t("about_this_game")}
+              </h2>
+            )}
 
             <div
               ref={descriptionRef}

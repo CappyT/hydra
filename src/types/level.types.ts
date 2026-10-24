@@ -109,6 +109,8 @@ export interface Game {
    */
   seccompAudit?: boolean;
   favorite?: boolean;
+  isHiddenFromOthers?: boolean;
+  isConcealed?: boolean;
   isPinned?: boolean;
   achievementCount?: number;
   unlockedAchievementCount?: number;
