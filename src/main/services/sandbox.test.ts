@@ -3,7 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
+import ts from "typescript";
 
+import * as commandBuilder from "./sandbox-command-builder.ts";
 import {
   assertSandboxAvailable,
   buildSandboxArgs,
@@ -15,6 +17,7 @@ import {
 import {
   DNS_FORWARD_ADDRESS,
   isNetworkIsolationEnabled,
+  parseHostResolver,
 } from "./sandbox-network.ts";
 
 const BIND_FLAGS = new Set(["--bind", "--ro-bind", "--dev-bind"]);
@@ -705,6 +708,32 @@ describe("Sandbox network isolation (buildSandboxArgs)", () => {
     assert.deepEqual(capAdds.sort(), ["CAP_NET_ADMIN", "CAP_SYS_ADMIN"]);
   });
 
+  it("makes the capability-holding wrapper pid 1 only when isolating", () => {
+    // bwrap's own reaper would stay in the host netns without capabilities,
+    // and a game with ptrace access could drive it. --as-pid-1 removes it.
+    const isolated = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: baseEnv,
+      gameDir,
+      networkIsolation: isolation(),
+    }).args;
+    const plain = buildSandboxArgs({
+      command: "/usr/bin/game",
+      args: [],
+      env: baseEnv,
+      gameDir,
+    }).args;
+
+    const separator = isolated.indexOf("--");
+    const asPid1 = isolated.indexOf("--as-pid-1");
+    assert.ok(asPid1 !== -1 && asPid1 < separator);
+    // bwrap refuses --as-pid-1 without its own pid namespace.
+    assert.ok(isolated.indexOf("--unshare-pid") < separator);
+    assert.equal(isolated.filter((arg) => arg === "--as-pid-1").length, 1);
+    assert.ok(!plain.includes("--as-pid-1"));
+  });
+
   it("runs the isolation wrapper as the payload, passing the game as argv", () => {
     const { args } = buildSandboxArgs({
       command: "/usr/bin/game",
@@ -842,5 +871,81 @@ describe("isNetworkIsolationEnabled", () => {
       ),
       false
     );
+  });
+});
+
+describe("parseHostResolver", () => {
+  it("skips scoped and unparseable nameservers and takes the first valid one", () => {
+    assert.equal(
+      parseHostResolver(
+        [
+          "# comment",
+          "nameserver fe80::1%wlp3s0",
+          "nameserver not-an-address",
+          "nameserver 1.1.1.1#53",
+          "nameserver 2606:4700:4700::1111",
+          "nameserver 9.9.9.9",
+        ].join("\n")
+      ),
+      "2606:4700:4700::1111"
+    );
+    assert.equal(
+      parseHostResolver("search lan\n  nameserver   127.0.0.53\n"),
+      "127.0.0.53"
+    );
+  });
+
+  it("returns null when no nameserver is usable", () => {
+    assert.equal(parseHostResolver(""), null);
+    assert.equal(parseHostResolver("nameserver fe80::1%eth0\n"), null);
+    assert.equal(parseHostResolver("options edns0\n"), null);
+  });
+});
+
+describe("Sandbox.isAvailable", () => {
+  // Loads sandbox.ts with a fake filesystem and bwrap probe.
+  const loadSandbox = (state: { installed: boolean; probes: number }) => {
+    const { outputText } = ts.transpileModule(
+      fs.readFileSync(new URL("./sandbox.ts", import.meta.url), "utf8"),
+      {
+        compilerOptions: {
+          module: ts.ModuleKind.CommonJS,
+          target: ts.ScriptTarget.ESNext,
+          esModuleInterop: true,
+        },
+      }
+    );
+    const modules: Record<string, unknown> = {
+      "node:fs": { existsSync: () => state.installed },
+      "node:child_process": {
+        spawnSync: () => {
+          state.probes += 1;
+          return { status: state.installed ? 0 : 1 };
+        },
+      },
+      "./logger": { logger: { info: () => {}, warn: () => {} } },
+      "./sandbox-command-builder": commandBuilder,
+    };
+    const exports: {
+      Sandbox?: { isAvailable: () => boolean };
+    } = {};
+    new Function("exports", "require", "process", outputText)(
+      exports,
+      (name: string) => modules[name] ?? assert.fail(`unexpected ${name}`),
+      { platform: "linux", env: {} }
+    );
+    return exports.Sandbox!;
+  };
+
+  it("re-probes after a negative result and caches a positive one", () => {
+    const state = { installed: false, probes: 0 };
+    const sandbox = loadSandbox(state);
+
+    assert.equal(sandbox.isAvailable(), false);
+    // bubblewrap installed while the launcher runs.
+    state.installed = true;
+    assert.equal(sandbox.isAvailable(), true);
+    assert.equal(sandbox.isAvailable(), true);
+    assert.equal(state.probes, 1);
   });
 });

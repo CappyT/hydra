@@ -32,6 +32,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { isIP } from "node:net";
 import { resolveSystemBinary } from "../helpers/resolve-system-binary.js";
 import type { Game, UserPreferences } from "@types";
 
@@ -112,20 +113,30 @@ export const resolveSandboxResolvConfDest = (): string => {
 };
 
 /**
- * Reads the first `nameserver` from the host's real resolv.conf, used as pasta's
+ * Returns the first `nameserver` of a resolv.conf that pasta's `--dns-host`
+ * accepts: a plain IPv4/IPv6 literal. pasta rejects a scoped address
+ * (`fe80::1%eth0`), and node's isIP accepts the zone suffix, so it is skipped
+ * explicitly.
+ */
+export const parseHostResolver = (content: string): string | null => {
+  for (const line of content.split("\n")) {
+    const candidate = line.match(/^\s*nameserver\s+(\S+)/)?.[1];
+    if (candidate && !candidate.includes("%") && isIP(candidate) !== 0)
+      return candidate;
+  }
+  return null;
+};
+
+/**
+ * Reads the host resolver from the real resolv.conf, used as pasta's
  * `--dns-host` (the resolver pasta relays the sandbox's DNS queries to). Returns
  * null when it cannot be determined; the caller then skips DNS forwarding.
  */
 export const resolveHostResolver = (): string | null => {
   try {
-    const content = fs.readFileSync(
-      fs.realpathSync("/etc/resolv.conf"),
-      "utf8"
+    return parseHostResolver(
+      fs.readFileSync(fs.realpathSync("/etc/resolv.conf"), "utf8")
     );
-    for (const line of content.split("\n")) {
-      const match = line.match(/^\s*nameserver\s+(\S+)/);
-      if (match) return match[1];
-    }
   } catch {
     // Unreadable / missing — caller falls back to pasta's default DNS handling.
   }

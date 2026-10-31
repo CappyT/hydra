@@ -14,19 +14,17 @@ export type { SandboxWrapOptions };
 export { SandboxUnavailableError };
 
 export class Sandbox {
-  private static availabilityCache: boolean | null = null;
+  private static availabilityCache = false;
 
   /**
-   * Probes for a working bwrap binary. The result is cached for the lifetime of
-   * the process.
+   * Probes for a working bwrap binary. Only a positive result is cached, so
+   * installing bubblewrap while the launcher runs takes effect at the next
+   * launch.
    */
   public static isAvailable(): boolean {
-    if (this.availabilityCache !== null) {
-      return this.availabilityCache;
-    }
+    if (this.availabilityCache) return true;
 
     if (process.platform !== "linux" || !fs.existsSync(BWRAP_PATH)) {
-      this.availabilityCache = false;
       return false;
     }
 

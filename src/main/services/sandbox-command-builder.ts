@@ -361,6 +361,11 @@ export const buildSandboxArgs = (
   // path and DNS targets to the wrapper (avoids interpolating them into the
   // script text).
   if (networkIsolation) {
+    // The wrapper must be pid 1. bwrap's own reaper would stay in the host
+    // netns without capabilities, and the game could ptrace it to run
+    // syscalls in the host netns. The wrapper keeps the setup capabilities, so
+    // the capability-less game cannot ptrace it.
+    bwrapArgs.push("--as-pid-1");
     bwrapArgs.push("--cap-add", "CAP_NET_ADMIN", "--cap-add", "CAP_SYS_ADMIN");
     bwrapArgs.push("--setenv", "HYDRA_PASTA_BIN", networkIsolation.pastaPath);
     if (networkIsolation.dnsForwardAddress) {
