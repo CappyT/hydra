@@ -24,6 +24,7 @@ import {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { ACCOUNTLESS } from "@shared";
 import {
   ContextMenu,
   FocusItem,
@@ -314,7 +315,8 @@ export function SidebarNotificationsDropdown({
   }, []);
 
   const fetchApiNotifications = useCallback(async () => {
-    if (!IS_DESKTOP) return;
+    // API notifications need a Hydra account; local ones are fetched separately.
+    if (!IS_DESKTOP || ACCOUNTLESS) return;
 
     try {
       const [notificationsResponse, countResponse] = await Promise.all([

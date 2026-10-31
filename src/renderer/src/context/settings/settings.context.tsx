@@ -3,6 +3,7 @@ import { createContext, useCallback, useEffect, useState } from "react";
 import { setUserPreferences } from "@renderer/features";
 import { useAppDispatch } from "@renderer/hooks";
 import { levelDBService } from "@renderer/services/leveldb.service";
+import { ACCOUNTLESS } from "@shared";
 import type { UserBlocks, UserPreferences } from "@types";
 import { useSearchParams } from "react-router-dom";
 
@@ -174,6 +175,12 @@ export function SettingsContextProvider({
   }, []);
 
   const fetchBlockedUsers = useCallback(async () => {
+    // Blocks live on the Hydra account: nothing to fetch accountless.
+    if (ACCOUNTLESS) {
+      setBlockedUsers([]);
+      return;
+    }
+
     const blockedUsers = await window.electron.hydraApi
       .get<UserBlocks>("/profile/blocks", {
         params: { take: 12, skip: 0 },
