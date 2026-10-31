@@ -22,7 +22,7 @@ import { INTERVALS } from "@main/constants";
 import { Wine } from "./wine";
 import { NativeAddon } from "./native-addon";
 import { emulatorSessions } from "./emulators/emulator-session-tracker";
-import { launchedGamePids } from "./launched-game-pids";
+import { launchedGamePids, sandboxedGamePids } from "./launched-game-pids";
 import { markGameLauncherGameDetected } from "./game-launcher-status";
 import {
   isValidProcessWatcherScan,
@@ -746,6 +746,7 @@ const onCloseGame = (game: Game) => {
   if (!gamePlaytime) return;
   deleteGamePlaytime(gameKey);
   launchedGamePids.delete(gameKey);
+  sandboxedGamePids.delete(gameKey);
   stopLinuxGameCaptureSession(gameKey);
   PowerSaveBlockerManager.markGameClosed(gameKey);
   abortAchievementMetadataExport(gameKey);

@@ -412,6 +412,8 @@ export class Umu {
         "sandboxDisabled" | "sandboxExtraPaths" | "sandboxShareIpc"
       > | null;
       sandboxGameKey?: string | null;
+      /** Read-write game bind; defaults to the executable's directory. */
+      sandboxGameDir?: string | null;
       onStatus?: UmuStatusListener;
       wasGameDetected?: () => boolean;
     }
@@ -449,7 +451,7 @@ export class Umu {
         userPreferences: options?.userPreferences,
         game: options?.sandboxGame,
         gameKey: options?.sandboxGameKey,
-        gameDir: workingDirectory,
+        gameDir: options?.sandboxGameDir ?? workingDirectory,
         winePrefix: options?.winePrefixPath,
         protonDir: options?.protonPath,
         // The bundled umu-run zipapp lives under the AppImage mount in /tmp

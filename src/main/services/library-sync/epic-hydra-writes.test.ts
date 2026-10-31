@@ -221,7 +221,10 @@ function fixture() {
           abortAchievementMetadataExport: () => {},
         },
         "@main/constants": { INTERVALS: { processWatcher: 1000 } },
-        "./launched-game-pids": { launchedGamePids: new Map() },
+        "./launched-game-pids": {
+          launchedGamePids: new Map(),
+          sandboxedGamePids: new Set(),
+        },
         "./steam-integration/steam-game-exit-sync": {
           cancelSteamGameExitSync: () => {},
           shouldScheduleSteamGameExitSync: () => false,

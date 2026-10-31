@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { GameShop, type Game, type UserPreferences } from "@types";
-import { db, gamesSublevel, levelKeys } from "@main/level";
+import { db, downloadsSublevel, gamesSublevel, levelKeys } from "@main/level";
 import { updateGameExecutablePath } from "./update-executable-path";
 import {
   clearCloudSaveLaunchGuard,
@@ -57,6 +57,7 @@ import {
   closeSeccompFd,
 } from "./sandbox-launch";
 import { buildSandboxEnv } from "./sandbox-env";
+import { resolveSandboxGameDir } from "./sandbox-game-dir";
 import {
   buildWindowsBatchCommand,
   isWindowsBatchFile,
@@ -133,6 +134,8 @@ interface SandboxLaunchInput {
   userPreferences?: UserPreferences | null;
   game?: Game | null;
   gameKey?: string;
+  /** Read-write game bind; defaults to the executable's directory. */
+  gameDir?: string;
 }
 
 const launchNatively = (
@@ -162,7 +165,7 @@ const launchNatively = (
       userPreferences: sandbox?.userPreferences,
       game: sandbox?.game,
       gameKey: sandbox?.gameKey,
-      gameDir: workingDirectory,
+      gameDir: sandbox?.gameDir ?? workingDirectory,
       hideX11: useGamescope && isWaylandSessionAvailable(),
     }
   );
@@ -279,7 +282,7 @@ const launchWithWine = async (
       userPreferences: sandbox?.userPreferences,
       game: sandbox?.game,
       gameKey: sandbox?.gameKey,
-      gameDir: workingDirectory,
+      gameDir: sandbox?.gameDir ?? workingDirectory,
       winePrefix,
       hideX11: useGamescope && isWaylandSessionAvailable(),
     }
@@ -531,7 +534,8 @@ const launchWindowsBinaryOnLinux = async (
   useGamemode: boolean,
   useGamescope: boolean,
   userPreferences: UserPreferences | null,
-  game: Game | undefined
+  game: Game | undefined,
+  sandboxGameDir: string
 ): Promise<boolean> => {
   const { protonPath, winePrefixPath } = compatibilityContext;
   const reportUmuStatus = createUmuStatusReporter(gameKey);
@@ -549,13 +553,18 @@ const launchWindowsBinaryOnLinux = async (
       userPreferences,
       sandboxGame: game,
       sandboxGameKey: gameKey,
+      sandboxGameDir,
       onStatus: reportUmuStatus,
       wasGameDetected: () => wasGameLauncherGameDetected(gameKey),
     });
     if (umuPid !== null) {
       launchedGamePids.set(gameKey, umuPid);
+      // The flag must describe this pid: a stale one would make closeGame
+      // tear down an unsandboxed process tree.
       if (Sandbox.isEnabled(userPreferences, game)) {
         sandboxedGamePids.add(gameKey);
+      } else {
+        sandboxedGamePids.delete(gameKey);
       }
     }
     PowerSaveBlockerManager.markCompatibilityLaunchStarted(gameKey);
@@ -578,6 +587,7 @@ const launchWindowsBinaryOnLinux = async (
       game,
       winePrefix: winePrefixPath,
       gameKey,
+      gameDir: sandboxGameDir,
     }
   );
 
@@ -602,6 +612,14 @@ interface PreparedLinuxCompatibility {
 
 class ManagedEpicLaunchBlockedError extends Error {}
 
+const localPrefixExists = (game: Game | null | undefined, objectId: string) => {
+  const prefixPath = Wine.getEffectivePrefixPath(
+    game?.winePrefixPath,
+    objectId
+  );
+  return !!prefixPath && fs.existsSync(prefixPath);
+};
+
 const prepareLinuxCompatibilityForLaunch = async (
   parsedPath: string,
   game: Game | undefined,
@@ -612,14 +630,6 @@ const prepareLinuxCompatibilityForLaunch = async (
   if (process.platform !== "linux" || !isWindowsExecutable(parsedPath)) {
     return {
       context: null,
-const localPrefixExists = (game: Game | null | undefined, objectId: string) => {
-  const prefixPath = Wine.getEffectivePrefixPath(
-    game?.winePrefixPath,
-    objectId
-  );
-  return !!prefixPath && fs.existsSync(prefixPath);
-};
-
       prefixReadyForRestore: true,
       prefixSafeForUpload: true,
     };
@@ -1047,6 +1057,11 @@ const launchGameWithCloudSaveChecks = async (
   }
 
   if (process.platform === "linux") {
+    const sandboxGameDir = resolveSandboxGameDir(
+      parsedPath,
+      await downloadsSublevel.get(gameKey).catch(() => null)
+    );
+
     if (isWindowsExecutable(parsedPath)) {
       if (!compatibilityContext) {
         clearCloudSaveLaunchGuard(objectId, shop);
@@ -1063,7 +1078,8 @@ const launchGameWithCloudSaveChecks = async (
         useGamemode,
         useGamescope,
         userPreferences,
-        game
+        game,
+        sandboxGameDir
       );
 
       if (launched) return launchedGamePids.get(gameKey) ?? null;
@@ -1076,13 +1092,15 @@ const launchGameWithCloudSaveChecks = async (
       useMangohud,
       useGamemode,
       useGamescope,
-      { userPreferences, game, gameKey }
+      { userPreferences, game, gameKey, gameDir: sandboxGameDir }
     );
 
     if (pid !== null) {
       launchedGamePids.set(gameKey, pid);
       if (Sandbox.isEnabled(userPreferences, game)) {
         sandboxedGamePids.add(gameKey);
+      } else {
+        sandboxedGamePids.delete(gameKey);
       }
     }
 
