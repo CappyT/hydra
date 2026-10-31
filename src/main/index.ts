@@ -32,6 +32,11 @@ import { ACCOUNTLESS } from "@shared";
 import { launchGame, openClassicsGame } from "./helpers";
 import { logMissingHostToolsOnce } from "./helpers/host-dependencies";
 import { refreshPortableShortcutLauncher } from "./helpers/shortcut-launch";
+import { isGamescopeSessionActive } from "./helpers/is-gamescope-available";
+import {
+  clearQuitAfterGameExit,
+  markQuitAfterGameExit,
+} from "./helpers/quit-after-shortcut-game";
 import { lookupCachedPlatform } from "./events/library/get-library";
 import { loadState } from "./main";
 import {
@@ -290,7 +295,7 @@ const initializeApp = async () => {
   }
 
   if (deepLinkArg) {
-    handleDeepLinkPath(deepLinkArg);
+    handleDeepLinkPath(deepLinkArg, true);
   }
 };
 
@@ -315,7 +320,11 @@ app.on("render-process-gone", (_event, _webContents, details) => {
   });
 });
 
-const handleRunGame = async (shop: GameShop, objectId: string) => {
+const handleRunGame = async (
+  shop: GameShop,
+  objectId: string,
+  quitWhenGameExits = false
+) => {
   const gameKey = levelKeys.game(shop, objectId);
   const game = await gamesSublevel.get(gameKey);
 
@@ -351,6 +360,9 @@ const handleRunGame = async (shop: GameShop, objectId: string) => {
     return;
   }
 
+  // Marked before the launch so the watcher cannot report the exit first.
+  if (quitWhenGameExits) markQuitAfterGameExit(gameKey, () => app.quit());
+
   try {
     await launchGame({
       shop,
@@ -359,6 +371,7 @@ const handleRunGame = async (shop: GameShop, objectId: string) => {
       launchOptions: game.launchOptions,
     });
   } catch (error) {
+    clearQuitAfterGameExit();
     if (error instanceof SandboxUnavailableError) {
       dialog.showErrorBox("Hydra", error.message);
       return;
@@ -368,7 +381,7 @@ const handleRunGame = async (shop: GameShop, objectId: string) => {
   }
 };
 
-const handleDeepLinkPath = (uri?: string) => {
+const handleDeepLinkPath = (uri?: string, coldStart = false) => {
   if (!uri) return;
 
   try {
@@ -379,7 +392,11 @@ const handleDeepLinkPath = (uri?: string) => {
       const objectId = url.searchParams.get("objectId");
 
       if (shop && objectId) {
-        void handleRunGame(shop, objectId).catch((error) => {
+        // Steam Deck gaming mode: a cold start from a per-game shortcut quits
+        // Hydra when that game exits, so Steam stops showing it as running.
+        const quitWhenGameExits = coldStart && isGamescopeSessionActive();
+
+        void handleRunGame(shop, objectId, quitWhenGameExits).catch((error) => {
           logger.error("Failed to launch game from deep link", error);
           WindowManager.createMainWindow();
         });

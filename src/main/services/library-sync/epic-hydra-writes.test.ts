@@ -221,6 +221,9 @@ function fixture() {
           abortAchievementMetadataExport: () => {},
         },
         "@main/constants": { INTERVALS: { processWatcher: 1000 } },
+        "@main/helpers/quit-after-shortcut-game": {
+          quitAfterGameExit: async () => false,
+        },
         "./launched-game-pids": {
           launchedGamePids: new Map(),
           sandboxedGamePids: new Set(),

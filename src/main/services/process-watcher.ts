@@ -1,3 +1,4 @@
+import { quitAfterGameExit } from "@main/helpers/quit-after-shortcut-game";
 import { getHydraPlaytimeRevision } from "./library-sync/library-write-queue";
 import type { HydraApiAuthContext } from "./hydra-auth-context";
 import {
@@ -453,7 +454,17 @@ export const watchProcesses = async () => {
         await onOpenGame(game, matchedPath);
       }
     } else if (gamesPlaytime.has(gameKey) && !isWithinLaunchGrace(gameKey)) {
-      onCloseGame(game);
+      const closeWork: Array<Promise<unknown> | undefined> = [];
+      const sandboxPid = sandboxedGamePids.has(gameKey)
+        ? launchedGamePids.get(gameKey)
+        : undefined;
+      const closeSync = onCloseGame(game, closeWork);
+      // Steam Deck shortcut cold start: quit once the game and its close work
+      // are done, so Steam stops showing the shortcut as running.
+      void quitAfterGameExit(gameKey, [closeSync, ...closeWork], {
+        othersRunning: gamesPlaytime.size > 0,
+        sandboxPid,
+      });
     }
   }
 
@@ -735,7 +746,10 @@ function onTickGame(game: Game) {
   }
 }
 
-const onCloseGame = (game: Game) => {
+const onCloseGame = (
+  game: Game,
+  pendingWork?: Array<Promise<unknown> | undefined>
+) => {
   const authContext = HydraApi.getAuthContext();
   const hydraRevision = getHydraPlaytimeRevision(
     levelKeys.game(game.shop, game.objectId)
@@ -784,15 +798,25 @@ const onCloseGame = (game: Game) => {
     lastTimePlayed: new Date(),
   };
 
-  void persistGamePlaytime(gameKey, updatedGame, authContext, delta);
+  const playtimeWrite = persistGamePlaytime(
+    gameKey,
+    updatedGame,
+    authContext,
+    delta
+  );
+  pendingWork?.push(playtimeWrite);
 
   if (game.shop === "custom") return;
 
   const closedManagedEpic = onManagedEpicClosed(game);
-  if (!gamePlaytime.managedEpicSession || closedManagedEpic)
-    void runAutomaticCloudSaveOnClose(game).catch((error: unknown) => {
-      handleAutomaticCloudSaveLifecycleError("close", game, error);
-    });
+  if (!gamePlaytime.managedEpicSession || closedManagedEpic) {
+    const closeBackup = runAutomaticCloudSaveOnClose(game).catch(
+      (error: unknown) => {
+        handleAutomaticCloudSaveLifecycleError("close", game, error);
+      }
+    );
+    pendingWork?.push(closeBackup);
+  }
 
   if (game.remoteId) {
     logPlaytimeTrace("close-sync-track-request", game, {
