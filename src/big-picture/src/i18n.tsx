@@ -24,6 +24,10 @@ const reverseTranslations = new Map<string, string>();
 
 for (const translations of Object.values(exactTranslations)) {
   for (const [sourceText, translatedText] of Object.entries(translations)) {
+    // A translation that equals another source string (it "Downloads" ->
+    // "Download") must not remap that source in every language.
+    if (translatedText !== sourceText && translatedText in exactTranslations.en)
+      continue;
     reverseTranslations.set(translatedText, sourceText);
   }
 }
@@ -45,6 +49,7 @@ export function resolveBigPictureLanguage(
   if (language.startsWith("pt")) return "pt-BR";
   if (language.startsWith("es")) return "es";
   if (language.startsWith("fr")) return "fr";
+  if (language.startsWith("it")) return "it";
   if (language.startsWith("el")) return "el";
   if (language.startsWith("vi")) return "vi";
   return "en";
