@@ -166,8 +166,12 @@ export function CloudSyncContextProvider({
     );
 
     const removeDownloadCompleteListener =
-      window.electron.onBackupDownloadComplete(objectId, shop, () => {
-        showSuccessToast(t("backup_restored"));
+      window.electron.onBackupDownloadComplete(objectId, shop, (success) => {
+        if (success) {
+          showSuccessToast(t("backup_restored"));
+        } else {
+          showErrorToast(t("cloud_restore_failed", { ns: "settings" }));
+        }
 
         setRestoringBackup(false);
         getGameArtifacts();
@@ -182,6 +186,7 @@ export function CloudSyncContextProvider({
     objectId,
     shop,
     showSuccessToast,
+    showErrorToast,
     t,
     getGameBackupPreview,
     getGameArtifacts,
