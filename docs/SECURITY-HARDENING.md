@@ -3,8 +3,10 @@
 This implements the actionable defects from [the initial audit](SECURITY-AUDIT-2026-09-10.md).
 It does not turn Wine games into virtual machines or remove the Linux graphics,
 audio and kernel services from the trusted computing base. Emulator executables
-remain intentionally unsandboxed. These changes are on main; no release is cut
-by this work.
+remain intentionally unsandboxed; Hydra installs them under the launcher-owned
+`<userData>/emulators/<Emulator name>`, and detection never searches a
+downloads dir, so a download cannot plant an emulator binary. These changes are
+on main; no release is cut by this work.
 
 ## Corrected boundaries
 
@@ -15,6 +17,16 @@ by this work.
   privileges before the successful payload. `no_new_privs` prevents privilege
   acquisition across exec. The capability bounding set is not itself a grant
   of capabilities; nested unprivileged user/mount namespaces remain usable.
+  bwrap runs the wrapper with `--as-pid-1`, so no capability-less process stays
+  in the host network namespace for the game to ptrace. The wrapper keeps its
+  setup capabilities, and the kernel refuses ptrace from the capability-less
+  game. The host resolver passed to pasta is the first plain IP `nameserver`;
+  scoped IPv6 entries are skipped.
+- Launch-option variables (`NAME=value %command%`) reach only the game:
+  they run as `/usr/bin/env NAME=value ... <command>` at the final exec inside
+  the sandbox, never in the environment of bwrap, the wrapper or pasta. A
+  game-supplied `LD_PRELOAD`, `LD_LIBRARY_PATH` or `BASH_ENV` cannot load into a
+  host-side process. The bind profile reads the host environment only.
 - Requested seccomp filter creation/opening errors refuse launch. Unsupported
   architectures and x32 encodings return ENOSYS in every level, including audit
   mode; audit still logs/allows the supported-ABI diagnostic syscall rules.
@@ -25,15 +37,20 @@ by this work.
   ownership/write permissions along resolved paths, and searches `~/.local/bin`
   last. Relative paths and targets escaping the selected trust directory are
   rejected. Gamescope does not fall back to an unvalidated PATH lookup if the
-  binary disappears. Pasta is re-resolved so installing it takes effect without
-  restarting the launcher; user-bin pasta is explicitly mounted read-only.
+  binary disappears. Pasta and bwrap are re-resolved so installing them takes
+  effect without restarting the launcher; user-bin pasta and gamescope are
+  explicitly mounted read-only.
 - Linux installers cannot fall back to the desktop `.exe` handler. On Wayland
   with gamescope available and no existing gamescope session, installers use
   the private gamescope display and hide host X11 just like normal game launches.
-- Writable game/prefix/extra mounts are checked for real-home ancestors, broad
-  launcher roots, credential/tool directories and symlink aliases. Per-game
-  sandbox homes, Wine prefixes and downloads are permitted; other launcher
-  state is not. Home, identity and prefix preparation failures refuse launch.
+- Writable game/prefix/extra mounts are checked after symlink resolution. The
+  check refuses `/`, real-home ancestors, broad launcher roots, ancestors of
+  `/tmp` and `/run`, anything inside `/proc`, `/dev`, `/sys`,
+  `$XDG_RUNTIME_DIR` or `/run` except `/run/media`, and credential/tool
+  directories. Per-game sandbox homes, Wine prefixes and downloads are
+  permitted; other launcher state is not. Home, identity and prefix preparation
+  failures refuse launch. Every refusal is a `SandboxUnavailableError`, shown in
+  a dialog by the library, deep-link and tray launches.
 - Input exposure is limited to individual udev-classified joystick devices,
   excluding nodes also marked as keyboards or mice. Unknown hidraw nodes and
   the entire `/dev/input` directory are not shared. Connect controllers before

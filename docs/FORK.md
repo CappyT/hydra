@@ -114,6 +114,27 @@ longer hard-crashes boot.
 Game executables launched through `launchGame` — native, Wine/Proton via umu,
 tray, deep link, Steam shortcuts — are always sandboxed; there is no bypass.
 
+The game bind is the game's install dir (`<downloadPath>/<folderName>`) when the
+executable lives inside it, so an exe in `Binaries/Win64/` still sees its assets.
+Other executables bind their own directory
+(`src/main/helpers/sandbox-game-dir.ts`).
+
+Variables from launch options (`NAME=value %command%`) never enter the
+environment of bwrap, the network wrapper or pasta. `wrapWithSandbox` moves
+them into the payload argv as `/usr/bin/env NAME=value ... <command>`, so they
+apply only at the final exec inside the sandbox. A game-supplied `LD_PRELOAD`
+or `LD_LIBRARY_PATH` therefore cannot load into a host-side process. The bind
+profile reads the host environment only, so launch variables cannot select
+which host files or runtime sockets are bound.
+
+`assertSafeSandboxPath` (`src/main/helpers/sandbox-paths.ts`) checks every
+writable bind after symlink resolution. It refuses `/`, any ancestor of the
+real home, the launcher state roots, `/tmp` and `/run`, anything inside `/proc`,
+`/dev`, `/sys`, `$XDG_RUNTIME_DIR` or `/run` (except removable media under
+`/run/media`), and credential/tool dirs in the home. A refusal is a
+`SandboxUnavailableError`, which the library, deep link and tray launches show
+in a dialog.
+
 **Emulator launches are intentionally exempt** (owner decision): classics discs
 (`src/main/helpers/launch-classics-game.ts`) and RetroArch ROMs
 (`src/main/helpers/launch-retroarch-game.ts`) spawn the emulator directly and
@@ -241,10 +262,15 @@ ALL capabilities dropped (`nsenter` + `setpriv --inh-caps=-all
 disabled both ways (`-t/-u/-T/-U none`) and **`--no-map-gw`** is passed so host
 loopback services stay unreachable via the gateway IP; internet and LAN still
 work through pasta's NAT. DNS is forwarded to the host resolver
-(`--dns-forward` / `--dns-host`) via a generated `resolv.conf` bound into the
-sandbox. pasta/placeholder die with the sandbox pid namespace (no orphans). The
-game itself runs with zero capabilities, so nested user namespaces work and the
-posture matches the pre-isolation sandbox. See
+(`--dns-forward` / `--dns-host`, the first plain IP `nameserver`; scoped
+`fe80::1%iface` entries are skipped) via a generated `resolv.conf` bound into the
+sandbox. bwrap starts the wrapper with `--as-pid-1`: the wrapper, which keeps
+the setup capabilities, is pid 1 of the sandbox pid namespace. No
+capability-less process stays in the host netns, so the game cannot ptrace one
+to run syscalls there. pasta/placeholder die with the sandbox pid namespace (no
+orphans), and killing pid 1 tears the namespace down. The game itself runs with
+zero capabilities, so nested user namespaces work and the posture matches the
+pre-isolation sandbox. See
 `src/main/services/sandbox-network.ts` and the `HYDRA_PASTA_*` env the builder
 sets.
 
@@ -257,9 +283,11 @@ state — `level/mode (from game|global)` or `disabled` — and the network stat
 
 ## Gamescope integration
 
-When `gamescope` is on `PATH` it wraps launched games (per-game `useGamescope`
-tri-state, effectively on when the binary is detected). gamescope in nested mode
-defaults its internal render size to 1280×720 and upscales, so without explicit
+When a trusted `gamescope` is found (system bin dirs, then `~/.local/bin`) it
+wraps launched games (per-game `useGamescope` tri-state, effectively on when the
+binary is detected). A sandboxed launch binds that exact binary read-only, so a
+`~/.local/bin` gamescope stays reachable behind the `/home` tmpfs. gamescope in
+nested mode defaults its internal render size to 1280×720 and upscales, so without explicit
 dimensions every game runs at 720p — and at the wrong aspect ratio on a
 non-16:9 monitor. `src/main/helpers/resolve-gamescope-wrapper.ts` sizes it to the
 CURRENT display on every launch: `-W/-H` (output) and `-w/-h` (internal render)
@@ -292,8 +320,9 @@ Enabled per game via `automaticCloudSync`.
 
 - **Sync-in before launch, back up on exit.** `CloudSync.syncOnLaunch` is
   awaited at the start of `launchGame` BEFORE the game spawns; the close-backup
-  runs in `process-watcher` on exit. (Backing up on open was a bug — it would
-  overwrite a newer cross-device backup.)
+  runs in `process-watcher` on exit. A backup on open would overwrite a newer
+  cross-device backup. With automatic sync on, `launchGame` prepares the Wine
+  prefix before the sync-in, so the restore finds a `user.reg` to resolve.
 - **Marker-based, data-safe decisions** (pure logic in
   `src/main/services/backup/sync-planner.ts`, `decideLaunchSync`). `Game.lastSyncedBackupAt`
   is the createdAt of the backup this machine is in sync with. On launch: no
@@ -305,24 +334,63 @@ Enabled per game via `automaticCloudSync`.
   marker → restore; otherwise skip (protects a crashed session's local progress
   from being overwritten). Local-save existence is detected only on the marker-
   unset path via a ludusavi backup *preview* (`CloudSync.detectHasLocalSaves`,
-  the same read-only scan the real backup uses) — a preview finding zero save
-  files = no local saves. **Fail-safe (non-negotiable):** a restore happens ONLY
-  on a POSITIVE zero-files determination; any error/timeout/ambiguity is treated
-  as "saves exist" → adopt-baseline, never a restore.
+  the same read-only scan the real backup uses). A preview that lists the game
+  with zero save files means no local saves. A preview that omits the game
+  (`totalGames` 0) means no local saves only for Wine (`.exe`) games. For native
+  and LaunchBox games it is inconclusive, and the launch adopts the baseline.
+  **Fail-safe (non-negotiable):** a restore happens ONLY on a POSITIVE
+  zero-files determination; any error/timeout/ambiguity is treated as "saves
+  exist" → adopt-baseline, never a restore.
+- **Save locations.** Wine (`.exe`) games back up and restore through the
+  game's Wine prefix. Native Linux games use the per-game sandbox home
+  (`<userData>/sandbox-homes/`): ludusavi runs with `HOME` set to it and the XDG
+  base-dir variables removed, and a restore writes only into that home. A native
+  game with the sandbox off is refused before bundling, because its saves live
+  in the real home, which a restore never targets. LaunchBox games back up the
+  host home and restore without a prefix.
+- **Backup rules.** ludusavi writes a backup into
+  `<backupsPath>/.backup-tmp/<shop>-<objectId>-<random>`. The directory is
+  always removed. It never shares the local backend's game folder
+  `<backupsPath>/<shop>-<objectId>`: the local backend skips dot-folders, which
+  are reserved for scratch and cache. A backup with no save files is rejected
+  (`NoLocalSavesError`), because it has no `mapping.yaml` and takes a retention
+  slot. The bundle tar is always removed after the upload. A manual backup is
+  refused while the game runs, because it would clear `unsyncedSince` in the
+  middle of a session.
 - **Retention.** After each close-backup, prune to N (`Game.backupsToKeep` ??
   `UserPreferences.defaultBackupsToKeep` ?? 10), keeping the newest N non-frozen
   plus ALL frozen artifacts. The backups list (game options → Backup) is sorted
   newest-first and shows each backup's `hostname` with a "This PC" badge for this
   device's own backups; restore any of them manually to roll back.
-- **Cross-device conflict detection.** `Game.unsyncedSince` is set when a play
-  session starts and cleared on a clean close-backup, so it stays set only after
-  a crash (local divergence). If, on launch, a newer backup exists from ANOTHER
-  device AND this device has local divergence, that is a true conflict. It is
+- **Cross-device conflict detection.** `Game.unsyncedSince` is set when the
+  process watcher first sees the game running (not before the spawn) and
+  cleared on a clean close-backup, so it stays set only after a crash (local
+  divergence). Only the process watcher and a failed launch sync-in set it; a refused or failed spawn alone never does. If, on launch, a newer backup exists
+  from ANOTHER device AND this device has local divergence, that is a true conflict. It is
   resolved **keep-both** (no blocking prompt, zero data loss): this device's
   interrupted saves are backed up FIRST as a **frozen** artifact (retention never
   auto-deletes it), then the newer remote is restored and the user is warned via
-  a toast. If that safety backup fails, the remote is NOT restored — local saves
+  a toast. The sync marker is then the later of the remote backup date and the
+  safety backup date, so the next launch does not restore the safety backup. If
+  that safety backup fails, the remote is NOT restored — local saves
   are kept intact and the conflict is retried next launch.
+- **Close-side supersede check.** On close, before pruning, `finalizeBackup`
+  lists the backups. A backup from another device that is newer than the
+  pre-session marker is frozen and reported as kept-both. If the freeze fails,
+  pruning is skipped. A listing failure skips only this check.
+- **Sync-in failure.** A failed launch sync-in shows a desktop notification and
+  sets `unsyncedSince`, so the next launch treats a newer remote as a conflict.
+  The launch goes on. A thrown rclone listing goes to this failure path and
+  never reaches the planner.
+- **Backend integrity.** Sidecar JSON writes are atomic (`<file>.tmp` + rename,
+  `atomic-write.ts`). Both backends delete the sidecar before the tar, so an
+  interrupted delete never leaves a listed backup without its tar. The artifact
+  validator checks ids, shop, `objectId` and paths, and the emulation save store
+  checks save ids and platforms. The rclone backend's `list()` returns an empty
+  list only on exit code 3 (directory not found) and throws on every other
+  error. It adds a `/` to the remote base path only when the remote ends with
+  neither `:` nor `/`. It downloads a restore tar into its own temporary
+  directory and removes it through the `release` hook after the restore.
 
 ## Tray launches
 
@@ -343,10 +411,17 @@ Hydra account and stays hidden under `ACCOUNTLESS`.
 
 ## Emulator detection
 
-Emulator detection runs the found binary with `--version` on the host. It
-searches the emulator install directory under the configured downloads dir
-(`<downloads>/<Emulator name>`), never the game download folders or
-`~/Downloads`, because a game archive can contain a file with an emulator name.
+Emulator launches and detection run the emulator binary unsandboxed, so
+detection trusts only roots that downloads cannot occupy. Hydra installs
+emulators (PCSX2, DuckStation, RPCS3, PPSSPP, Dolphin, RetroArch) under the
+launcher-owned `<userData>/emulators/<Emulator name>`
+(`src/main/services/emulators/emulator-install-root.ts`). Detection searches
+that root, `PATH`, the standard install dirs (`/usr/bin`, `/usr/local/bin`,
+`~/.local/bin`, `~/Applications`, `/opt`), AppImages in `~`, `~/Desktop` and
+`~/AppImages`, and flatpak. It never searches a downloads dir or `~/Downloads`:
+any download can create a root folder with an emulator name. An
+emulator installed under a downloads dir works only through the executable
+path already stored in its emulator config.
 
 ## Big Picture launch flag
 
