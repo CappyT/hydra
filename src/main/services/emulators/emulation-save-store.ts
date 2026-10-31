@@ -3,6 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { assertArtifactId } from "../backup/artifact-validation";
+import { writeJsonAtomicSync } from "../backup/atomic-write";
+
 import type {
   EmulationCloudSave,
   EmulationSaveEmulator,
@@ -112,6 +115,9 @@ export class EmulationSaveStore {
   }
 
   private platformDir(platform: EmulationSavePlatform): string {
+    if (!PLATFORMS.includes(platform)) {
+      throw new Error("Invalid emulation save platform");
+    }
     return path.join(this.root, EMULATION_SAVES_DIRNAME, platform);
   }
 
@@ -151,10 +157,7 @@ export class EmulationSaveStore {
     };
 
     await fs.promises.writeFile(path.join(dir, `${id}.${ext}`), input.buffer);
-    await fs.promises.writeFile(
-      path.join(dir, `${id}.json`),
-      JSON.stringify(record, null, 2)
-    );
+    writeJsonAtomicSync(path.join(dir, `${id}.json`), record);
 
     return record;
   }
@@ -190,6 +193,7 @@ export class EmulationSaveStore {
 
   /** Reads the raw artifact bytes for a save id, scanning both platforms. */
   async downloadBytes(id: string): Promise<Buffer> {
+    assertArtifactId(id);
     for (const platform of PLATFORMS) {
       const artifactPath = path.join(
         this.platformDir(platform),
@@ -204,15 +208,18 @@ export class EmulationSaveStore {
 
   /** Removes the artifact and its sidecar (no-op if already gone). */
   async delete(id: string): Promise<void> {
+    assertArtifactId(id);
     for (const platform of PLATFORMS) {
       const dir = this.platformDir(platform);
       const sidecar = path.join(dir, `${id}.json`);
       if (!fs.existsSync(sidecar)) continue;
 
+      // Sidecar first: an interrupted delete must never leave a listed save
+      // without its artifact.
+      await fs.promises.rm(sidecar, { force: true });
       await fs.promises.rm(path.join(dir, `${id}.${artifactExt(platform)}`), {
         force: true,
       });
-      await fs.promises.rm(sidecar, { force: true });
       return;
     }
   }
@@ -222,6 +229,7 @@ export class EmulationSaveStore {
     id: string,
     body: { label?: string | null; metadata?: Record<string, unknown> | null }
   ): Promise<EmulationCloudSave> {
+    assertArtifactId(id);
     for (const platform of PLATFORMS) {
       const sidecar = path.join(this.platformDir(platform), `${id}.json`);
       if (!fs.existsSync(sidecar)) continue;
@@ -231,7 +239,7 @@ export class EmulationSaveStore {
       if (body.metadata !== undefined) record.metadata = body.metadata;
       record.updatedAt = new Date().toISOString();
 
-      await fs.promises.writeFile(sidecar, JSON.stringify(record, null, 2));
+      writeJsonAtomicSync(sidecar, record);
       return record;
     }
     throw new Error(`Emulation save not found: ${id}`);

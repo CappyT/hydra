@@ -109,8 +109,47 @@ describe("EmulationSaveStore (local emulation saves)", () => {
     assert.equal((await store.list("ps2", "pcsx2")).length, 0);
     await assert.rejects(() => store.downloadBytes(saved.id));
 
-    // Deleting an unknown id is a no-op.
-    await store.delete("does-not-exist");
+    // Deleting an unknown (well-formed) id is a no-op.
+    await store.delete("00000000-0000-4000-8000-000000000000");
+  });
+
+  it("rejects traversal ids and invalid platforms", async () => {
+    // A sidecar outside the store that a crafted id must never reach.
+    const victim = path.join(root, "victim.json");
+    fs.writeFileSync(victim, "{}");
+    const traversal = "../../../victim";
+
+    await assert.rejects(() => store.delete(traversal), /Invalid artifact id/);
+    await assert.rejects(
+      () => store.update(traversal, { label: "pwned" }),
+      /Invalid artifact id/
+    );
+    await assert.rejects(
+      () => store.downloadBytes(traversal),
+      /Invalid artifact id/
+    );
+    await assert.rejects(() => store.delete("does-not-exist"));
+    assert.equal(fs.readFileSync(victim, "utf8"), "{}");
+
+    await assert.rejects(
+      () => store.upload(makeInput({ platform: "../x" as never })),
+      /Invalid emulation save platform/
+    );
+    await assert.rejects(
+      () => store.list("../x" as never, "pcsx2"),
+      /Invalid emulation save platform/
+    );
+    assert.equal(fs.existsSync(path.join(root, "emulation-saves")), false);
+  });
+
+  it("leaves no .tmp sidecar behind after upload and update", async () => {
+    const saved = await store.upload(makeInput());
+    await store.update(saved.id, { label: "Renamed" });
+    const files = fs.readdirSync(path.join(root, "emulation-saves", "ps2"));
+    assert.deepEqual(
+      files.filter((f) => f.endsWith(".tmp")),
+      []
+    );
   });
 
   it("stores PS1 saves as .mcs and skips shop when unmatched", async () => {
