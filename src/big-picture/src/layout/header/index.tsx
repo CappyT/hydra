@@ -10,7 +10,12 @@ import {
   useState,
 } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { FocusItem, HorizontalFocusGroup, Typography } from "../../components";
+import {
+  FocusItem,
+  getDefaultPageTitle,
+  HorizontalFocusGroup,
+  Typography,
+} from "../../components";
 import { IS_DESKTOP } from "../../constants";
 import { useNavigationScreenActions } from "../../hooks";
 import type { FocusOverrides } from "../../services";
@@ -32,10 +37,12 @@ const VIRTUAL_KEYBOARD_DISMISS_EVENT = "big-picture-virtual-keyboard-dismiss";
 const VIRTUAL_KEYBOARD_KEY_FOCUS_ID_PREFIX =
   "big-picture-virtual-keyboard-key-";
 
+// Derived from the current location on every render, so a page that sets no
+// title always shows its route default and never the previous page's title.
 const useCurrentPageTitle = () => {
-  const stack = useNavigationHistoryStore((s) => s.stack);
-  if (stack.length >= 1) return stack[stack.length - 1].title;
-  return "Home";
+  const { key, pathname } = useLocation();
+  const override = useNavigationHistoryStore((s) => s.titleOverrides[key]);
+  return override ?? getDefaultPageTitle(pathname);
 };
 
 function Header() {

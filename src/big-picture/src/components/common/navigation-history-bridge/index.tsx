@@ -31,7 +31,6 @@ export function NavigationHistoryBridge() {
     const entry = {
       key: location.key,
       pathname: location.pathname,
-      title: getDefaultPageTitle(location.pathname),
     };
 
     const top = store.stack[store.stack.length - 1];
