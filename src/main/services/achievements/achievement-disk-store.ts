@@ -22,6 +22,32 @@ interface AchievementEntry {
 // would otherwise echo every record straight back to disk).
 let hydrating = false;
 
+/**
+ * Runs tasks for the same key one after another, in call order, so an older
+ * snapshot can never land on disk after a newer one. The map entry is dropped
+ * once the chain for that key settles.
+ */
+export const createKeyedSerializer = () => {
+  const tails = new Map<string, Promise<void>>();
+
+  return (key: string, task: () => Promise<void>): Promise<void> => {
+    const run = (tails.get(key) ?? Promise.resolve()).then(task);
+    const tail = run.then(
+      () => undefined,
+      () => undefined
+    );
+
+    tails.set(key, tail);
+    void tail.then(() => {
+      if (tails.get(key) === tail) tails.delete(key);
+    });
+
+    return run;
+  };
+};
+
+const serializeWrite = createKeyedSerializer();
+
 export const parseGameKey = (
   key: string
 ): { shop: GameShop; objectId: string } | null => {
@@ -45,7 +71,7 @@ export const persistAchievementEntry = (
   // imports — the memory store pulls this module into node:test).
   if (hydrating || process.type !== "browser") return;
 
-  void (async () => {
+  void serializeWrite(`${shop}:${objectId}`, async () => {
     const { ACCOUNTLESS } = await import("@shared");
     if (!ACCOUNTLESS) return;
 
@@ -58,7 +84,7 @@ export const persistAchievementEntry = (
       catalogueValidator: entry.catalogueValidator,
       updatedAt: Date.now(),
     });
-  })().catch(async (error) => {
+  }).catch(async (error) => {
     const { achievementsLogger } = await import("../logger");
     achievementsLogger.error("Failed to persist achievements to disk", error);
   });
