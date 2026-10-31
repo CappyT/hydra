@@ -136,7 +136,9 @@ const closeGame = async (
   for (const processToClose of processesToClose) {
     try {
       process.kill(processToClose.pid);
-    } catch {
+    } catch (error) {
+      // The list predates killSandboxTree: a reaped process needs no root kill.
+      if ((error as NodeJS.ErrnoException).code === "ESRCH") continue;
       sudo.exec(
         getKillCommand(processToClose.pid),
         { name: app.getName() },
