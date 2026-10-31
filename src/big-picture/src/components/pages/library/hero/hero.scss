@@ -8,6 +8,19 @@
   box-shadow: 0px 0px 0px 0px transparent;
 }
 
+.hero--empty {
+  height: auto;
+  padding: calc(var(--spacing-unit) * 16) calc(var(--spacing-unit) * 16)
+    calc(var(--spacing-unit) * 8);
+}
+
+.hero__empty-title {
+  font-size: 48px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+}
+
 .hero__bg-layer {
   position: absolute;
   inset: 0;

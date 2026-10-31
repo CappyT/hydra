@@ -66,10 +66,15 @@ export function LibraryHero({
   onToggleFavorite,
   favoriteLoadingGameId = null,
 }: Readonly<LibraryHeroProps>) {
-  const { t, i18n } = useTranslation(["game_details", "big_picture"]);
+  const { t, i18n } = useTranslation([
+    "game_details",
+    "big_picture",
+    "library",
+  ]);
   const [featuredGameIndex, setFeaturedGameIndex] = useState(0);
   const heroRef = useRef<HTMLElement | null>(null);
-  const featuredGame = lastPlayedGames[featuredGameIndex] ?? null;
+  const featuredGame =
+    lastPlayedGames[featuredGameIndex] ?? lastPlayedGames[0] ?? null;
   const getHeroScrollAnchor = useCallback(() => heroRef.current, []);
   const preferredAssets = useMemo(
     () => resolvePreferredGameAssets(featuredGame, null),
@@ -119,6 +124,16 @@ export function LibraryHero({
     if (!featuredGame) return;
     onPrimaryAction?.(featuredGame);
   };
+
+  // No game was ever played: render no actions, so no focus ids are registered
+  // and the filters toolbar `up` override falls back to tree navigation.
+  if (!featuredGame) {
+    return (
+      <section ref={heroRef} className="hero hero--empty">
+        <h2 className="hero__empty-title">{t("library", { ns: "library" })}</h2>
+      </section>
+    );
+  }
 
   const heroActionsNavigationOverrides: FocusOverrides = {
     down: {
