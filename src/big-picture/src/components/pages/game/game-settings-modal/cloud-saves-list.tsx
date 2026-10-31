@@ -6,6 +6,7 @@ import {
 import type { GameArtifact } from "@types";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ACCOUNTLESS } from "@shared";
 import { useDate } from "../../../../hooks";
 import {
   Button,
@@ -261,7 +262,11 @@ export function CloudSavesList({
       <ConfirmationModal
         visible={deleteTarget !== null}
         title={t("delete_backup")}
-        description={t("cloud_delete_backup_description")}
+        description={
+          ACCOUNTLESS
+            ? tGameDetails("delete_backup_description")
+            : t("cloud_delete_backup_description")
+        }
         confirmLabel={t("delete_backup")}
         danger
         loading={deleteTarget ? deletingArtifactId === deleteTarget.id : false}

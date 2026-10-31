@@ -14,6 +14,7 @@ import type {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { platformToEmulationSavePlatform } from "@renderer/helpers";
+import { ACCOUNTLESS } from "@shared";
 import {
   Button,
   Checkbox,
@@ -262,10 +263,6 @@ export function GameCloudSettingsTab({
       return t("no_backup_preview");
     }
 
-    if (artifacts.length === 0) {
-      return t("no_backups");
-    }
-
     return null;
   }, [
     creatingBackup,
@@ -274,7 +271,6 @@ export function GameCloudSettingsTab({
     loadingPreview,
     hasReachedLimit,
     backupPreview,
-    artifacts.length,
     t,
     tGameDetails,
   ]);
@@ -553,7 +549,11 @@ export function GameCloudSettingsTab({
         (hasLocalSaves || emulationPlatform === "wii") && (
           <SettingsSection
             className="game-cloud-settings-tab__section"
-            title={t("cloud_saves_section_title")}
+            title={
+              ACCOUNTLESS
+                ? tSettings("cloud_saves_section_title")
+                : t("cloud_saves_section_title")
+            }
             description={
               emulationPlatform === "ps1" || emulationPlatform === "ps2"
                 ? t("cloud_saves_section_description_memory")
@@ -620,7 +620,11 @@ export function GameCloudSettingsTab({
         <SettingsSection
           className="game-cloud-settings-tab__section"
           title={tGameDetails("settings_category_hydra_cloud")}
-          description={tGameDetails("cloud_save_legacy_description")}
+          description={tGameDetails(
+            ACCOUNTLESS
+              ? "cloud_save_local_description"
+              : "cloud_save_legacy_description"
+          )}
         >
           <div className="game-cloud-settings-tab__section-content">
             <Button
@@ -650,7 +654,11 @@ export function GameCloudSettingsTab({
             <Checkbox
               block
               focusId={GAME_CLOUD_SETTINGS_AUTO_SYNC_ID}
-              label={t("enable_automatic_cloud_sync")}
+              label={
+                ACCOUNTLESS
+                  ? tGameDetails("enable_automatic_cloud_sync")
+                  : t("enable_automatic_cloud_sync")
+              }
               checked={automaticCloudSync}
               onChange={onToggleAutomaticCloudSync}
             />
@@ -691,7 +699,11 @@ export function GameCloudSettingsTab({
       <SettingsSection
         className="game-cloud-settings-tab__section game-cloud-settings-tab__section--backups"
         title={t("backups")}
-        description={t("cloud_saves_list_description")}
+        description={
+          ACCOUNTLESS
+            ? tGameDetails("backups_list_description")
+            : t("cloud_saves_list_description")
+        }
       >
         <div className="game-cloud-settings-tab__section-content game-cloud-settings-tab__section-content--backups">
           <CloudSavesList

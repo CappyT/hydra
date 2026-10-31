@@ -34,7 +34,7 @@ function getConfirmationConfig(
         title: t("reset_achievements"),
         description: t(
           ACCOUNTLESS
-            ? "reset_achievements_description"
+            ? "reset_achievements_local_description"
             : game.shop === "steam"
               ? "reset_achievements_steam_description"
               : "reset_achievements_souvenirs_description",
@@ -172,9 +172,11 @@ export function GameDangerZoneSettingsTab({
           className="game-danger-zone-settings-tab__section"
           title={t("reset_achievements")}
           description={t(
-            !ACCOUNTLESS && game.shop === "steam"
-              ? "reset_achievements_steam_description"
-              : "reset_achievements_description",
+            ACCOUNTLESS
+              ? "reset_achievements_local_description"
+              : game.shop === "steam"
+                ? "reset_achievements_steam_description"
+                : "reset_achievements_description",
             { game: game.title }
           )}
         >

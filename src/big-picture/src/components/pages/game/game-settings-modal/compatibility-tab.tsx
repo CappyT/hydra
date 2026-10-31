@@ -591,7 +591,7 @@ export function GameCompatibilitySettingsTab({
       {showSandboxSettings ? (
         <SettingsSection
           className="game-compatibility-settings-tab__section"
-          title={t("enable_sandbox")}
+          title={t("sandbox_section_title", { ns: "settings" })}
           description={t("sandbox_description")}
         >
           <Checkbox

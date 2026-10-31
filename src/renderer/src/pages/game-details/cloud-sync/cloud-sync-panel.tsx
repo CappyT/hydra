@@ -3,7 +3,7 @@ import { useContext, useEffect, useMemo, useState } from "react";
 import type { ChangeEvent } from "react";
 import { cloudSyncContext, gameDetailsContext } from "@renderer/context";
 import "./cloud-sync-panel.scss";
-import { formatBytes } from "@shared";
+import { ACCOUNTLESS, formatBytes } from "@shared";
 import {
   ClockIcon,
   DeviceDesktopIcon,
@@ -191,7 +191,13 @@ export function CloudSyncPanel({
 
       <div className="cloud-sync-panel__section-header">
         <h2>{t("settings_category_hydra_cloud")}</h2>
-        <p>{t("cloud_save_legacy_description")}</p>
+        <p>
+          {t(
+            ACCOUNTLESS
+              ? "cloud_save_local_description"
+              : "cloud_save_legacy_description"
+          )}
+        </p>
       </div>
 
       <div className="cloud-sync-panel__automatic-sync">

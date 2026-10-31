@@ -582,6 +582,9 @@
     "enable_automatic_cloud_sync": "Abilita il backup automatico",
     "backups_to_keep": "Backup da conservare",
     "backups_to_keep_description": "Quanti backup conservare per questo gioco prima che i più vecchi vengano eliminati. I backup bloccati vengono sempre mantenuti. Lascia vuoto per usare il valore predefinito globale ({{count}}).",
+    "cloud_save_local_description": "Crea e ripristina backup manuali tramite artefatti. Quando il backup automatico è attivo, i salvataggi vengono ripristinati prima dell'avvio e salvati alla chiusura.",
+    "backups_list_description": "Gestisci i backup dei tuoi salvataggi",
+    "delete_backup_description": "Eliminare questo backup?",
     "custom_backup_location_set": "Percorso backup personalizzato impostato",
     "no_directory_selected": "Nessuna cartella selezionata",
     "no_write_permission": "Impossibile scaricare in questa cartella. Clicca qui per saperne di più.",
@@ -1186,6 +1189,9 @@
     "backup_save_failed": "Impossibile salvare le impostazioni di backup",
     "auto_backup_new_games": "Esegui il backup dei nuovi giochi automaticamente",
     "auto_backup_new_games_description": "I nuovi giochi aggiunti alla libreria avranno i backup automatici dei salvataggi abilitati per impostazione predefinita. I giochi esistenti non vengono modificati.",
+    "default_backups_to_keep": "Backup da conservare",
+    "default_backups_to_keep_description": "Quanti backup conservare per ogni gioco prima che i più vecchi vengano eliminati. I backup bloccati vengono sempre mantenuti. Un valore impostato per il singolo gioco ha la precedenza. Lascia vuoto per usare il valore predefinito ({{count}}).",
+    "default_backups_to_keep_invalid": "I backup da conservare devono essere un numero intero pari o superiore a 1",
     "epic_sync_starting": "Preparing Epic sync…",
     "epic_sync_library": "Collecting Epic library…",
     "epic_sync_playtime": "Collecting Epic playtime…",
@@ -1242,6 +1248,9 @@
   },
   "modal": {
     "close": "Pulsante Chiudi"
+  },
+  "classics_onboarding": {
+    "step3_body_accountless": "Hydra Classics funziona con un'ampia gamma di emulatori. Avvia qualsiasi gioco riconosciuto con un clic. Esegui il backup dei salvataggi in locale, su tutti gli emulatori supportati."
   },
   "forms": {
     "toggle_password_visibility": "Mostra/Nascondi password"
