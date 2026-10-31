@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import { Button, CheckboxField, SelectField } from "@renderer/components";
 import { settingsContext } from "@renderer/context";
 import { useAppSelector } from "@renderer/hooks";
+import { ACCOUNTLESS } from "@shared";
 import type {
   AchievementCustomNotificationPosition,
   UserPreferences,
@@ -138,38 +139,42 @@ export function SettingsContextNotifications() {
           }
         />
 
-        <CheckboxField
-          label={t("enable_friend_request_notifications")}
-          checked={form.friendRequestNotificationsEnabled}
-          onChange={() =>
-            handleChange({
-              friendRequestNotificationsEnabled:
-                !form.friendRequestNotificationsEnabled,
-            })
-          }
-        />
+        {!ACCOUNTLESS && (
+          <>
+            <CheckboxField
+              label={t("enable_friend_request_notifications")}
+              checked={form.friendRequestNotificationsEnabled}
+              onChange={() =>
+                handleChange({
+                  friendRequestNotificationsEnabled:
+                    !form.friendRequestNotificationsEnabled,
+                })
+              }
+            />
 
-        <CheckboxField
-          label={t("enable_friend_start_game_notifications")}
-          checked={form.friendStartGameNotificationsEnabled}
-          onChange={() =>
-            handleChange({
-              friendStartGameNotificationsEnabled:
-                !form.friendStartGameNotificationsEnabled,
-            })
-          }
-        />
+            <CheckboxField
+              label={t("enable_friend_start_game_notifications")}
+              checked={form.friendStartGameNotificationsEnabled}
+              onChange={() =>
+                handleChange({
+                  friendStartGameNotificationsEnabled:
+                    !form.friendStartGameNotificationsEnabled,
+                })
+              }
+            />
 
-        <CheckboxField
-          label={t("enable_chat_message_notifications")}
-          checked={form.chatMessageNotificationsEnabled}
-          onChange={() =>
-            handleChange({
-              chatMessageNotificationsEnabled:
-                !form.chatMessageNotificationsEnabled,
-            })
-          }
-        />
+            <CheckboxField
+              label={t("enable_chat_message_notifications")}
+              checked={form.chatMessageNotificationsEnabled}
+              onChange={() =>
+                handleChange({
+                  chatMessageNotificationsEnabled:
+                    !form.chatMessageNotificationsEnabled,
+                })
+              }
+            />
+          </>
+        )}
       </div>
 
       <div className="settings-context-panel__group">

@@ -1,5 +1,7 @@
 import "./notifications.scss";
 
+import { ACCOUNTLESS } from "@shared";
+
 import { NotificationsAchievementsSection } from "./notifications-achievements-section";
 import { NotificationsLibrarySection } from "./notifications-library-section";
 import {
@@ -33,8 +35,9 @@ export function NotificationsSettingsSection({
       <NotificationsAchievementsSection
         firstItemUpTarget={{
           type: "item",
-          itemId:
-            NOTIFICATIONS_LIBRARY_ITEM_FOCUS_IDS.friendStartGameNotificationsEnabled,
+          itemId: ACCOUNTLESS
+            ? NOTIFICATIONS_LIBRARY_ITEM_FOCUS_IDS.repackUpdatesNotificationsEnabled
+            : NOTIFICATIONS_LIBRARY_ITEM_FOCUS_IDS.friendStartGameNotificationsEnabled,
         }}
       />
     </div>

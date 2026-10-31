@@ -7,6 +7,7 @@ import HydraIcon from "@renderer/assets/icons/hydra.svg?react";
 import { useSubscription } from "@renderer/hooks/use-subscription";
 import { useState } from "react";
 import { FullscreenMediaModal } from "@renderer/components";
+import { ACCOUNTLESS } from "@shared";
 
 interface AchievementListProps {
   achievements: UserAchievement[];
@@ -106,7 +107,7 @@ export function AchievementList({
                     {achievement.points}
                   </p>
                 </div>
-              ) : (
+              ) : !ACCOUNTLESS ? (
                 <button
                   onClick={() => showHydraCloudModal("achievements")}
                   className="achievements__item-points achievements__item-points--locked"
@@ -115,7 +116,7 @@ export function AchievementList({
                   <HydraIcon className="achievements__item-points-icon" />
                   <p className="achievements__item-points-value">???</p>
                 </button>
-              )}
+              ) : null}
               {achievement.unlockTime != null && (
                 <div
                   className="achievements__item-unlock-time"

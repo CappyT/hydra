@@ -339,13 +339,17 @@ export function SettingsContextContentGameplay() {
           />
         )}
 
-        <CheckboxField
-          label={t("hide_library_epic_badges")}
-          checked={form.hideEpicLibraryBadges}
-          onChange={() =>
-            handleChange({ hideEpicLibraryBadges: !form.hideEpicLibraryBadges })
-          }
-        />
+        {!ACCOUNTLESS && (
+          <CheckboxField
+            label={t("hide_library_epic_badges")}
+            checked={form.hideEpicLibraryBadges}
+            onChange={() =>
+              handleChange({
+                hideEpicLibraryBadges: !form.hideEpicLibraryBadges,
+              })
+            }
+          />
+        )}
 
         <CheckboxField
           label={t("hide_library_achievement_progress")}

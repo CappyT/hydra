@@ -364,37 +364,46 @@ export function GameContextMenu({
       icon: <GearIcon size={16} />,
       disabled: isDeleting,
       submenu: [
-        {
-          id: "hide-game",
-          label: visibility.isHiddenFromOthers
-            ? t("unhide_game")
-            : t("hide_game"),
-          icon: <EyeClosedIcon size={16} />,
-          onClick: () =>
-            void handleVisibilityChange(
-              "isHiddenFromOthers",
-              !visibility.isHiddenFromOthers
-            ),
-          closeOnClick: false,
-          disabled:
-            isDeleting ||
-            isVisibilityPending ||
-            !userDetails ||
-            game.shop === "custom",
-        },
-        {
-          id: "conceal-game",
-          label: visibility.isConcealed ? t("reveal_game") : t("conceal_game"),
-          icon: <LockIcon size={16} />,
-          onClick: () =>
-            void handleVisibilityChange("isConcealed", !visibility.isConcealed),
-          closeOnClick: false,
-          disabled:
-            isDeleting ||
-            isVisibilityPending ||
-            !userDetails ||
-            game.shop === "custom",
-        },
+        ...(ACCOUNTLESS
+          ? []
+          : [
+              {
+                id: "hide-game",
+                label: visibility.isHiddenFromOthers
+                  ? t("unhide_game")
+                  : t("hide_game"),
+                icon: <EyeClosedIcon size={16} />,
+                onClick: () =>
+                  void handleVisibilityChange(
+                    "isHiddenFromOthers",
+                    !visibility.isHiddenFromOthers
+                  ),
+                closeOnClick: false,
+                disabled:
+                  isDeleting ||
+                  isVisibilityPending ||
+                  !userDetails ||
+                  game.shop === "custom",
+              },
+              {
+                id: "conceal-game",
+                label: visibility.isConcealed
+                  ? t("reveal_game")
+                  : t("conceal_game"),
+                icon: <LockIcon size={16} />,
+                onClick: () =>
+                  void handleVisibilityChange(
+                    "isConcealed",
+                    !visibility.isConcealed
+                  ),
+                closeOnClick: false,
+                disabled:
+                  isDeleting ||
+                  isVisibilityPending ||
+                  !userDetails ||
+                  game.shop === "custom",
+              },
+            ]),
         {
           id: "pin-game",
           label:

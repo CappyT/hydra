@@ -11,6 +11,7 @@ export interface UserProfileProps {
   name: string;
   friendCode: string;
   profileFocusId?: string;
+  hideProfile?: boolean;
   notificationsFocusId?: string;
   notificationsFocusable?: boolean;
   profileFocusNavigationOverrides?: FocusOverrides;
@@ -223,6 +224,7 @@ export function UserProfile({
   name,
   friendCode,
   profileFocusId,
+  hideProfile = false,
   notificationsFocusId,
   notificationsFocusable = true,
   profileFocusNavigationOverrides,
@@ -254,15 +256,17 @@ export function UserProfile({
         </>
       ) : null} */}
       <div className="user-profile-header">
-        <UserProfileContent
-          image={image}
-          name={name}
-          friendCode={friendCode}
-          notificationCount={notificationCount}
-          focusId={profileFocusId}
-          focusNavigationOverrides={profileFocusNavigationOverrides}
-          onProfileClick={onProfileClick}
-        />
+        {!hideProfile && (
+          <UserProfileContent
+            image={image}
+            name={name}
+            friendCode={friendCode}
+            notificationCount={notificationCount}
+            focusId={profileFocusId}
+            focusNavigationOverrides={profileFocusNavigationOverrides}
+            onProfileClick={onProfileClick}
+          />
+        )}
         <UserProfileNotification
           notificationsFocusId={notificationsFocusId}
           notificationsFocusable={notificationsFocusable}

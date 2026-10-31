@@ -11,7 +11,11 @@ import {
   SquaresFourIcon,
   StarIcon,
 } from "@phosphor-icons/react";
-import { AuthPage, getDisplayedPlayTimeInMilliseconds } from "@shared";
+import {
+  ACCOUNTLESS,
+  AuthPage,
+  getDisplayedPlayTimeInMilliseconds,
+} from "@shared";
 import {
   type FocusEvent,
   forwardRef,
@@ -402,7 +406,7 @@ function SidebarRouter() {
       ...sidebarItemNavigationOverrides,
       up: previousRoute
         ? getItemFocusTarget(BIG_PICTURE_SIDEBAR_ITEM_IDS[previousRoute.key])
-        : getItemFocusTarget(BIG_PICTURE_SIDEBAR_PROFILE_ID),
+        : getItemFocusTarget(SIDEBAR_TOP_FOCUS_ID),
       down: nextRoute
         ? getItemFocusTarget(BIG_PICTURE_SIDEBAR_ITEM_IDS[nextRoute.key])
         : getItemFocusTarget(BIG_PICTURE_SIDEBAR_POWER_ID),
@@ -414,7 +418,7 @@ function SidebarRouter() {
     ...sidebarItemNavigationOverrides,
     up: lastRoute
       ? getItemFocusTarget(BIG_PICTURE_SIDEBAR_ITEM_IDS[lastRoute.key])
-      : getItemFocusTarget(BIG_PICTURE_SIDEBAR_PROFILE_ID),
+      : getItemFocusTarget(SIDEBAR_TOP_FOCUS_ID),
     down: getItemFocusTarget(BIG_PICTURE_SIDEBAR_LIBRARY_FILTER_ALL_ID),
   };
 
@@ -749,6 +753,11 @@ function SidebarLibrary({
   );
 }
 
+// The profile tile is hidden when ACCOUNTLESS, so the notifications bell is the top focus target.
+const SIDEBAR_TOP_FOCUS_ID = ACCOUNTLESS
+  ? BIG_PICTURE_SIDEBAR_NOTIFICATIONS_ID
+  : BIG_PICTURE_SIDEBAR_PROFILE_ID;
+
 interface SidebarProfileProps {
   library: LibraryGame[];
   runningGamesById: SidebarRunningGamesById;
@@ -816,7 +825,9 @@ function SidebarProfile({
     up: {
       type: "block",
     },
-    left: getItemFocusTarget(BIG_PICTURE_SIDEBAR_PROFILE_ID),
+    left: ACCOUNTLESS
+      ? { type: "block" }
+      : getItemFocusTarget(BIG_PICTURE_SIDEBAR_PROFILE_ID),
     right: contentEntryTarget,
     down: getItemFocusTarget(BIG_PICTURE_SIDEBAR_ITEM_IDS.home),
   };
@@ -830,6 +841,7 @@ function SidebarProfile({
           name={userDetails?.displayName ?? "Sign in"}
           friendCode={userDetails?.id ?? "Not signed in"}
           profileFocusId={BIG_PICTURE_SIDEBAR_PROFILE_ID}
+          hideProfile={ACCOUNTLESS}
           notificationsFocusId={BIG_PICTURE_SIDEBAR_NOTIFICATIONS_ID}
           notificationsFocusable={notificationsFocusable}
           profileFocusNavigationOverrides={profileFocusNavigationOverrides}

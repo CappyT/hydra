@@ -27,6 +27,7 @@ import {
 } from "@renderer/hooks";
 import { useSubscription } from "@renderer/hooks/use-subscription";
 import {
+  ACCOUNTLESS,
   DownloadError,
   Downloader,
   MINIMUM_FREE_DISK_SPACE_BYTES,
@@ -1447,6 +1448,7 @@ export function DownloadSettingsModal({
                   }
 
                   if (
+                    !ACCOUNTLESS &&
                     option.downloader === Downloader.VikingFile &&
                     option.isAvailableButNotConfigured
                   ) {
