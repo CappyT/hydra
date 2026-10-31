@@ -38,10 +38,11 @@ import { t } from "i18next";
 import { orderBy } from "lodash-es";
 import path from "node:path";
 import UserAgent from "user-agents";
+import { parseExternalUrl } from "@main/helpers/external-url";
 import { HydraApi } from "./hydra-api";
 import { logger } from "./logger";
-import {
 import { SandboxUnavailableError } from "./sandbox-command-builder";
+import {
   addSteamGridDbCacheControl,
   isSteamGridDbArtworkRequest,
 } from "./steam-grid-db-cache";
@@ -495,7 +496,8 @@ export class WindowManager {
     });
 
     mainWindow.webContents.setWindowOpenHandler((handler) => {
-      shell.openExternal(handler.url);
+      const url = parseExternalUrl(handler.url);
+      if (url) shell.openExternal(url);
       return { action: "deny" };
     });
   }
