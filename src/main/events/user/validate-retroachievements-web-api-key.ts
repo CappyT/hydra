@@ -1,6 +1,7 @@
 import { registerEvent } from "../register-event";
 import { RetroAchievementsClient } from "@main/services/retro-achievements/retro-achievements-client";
 import { logger } from "@main/services";
+import axios from "axios";
 
 export interface ValidateRetroAchievementsWebApiKeyResult {
   valid: boolean;
@@ -11,7 +12,9 @@ export interface ValidateRetroAchievementsWebApiKeyResult {
  * Accountless fork: validates a RetroAchievements Web API key by calling the
  * RetroAchievements Web API directly (main process, no CORS), instead of the
  * Hydra profile integration endpoint. A 200 with a matching profile means the
- * credentials are valid; a 401 / non-JSON response means they are not.
+ * credentials are valid; a 401 / 403 / body without `User` means they are not.
+ * Any other failure (offline, timeout, 5xx) is rethrown so the UI shows its
+ * connect error instead of reporting a good key as invalid.
  */
 const validateRetroAchievementsWebApiKey = async (
   _event: Electron.IpcMainInvokeEvent,
@@ -40,8 +43,18 @@ const validateRetroAchievementsWebApiKey = async (
 
     return { valid: true, userId };
   } catch (error) {
-    logger.error("Failed to validate RetroAchievements Web API key", error);
-    return { valid: false, userId: null };
+    // The AxiosError config holds the Web API key in its params: never log it.
+    const status = axios.isAxiosError(error) ? error.response?.status : null;
+
+    if (status === 401 || status === 403) {
+      return { valid: false, userId: null };
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error(
+      `Failed to validate RetroAchievements Web API key (status ${status ?? "none"}): ${message}`
+    );
+    throw new Error("retroachievements-validation-failed");
   }
 };
 

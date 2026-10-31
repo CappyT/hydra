@@ -35,6 +35,7 @@ interface GetUserProfileParams {
 export class RetroAchievementsClient {
   private static readonly instance: AxiosInstance = axios.create({
     baseURL: "https://retroachievements.org/API",
+    timeout: 15000,
     httpsAgent: new https.Agent({ family: 4 }),
   });
 
