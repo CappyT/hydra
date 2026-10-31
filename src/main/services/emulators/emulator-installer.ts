@@ -11,7 +11,6 @@ import type {
   EmulatorSystem,
   ResolvedInstallOption,
 } from "@types";
-import { getDownloadsPath } from "@main/events/helpers/get-downloads-path";
 
 import { logger } from "../logger";
 import { SevenZip } from "../7zip";
@@ -25,6 +24,7 @@ import {
 } from "./find-managed-emulator-executable";
 import { KNOWN_BINARIES, isKnownEmulatorBinary } from "./known-binaries";
 import { assertValidEmulatorExecutable } from "./validate-emulator-executable";
+import { getEmulatorInstallRoot } from "./emulator-install-root";
 
 const execFileAsync = promisify(execFile);
 
@@ -72,12 +72,15 @@ const BINARY_TO_SYSTEM: Record<EmulatorBinary, EmulatorSystem> = {
   dolphin: "dolphin",
 };
 
+// Fork: a launcher-owned root, never the downloads dir (see emulator-install-root).
 const emulatorInstallDirectory = async (
   binary: EmulatorBinary
 ): Promise<string> => {
-  const downloadsRoot = await getDownloadsPath();
   const system = BINARY_TO_SYSTEM[binary];
-  return path.join(downloadsRoot, KNOWN_BINARIES[system].displayName);
+  return path.join(
+    getEmulatorInstallRoot(),
+    KNOWN_BINARIES[system].displayName
+  );
 };
 
 const installMacosDmg = async (

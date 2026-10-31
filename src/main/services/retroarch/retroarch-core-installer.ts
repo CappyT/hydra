@@ -11,7 +11,7 @@ import type {
   RetroArchInstallResult,
 } from "@types";
 
-import { getDownloadsPath } from "@main/events/helpers/get-downloads-path";
+import { getEmulatorInstallRoot } from "../emulators/emulator-install-root";
 
 import { logger } from "../logger";
 import { SevenZip } from "../7zip";
@@ -248,8 +248,8 @@ export const downloadAndInstallRetroArch = async (
 
   const fileName = path.basename(option.fileName ?? option.downloadUrl);
   const archivePath = path.join(SystemPath.getPath("temp"), fileName);
-  const downloadsRoot = await getDownloadsPath();
-  const extractDir = path.join(downloadsRoot, "RetroArch");
+  // Fork: a launcher-owned root, never the downloads dir (see emulator-install-root).
+  const extractDir = path.join(getEmulatorInstallRoot(), "RetroArch");
   const stagingDir = `${extractDir}-staging`;
 
   const removeArchive = async () => {

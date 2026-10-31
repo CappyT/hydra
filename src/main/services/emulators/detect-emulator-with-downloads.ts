@@ -1,29 +1,19 @@
-import path from "node:path";
-
-import { getDownloadsPath } from "../../events/helpers/get-downloads-path.js";
 import {
   detectEmulator,
   type DetectableBinary,
   type DetectionResult,
 } from "./detect-emulator.js";
+import { getEmulatorInstallRoot } from "./emulator-install-root.js";
 
 export const detectEmulatorWithDownloads = async (
   binary: DetectableBinary,
   options?: { resolveVersion?: boolean }
 ): Promise<DetectionResult | null> => {
-  const configuredDownloads = await getDownloadsPath().catch(() => null);
-  // Emulators install under the configured downloads dir; the user's
-  // ~/Downloads holds arbitrary untrusted files.
-  const downloadDirectories = Array.from(
-    new Set(
-      [configuredDownloads]
-        .filter((directory): directory is string => Boolean(directory))
-        .map((directory) => path.normalize(directory))
-    )
-  );
-
+  // Fork: emulators install under a launcher-owned root. Download dirs are
+  // never searched: any download can occupy `<downloads>/<EmulatorName>`, and
+  // detection runs the found binary unsandboxed.
   return detectEmulator(binary, {
     resolveVersion: options?.resolveVersion,
-    downloadDirectories,
+    downloadDirectories: [getEmulatorInstallRoot()],
   });
 };

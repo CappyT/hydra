@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
+import ts from "typescript";
 
 import { findEmulatorInDownloadDirectories } from "./find-emulator-in-download-directories.ts";
 
@@ -20,30 +21,72 @@ const writeExecutable = (filePath: string) => {
 };
 
 describe("findEmulatorInDownloadDirectories", () => {
-  let downloads: string;
+  let root: string;
 
   before(() => {
-    downloads = fs.mkdtempSync(path.join(os.tmpdir(), "emu-detect-"));
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "emu-detect-"));
   });
 
   after(() => {
-    fs.rmSync(downloads, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it("ignores emulator-named binaries inside game downloads", () => {
-    writeExecutable(path.join(downloads, "PPSSPPSDL"));
-    writeExecutable(path.join(downloads, "Some Game", "bin", "PPSSPPSDL"));
+  it("ignores emulator-named binaries outside the emulator install dir", () => {
+    writeExecutable(path.join(root, "PPSSPPSDL"));
+    writeExecutable(path.join(root, "Some Game", "bin", "PPSSPPSDL"));
 
-    assert.equal(findEmulatorInDownloadDirectories(PPSSPP, [downloads]), null);
+    assert.equal(findEmulatorInDownloadDirectories(PPSSPP, [root]), null);
   });
 
   it("finds the emulator in its install directory", () => {
-    const installed = path.join(downloads, "PPSSPP", "PPSSPPSDL");
+    const installed = path.join(root, "PPSSPP", "PPSSPPSDL");
     writeExecutable(installed);
 
-    assert.equal(
-      findEmulatorInDownloadDirectories(PPSSPP, [downloads]),
-      installed
+    assert.equal(findEmulatorInDownloadDirectories(PPSSPP, [root]), installed);
+  });
+});
+
+describe("detectEmulatorWithDownloads", () => {
+  it("searches only the launcher-owned emulator root, never a downloads dir", async () => {
+    const calls: { downloadDirectories?: string[] }[] = [];
+    const modules: Record<string, unknown> = {
+      "./detect-emulator.js": {
+        detectEmulator: (
+          _binary: unknown,
+          options: { downloadDirectories?: string[] }
+        ) => {
+          calls.push(options);
+          return null;
+        },
+      },
+      "./emulator-install-root.js": {
+        getEmulatorInstallRoot: () => "/data/hydra/emulators",
+      },
+    };
+    const { outputText } = ts.transpileModule(
+      fs.readFileSync(
+        new URL("./detect-emulator-with-downloads.ts", import.meta.url),
+        "utf8"
+      ),
+      {
+        compilerOptions: {
+          module: ts.ModuleKind.CommonJS,
+          target: ts.ScriptTarget.ESNext,
+          esModuleInterop: true,
+        },
+      }
     );
+    const exports: {
+      detectEmulatorWithDownloads?: (binary: unknown) => Promise<unknown>;
+    } = {};
+    // Any other import (such as the downloads path helper) fails the test.
+    new Function("exports", "require", outputText)(
+      exports,
+      (name: string) => modules[name] ?? assert.fail(`unexpected ${name}`)
+    );
+
+    await exports.detectEmulatorWithDownloads!(PPSSPP);
+
+    assert.deepEqual(calls[0].downloadDirectories, ["/data/hydra/emulators"]);
   });
 });

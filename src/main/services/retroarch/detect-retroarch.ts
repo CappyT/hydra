@@ -2,13 +2,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { getDownloadsPath } from "@main/events/helpers/get-downloads-path";
-
 import {
   detectEmulator,
   type DetectableBinary,
   type DetectionResult,
 } from "../emulators/detect-emulator";
+import { getEmulatorInstallRoot } from "../emulators/emulator-install-root";
 import { getEmulatorVersion } from "../emulators/get-emulator-version";
 import { SystemPath } from "../system-path";
 import {
@@ -70,11 +69,12 @@ export const detectRetroArchWithFallback = async (options?: {
   const generic = detectRetroArch(options);
   if (generic) return generic;
 
-  const downloadsRoot = await getDownloadsPath().catch(() => null);
+  // Fork: only launcher-owned roots. A download named "RetroArch" must not be
+  // trusted: the RetroArch launch runs the detected binary unsandboxed.
   const candidates = [
-    downloadsRoot ? path.join(downloadsRoot, "RetroArch") : null,
+    path.join(getEmulatorInstallRoot(), "RetroArch"),
     path.join(SystemPath.getPath("userData"), "retroarch", "emulator"),
-  ].filter((dir): dir is string => dir !== null);
+  ];
 
   for (const dir of candidates) {
     const executablePath = findExecutableInManagedDir(dir);

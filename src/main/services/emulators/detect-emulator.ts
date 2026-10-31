@@ -52,9 +52,10 @@ const linuxSearchDirs = (): string[] => {
 
 const linuxAppImageDirs = (): string[] => {
   const home = homedir();
+  // Fork: no ~/Downloads. It holds untrusted downloads, and detection runs the
+  // found AppImage unsandboxed.
   return [
     home,
-    path.join(home, "Downloads"),
     path.join(home, "Desktop"),
     path.join(home, "Applications"),
     path.join(home, "AppImages"),
