@@ -20,7 +20,7 @@ import {
   takeTouchedAchievementBatchGames,
   trackAchievementBatchGame,
 } from "./achievement-batch-games";
-import { Cracker } from "@shared";
+import { ACCOUNTLESS, Cracker } from "@shared";
 import { publishCombinedNewAchievementNotification } from "../notifications";
 import { db, gamesSublevel, levelKeys } from "@main/level";
 import { setTimeout } from "node:timers/promises";
@@ -405,7 +405,8 @@ export class AchievementWatcherManager {
 
   private static async syncUnseenAchievementFiles() {
     const touchedGameKeys = takeTouchedAchievementBatchGames();
-    if (touchedGameKeys.size === 0 || !HydraApi.isLoggedIn()) return;
+    if (touchedGameKeys.size === 0) return;
+    if (!ACCOUNTLESS && !HydraApi.isLoggedIn()) return;
 
     const pendingGames = (
       await this.getGameAchievementFiles(touchedGameKeys)
