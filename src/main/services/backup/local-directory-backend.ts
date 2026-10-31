@@ -3,6 +3,7 @@ import {
   assertArtifactId,
   validateArtifact,
 } from "./artifact-validation";
+import { writeJsonAtomicSync } from "./atomic-write";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -114,14 +115,12 @@ export class LocalDirectoryBackend implements ArtifactStorageBackend {
       downloadOptionTitle: meta.downloadOptionTitle,
       sizeBytes: stat.size,
       isFrozen: false,
+      conflictSafety: meta.conflictSafety,
       createdAt: new Date().toISOString(),
     };
 
     await fs.promises.copyFile(tarPath, path.join(dir, `${id}.tar`));
-    await fs.promises.writeFile(
-      path.join(dir, `${id}.json`),
-      JSON.stringify(artifact, null, 2)
-    );
+    writeJsonAtomicSync(path.join(dir, `${id}.json`), artifact);
 
     return artifact;
   }
@@ -146,8 +145,10 @@ export class LocalDirectoryBackend implements ArtifactStorageBackend {
 
     const tarPath = path.join(path.dirname(sidecar), `${artifactId}.tar`);
 
-    await fs.promises.rm(tarPath, { force: true });
+    // Sidecar first: an interrupted delete must never leave a listed backup
+    // without its tar.
     await fs.promises.rm(sidecar, { force: true });
+    await fs.promises.rm(tarPath, { force: true });
   }
 
   async rename(artifactId: string, label: string): Promise<void> {
@@ -174,7 +175,7 @@ export class LocalDirectoryBackend implements ArtifactStorageBackend {
     const artifact = this.readSidecar(sidecar);
     mutate(artifact);
 
-    await fs.promises.writeFile(sidecar, JSON.stringify(artifact, null, 2));
+    writeJsonAtomicSync(sidecar, artifact);
   }
 
   async test(): Promise<BackupBackendTestResult> {

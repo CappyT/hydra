@@ -726,6 +726,11 @@ export interface LocalArtifact {
   downloadOptionTitle: string | null;
   sizeBytes: number;
   isFrozen: boolean;
+  /**
+   * Safety backup of this device's diverged saves, taken before a keep-both
+   * conflict restore. Never picked as the latest backup by the launch sync.
+   */
+  conflictSafety?: boolean;
   createdAt: string;
 }
 
@@ -740,6 +745,7 @@ export interface ArtifactUploadMeta {
   homeDir: string;
   winePrefixPath: string | null;
   downloadOptionTitle: string | null;
+  conflictSafety?: boolean;
 }
 
 export interface BackupBackendTestResult {

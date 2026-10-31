@@ -28,6 +28,11 @@ export interface ArtifactStorageBackend {
    * restore are handled by the existing caller.
    */
   download(artifactId: string): Promise<string>;
+  /**
+   * Called once the caller is done with a tar returned by {@link download}.
+   * Backends that download into a temporary copy remove it here.
+   */
+  release?(tarPath: string): Promise<void>;
   /** Removes the artifact tar and its sidecar. */
   delete(artifactId: string): Promise<void>;
   /** Updates the artifact label in its sidecar. */

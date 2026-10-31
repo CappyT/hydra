@@ -3,6 +3,8 @@ import {
   assertArtifactId,
   validateArtifact,
 } from "./artifact-validation";
+import { writeJsonAtomicSync } from "./atomic-write";
+import { rcloneRemoteBase } from "./rclone-remote-path";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -20,6 +22,24 @@ import type { ArtifactStorageBackend } from "./artifact-storage-backend";
 
 const COPY_TIMEOUT_MS = 10 * 60 * 1000;
 const META_TIMEOUT_MS = 60 * 1000;
+
+/** rclone exit codes: 3 = directory not found, 4 = file not found. */
+const RCLONE_EXIT_DIR_NOT_FOUND = 3;
+const RCLONE_EXIT_FILE_NOT_FOUND = 4;
+const STALE_TMP_TAR_MS = 60 * 60 * 1000;
+
+class RcloneError extends Error {
+  readonly exitCode: number | string | null;
+
+  constructor(message: string, exitCode: number | string | null) {
+    super(message);
+    this.name = "RcloneError";
+    this.exitCode = exitCode;
+  }
+}
+
+const hasRcloneExitCode = (error: unknown, code: number) =>
+  error instanceof RcloneError && error.exitCode === code;
 
 interface RcloneLsjsonEntry {
   Path: string;
@@ -65,7 +85,8 @@ export class RcloneBackend implements ArtifactStorageBackend {
     assertStorageComponent(objectId);
     if (file && !/^[a-f0-9-]+\.(json|tar)$/i.test(file))
       throw new Error("Invalid artifact filename");
-    const base = `${this.remote}/${shop}-${objectId}`;
+    if (!this.remote) throw new Error("No rclone remote configured");
+    const base = `${rcloneRemoteBase(this.remote)}${shop}-${objectId}`;
     return file ? `${base}/${file}` : base;
   }
 
@@ -92,7 +113,10 @@ export class RcloneBackend implements ArtifactStorageBackend {
         (error, stdout, stderr) => {
           if (error) {
             reject(
-              new Error(stderr?.trim() || error.message || "rclone failed")
+              new RcloneError(
+                stderr?.trim() || error.message || "rclone failed",
+                error.code ?? null
+              )
             );
             return;
           }
@@ -107,10 +131,7 @@ export class RcloneBackend implements ArtifactStorageBackend {
     validateArtifact(artifact);
     const dir = this.cacheDir(artifact.shop, artifact.objectId);
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(
-      path.join(dir, `${artifact.id}.json`),
-      JSON.stringify(artifact, null, 2)
-    );
+    writeJsonAtomicSync(path.join(dir, `${artifact.id}.json`), artifact);
   }
 
   /** Resolves an artifact from the local sidecar cache. */
@@ -163,10 +184,18 @@ export class RcloneBackend implements ArtifactStorageBackend {
       );
       entries = JSON.parse(stdout) as RcloneLsjsonEntry[];
     } catch (error) {
-      // A missing game folder is expected for games without backups yet.
-      logger.debug("rclone lsjson returned no listing", { shop, objectId });
-      logger.debug(String(error));
-      return [];
+      // Only a missing game folder means "no backups yet". Any other failure
+      // (auth, network, unknown remote, permissions) must reach the caller:
+      // an empty list would make the sync plan run on stale local saves.
+      if (hasRcloneExitCode(error, RCLONE_EXIT_DIR_NOT_FOUND)) {
+        logger.debug("rclone lsjson: game folder not found", {
+          shop,
+          objectId,
+        });
+        return [];
+      }
+      logger.error("rclone lsjson failed", { shop, objectId, error });
+      throw error;
     }
 
     const artifacts: LocalArtifact[] = [];
@@ -223,6 +252,7 @@ export class RcloneBackend implements ArtifactStorageBackend {
       downloadOptionTitle: meta.downloadOptionTitle,
       sizeBytes: stat.size,
       isFrozen: false,
+      conflictSafety: meta.conflictSafety,
       createdAt: new Date().toISOString(),
     };
 
@@ -256,6 +286,7 @@ export class RcloneBackend implements ArtifactStorageBackend {
     const artifact = this.requireResolved(artifactId);
 
     await fs.promises.mkdir(this.tmpRoot, { recursive: true });
+    await this.purgeStaleTmpTars();
     const localTar = path.join(this.tmpRoot, `${artifactId}.tar`);
 
     await this.runRclone(
@@ -270,10 +301,41 @@ export class RcloneBackend implements ArtifactStorageBackend {
     return localTar;
   }
 
+  async release(tarPath: string): Promise<void> {
+    // Only ever remove our own temporary copies.
+    if (path.dirname(path.resolve(tarPath)) !== this.tmpRoot) return;
+    await fs.promises.rm(tarPath, { force: true });
+  }
+
+  /**
+   * Downloaded tars are consumed by the caller after {@link download} returns,
+   * so they cannot be removed here. Drop leftovers of earlier restores instead;
+   * the age threshold keeps a concurrent restore's tar safe.
+   */
+  private async purgeStaleTmpTars(): Promise<void> {
+    try {
+      const now = Date.now();
+      for (const entry of await fs.promises.readdir(this.tmpRoot, {
+        withFileTypes: true,
+      })) {
+        if (!entry.isFile() || !entry.name.endsWith(".tar")) continue;
+        const file = path.join(this.tmpRoot, entry.name);
+        const { mtimeMs } = await fs.promises.stat(file);
+        if (now - mtimeMs > STALE_TMP_TAR_MS) {
+          await fs.promises.rm(file, { force: true });
+        }
+      }
+    } catch (error) {
+      logger.error("Failed to purge stale rclone tmp tars", { error });
+    }
+  }
+
   async delete(artifactId: string): Promise<void> {
     const artifact = this.requireResolved(artifactId);
 
-    for (const ext of ["tar", "json"]) {
+    // Sidecar first: an interrupted delete must never leave a listed backup
+    // without its tar. A tar without a sidecar is invisible.
+    for (const ext of ["json", "tar"]) {
       try {
         await this.runRclone(
           [
@@ -287,7 +349,9 @@ export class RcloneBackend implements ArtifactStorageBackend {
           META_TIMEOUT_MS
         );
       } catch (error) {
+        if (hasRcloneExitCode(error, RCLONE_EXIT_FILE_NOT_FOUND)) continue;
         logger.error("Failed to delete remote artifact file", { ext, error });
+        if (ext === "json") throw error;
       }
     }
 
