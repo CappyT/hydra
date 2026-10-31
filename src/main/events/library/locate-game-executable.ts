@@ -3,6 +3,7 @@ import { downloadsSublevel, gamesSublevel, levelKeys } from "@main/level";
 import type { GameShop } from "@types";
 import { GameExecutables, logger } from "@main/services";
 import { updateGameExecutablePath } from "@main/helpers/update-executable-path";
+import { updateGameRecord } from "@main/services/game-record-updater";
 import {
   getExecutablePickerDefaultPath as computePickerDefaultPath,
   getGameCandidateDirectories,
@@ -51,7 +52,11 @@ const locateGameExecutable = async (
 
     if (!foundPath) return null;
 
-    await gamesSublevel.put(gameKey, updateGameExecutablePath(game, foundPath));
+    await updateGameRecord(gameKey, (current) => {
+      const { executablePath, executablePathUpdatedAt } =
+        updateGameExecutablePath(current, foundPath);
+      return { executablePath, executablePathUpdatedAt };
+    });
 
     logger.info(
       `[LocateGameExecutable] Found executable for ${objectId}: ${foundPath}`

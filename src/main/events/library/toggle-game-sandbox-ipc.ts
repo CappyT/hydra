@@ -1,4 +1,5 @@
-import { gamesSublevel, levelKeys } from "@main/level";
+import { levelKeys } from "@main/level";
+import { updateGameRecord } from "@main/services/game-record-updater";
 import type { GameShop } from "@types";
 import { registerEvent } from "../register-event";
 
@@ -9,14 +10,7 @@ const toggleGameSandboxIpc = async (
   sandboxShareIpc: boolean
 ) => {
   const gameKey = levelKeys.game(shop, objectId);
-  const game = await gamesSublevel.get(gameKey);
-
-  if (!game) return;
-
-  await gamesSublevel.put(gameKey, {
-    ...game,
-    sandboxShareIpc,
-  });
+  await updateGameRecord(gameKey, { sandboxShareIpc });
 };
 
 registerEvent("toggleGameSandboxIpc", toggleGameSandboxIpc);
