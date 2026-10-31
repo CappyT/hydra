@@ -564,6 +564,19 @@ async function onOpenGame(game: Game, matchedPath: string) {
 
   if (game.shop === "custom") return;
 
+  // A play session diverges local saves only once its process runs. The clean
+  // close-backup clears the flag; a crash or kill leaves it for the next
+  // launch's conflict check.
+  if (game.automaticCloudSync) {
+    try {
+      await updateGameRecord(gameKey, {
+        unsyncedSince: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error("Failed to mark play session start for cloud sync", error);
+    }
+  }
+
   AchievementWatcherManager.syncGameAchievementFiles(game.shop, game.objectId);
 
   // No backup on game-open: the Steam-Cloud-like restore/sync-in happens

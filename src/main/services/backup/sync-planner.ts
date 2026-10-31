@@ -14,6 +14,8 @@ export interface PlannerArtifact {
   isFrozen?: boolean;
   /** Device that produced the backup; "" for legacy/unknown. */
   deviceId?: string;
+  /** Keep-both safety backup; see {@link syncCandidates}. */
+  conflictSafety?: boolean;
 }
 
 export type LaunchSyncAction =
@@ -55,6 +57,16 @@ const pickLatest = <T extends PlannerArtifact>(artifacts: T[]): T | null => {
 };
 
 /**
+ * Artifacts that can be the "latest" state of a game. A conflict safety backup
+ * holds one device's diverged state from before a keep-both restore: on any
+ * other device it would win as newest and overwrite newer progress. It stays
+ * listed, frozen and manually restorable. Safety backups written before the
+ * flag existed carry no marker and still count.
+ */
+const syncCandidates = <T extends PlannerArtifact>(artifacts: T[]): T[] =>
+  artifacts.filter((artifact) => !artifact.conflictSafety);
+
+/**
  * Decides what to do with a game's save on launch, given the machine's current
  * sync marker and the list of stored backups. This is the data-safety crux:
  *
@@ -94,7 +106,7 @@ export const decideLaunchSync = (params: {
 }): LaunchSyncPlan => {
   const { lastSyncedBackupAt, artifacts, ourDeviceId, unsyncedSince } = params;
 
-  const latest = pickLatest(artifacts);
+  const latest = pickLatest(syncCandidates(artifacts));
   if (!latest) {
     return { action: "none" };
   }
@@ -172,4 +184,68 @@ export const selectArtifactsToPrune = (
     .sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt));
 
   return nonFrozen.slice(Math.max(0, keep)).map((artifact) => artifact.id);
+};
+
+/** Returns the later of two ISO timestamps (by parsed milliseconds). */
+export const laterTimestamp = (a: string, b: string): string =>
+  toMs(b) > toMs(a) ? b : a;
+
+/**
+ * Picks another device's backup that this device's just-uploaded backup would
+ * silently supersede: the newest backup with a known, foreign device id that is
+ * newer than the marker captured before the upload. An unset marker means this
+ * device never synced, so every foreign backup counts. Legacy backups without a
+ * device id are ignored.
+ */
+export const findSupersededRemoteBackup = <T extends PlannerArtifact>(params: {
+  lastSyncedBackupAt?: string | null;
+  artifacts: T[];
+  ourDeviceId: string;
+  uploadedArtifactId: string;
+}): T | null => {
+  const { lastSyncedBackupAt, artifacts, ourDeviceId, uploadedArtifactId } =
+    params;
+  const markerMs = lastSyncedBackupAt
+    ? toMs(lastSyncedBackupAt)
+    : Number.NEGATIVE_INFINITY;
+
+  return pickLatest(
+    syncCandidates(artifacts).filter(
+      (artifact) =>
+        artifact.id !== uploadedArtifactId &&
+        !!artifact.deviceId &&
+        artifact.deviceId !== ourDeviceId &&
+        toMs(artifact.createdAt) > markerMs
+    )
+  );
+};
+
+/** Minimal ludusavi preview shape needed to detect local save files. */
+export interface LocalSavePreview {
+  overall?: { totalGames?: number };
+  games?: Record<string, { files?: Record<string, unknown> } | undefined>;
+}
+
+/**
+ * Interprets a ludusavi backup preview as "this device has local save files".
+ * Returns `false` ONLY on a positive zero-files determination; anything
+ * ambiguous returns `true` so the planner adopts the baseline instead of
+ * restoring. ludusavi omits a game with zero files from `games`; that absence
+ * counts as zero only for Wine games, where the preview scans the same prefix
+ * the restore writes into.
+ */
+export const previewHasLocalSaves = (
+  preview: LocalSavePreview | null | undefined,
+  objectId: string,
+  wine: boolean
+): boolean => {
+  if (!preview) return true;
+
+  const gameData = preview.games?.[objectId];
+  if (!gameData) {
+    return !(wine && preview.overall?.totalGames === 0);
+  }
+
+  if (!gameData.files) return true;
+  return Object.keys(gameData.files).length > 0;
 };

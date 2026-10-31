@@ -22,6 +22,25 @@ export const RESTORE_TMP_DIRNAME = ".restore-tmp";
  */
 export const isBackupStorageDir = (name: string) => !name.startsWith(".");
 
+/**
+ * Name of the scratch directory ludusavi writes a new backup into before it is
+ * tarred. Same reason as {@link RESTORE_TMP_DIRNAME}: the local backend stores
+ * every backup of a game in `<root>/<shop>-<objectId>/`, so a scratch there
+ * would wipe them.
+ */
+export const BACKUP_TMP_DIRNAME = ".backup-tmp";
+
+/** Scratch directory prefix a new backup is staged under before tarring. */
+export const getBackupScratchDir = (
+  backupsRoot: string,
+  shop: string,
+  objectId: string
+) => {
+  assertStorageComponent(shop);
+  assertStorageComponent(objectId);
+  return path.join(backupsRoot, BACKUP_TMP_DIRNAME, `${shop}-${objectId}`);
+};
+
 /** Scratch directory a given artifact is extracted into during restore. */
 export const getRestoreScratchDir = (
   backupsRoot: string,

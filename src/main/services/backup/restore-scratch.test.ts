@@ -7,6 +7,8 @@ import { after, before, beforeEach, describe, it } from "node:test";
 import * as tar from "tar";
 
 import {
+  BACKUP_TMP_DIRNAME,
+  getBackupScratchDir,
   getRestoreScratchDir,
   isBackupStorageDir,
   RESTORE_TMP_DIRNAME,
@@ -214,4 +216,29 @@ it("rejects archive links before calling the restore writer", async () => {
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+describe("backup scratch directory", () => {
+  it("never equals or sits inside the local backend game folder", () => {
+    const root = path.join(os.tmpdir(), "hydra-backups-root");
+    const gameDir = path.join(root, `${SHOP}-${OBJECT_ID}`);
+    const scratch = getBackupScratchDir(root, SHOP, OBJECT_ID);
+
+    assert.notEqual(scratch, gameDir);
+    assert.ok(!scratch.startsWith(gameDir + path.sep));
+    assert.ok(!gameDir.startsWith(scratch));
+    assert.equal(
+      path.relative(root, scratch).split(path.sep)[0],
+      BACKUP_TMP_DIRNAME
+    );
+  });
+
+  it("is a reserved dot-folder the backend id-scan skips", () => {
+    assert.equal(isBackupStorageDir(BACKUP_TMP_DIRNAME), false);
+  });
+
+  it("rejects path components that could escape the backups root", () => {
+    assert.throws(() => getBackupScratchDir("/b", "steam", "../x"));
+    assert.throws(() => getBackupScratchDir("/b", "..", "1"));
+  });
 });

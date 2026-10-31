@@ -4,6 +4,9 @@ import { describe, it } from "node:test";
 import {
   DEFAULT_BACKUPS_TO_KEEP,
   decideLaunchSync,
+  findSupersededRemoteBackup,
+  laterTimestamp,
+  previewHasLocalSaves,
   resolveBackupsToKeep,
   selectArtifactsToPrune,
   type PlannerArtifact,
@@ -300,5 +303,236 @@ describe("selectArtifactsToPrune (retention)", () => {
     ];
 
     assert.deepEqual(selectArtifactsToPrune(artifacts, 1), []);
+  });
+});
+
+describe("keep-both conflict marker", () => {
+  it("persists the safety backup's date so the next launch never restores it", () => {
+    const a1 = artifact("a1", "2026-10-01T10:00:00.000Z", false, OUR_DEVICE);
+    const b2 = artifact("b2", "2026-10-01T12:00:00.000Z", false, OTHER_DEVICE);
+    const first = decideLaunchSync({
+      lastSyncedBackupAt: a1.createdAt,
+      artifacts: [a1, b2],
+      ourDeviceId: OUR_DEVICE,
+      unsyncedSince: "2026-10-01T11:00:00.000Z",
+    });
+    assert.equal(first.action, "conflict");
+
+    // The conflict path uploads a frozen safety backup of the local state.
+    const c3 = artifact("c3", "2026-10-01T13:00:00.000Z", true, OUR_DEVICE);
+    const marker = laterTimestamp(first.createdAt!, c3.createdAt);
+    assert.equal(marker, c3.createdAt);
+
+    // The post-conflict session then ends without a close-backup.
+    const next = decideLaunchSync({
+      lastSyncedBackupAt: marker,
+      artifacts: [a1, b2, c3],
+      ourDeviceId: OUR_DEVICE,
+      unsyncedSince: "2026-10-01T13:05:00.000Z",
+    });
+    assert.equal(next.action, "none");
+  });
+
+  it("never makes another device restore the conflict safety backup", () => {
+    const DEVICE_A = "device-a";
+    const DEVICE_B = "device-b";
+    const a1 = artifact("a1", "2026-10-01T10:00:00.000Z", false, DEVICE_A);
+    const b2 = artifact("b2", "2026-10-01T12:00:00.000Z", false, DEVICE_B);
+
+    // A crashed after a1, so it diverged; B's b2 is newer.
+    const onA = decideLaunchSync({
+      lastSyncedBackupAt: a1.createdAt,
+      artifacts: [a1, b2],
+      ourDeviceId: DEVICE_A,
+      unsyncedSince: "2026-10-01T11:00:00.000Z",
+    });
+    assert.deepEqual(onA, {
+      action: "conflict",
+      artifactId: "b2",
+      createdAt: b2.createdAt,
+    });
+
+    // A keeps its crashed state as a frozen safety backup, then restores b2.
+    const c3: PlannerArtifact = {
+      ...artifact("c3", "2026-10-01T13:00:00.000Z", true, DEVICE_A),
+      conflictSafety: true,
+    };
+
+    // B is clean at b2 and must keep its own progress.
+    const onB = decideLaunchSync({
+      lastSyncedBackupAt: b2.createdAt,
+      artifacts: [a1, b2, c3],
+      ourDeviceId: DEVICE_B,
+      unsyncedSince: null,
+    });
+    assert.deepEqual(onB, { action: "none" });
+
+    // B's next close-backup does not report c3 as a superseded remote.
+    const b4 = artifact("b4", "2026-10-01T15:00:00.000Z", false, DEVICE_B);
+    assert.equal(
+      findSupersededRemoteBackup({
+        lastSyncedBackupAt: b2.createdAt,
+        artifacts: [a1, b2, c3, b4],
+        ourDeviceId: DEVICE_B,
+        uploadedArtifactId: "b4",
+      }),
+      null
+    );
+
+    // A fresh device restores the latest real state, not the safety backup.
+    const fresh = decideLaunchSync({
+      lastSyncedBackupAt: undefined,
+      artifacts: [a1, b2, c3],
+      ourDeviceId: "device-c",
+      hasLocalSaves: false,
+    });
+    assert.equal(fresh.artifactId, "b2");
+  });
+
+  it("still counts an unmarked legacy safety backup as the latest", () => {
+    const b2 = artifact("b2", "2026-10-01T12:00:00.000Z", false, "device-b");
+    const legacyC3 = artifact(
+      "c3",
+      "2026-10-01T13:00:00.000Z",
+      true,
+      "device-a"
+    );
+
+    const plan = decideLaunchSync({
+      lastSyncedBackupAt: b2.createdAt,
+      artifacts: [b2, legacyC3],
+      ourDeviceId: "device-b",
+      unsyncedSince: null,
+    });
+    assert.equal(plan.action, "restore");
+    assert.equal(plan.artifactId, "c3");
+  });
+
+  it("laterTimestamp compares parsed milliseconds", () => {
+    assert.equal(
+      laterTimestamp("2026-10-01T12:00:00.000Z", "2026-10-01T11:00:00Z"),
+      "2026-10-01T12:00:00.000Z"
+    );
+    assert.equal(
+      laterTimestamp("2026-10-01T09:00:00.000Z", "2026-10-01T10:00:00Z"),
+      "2026-10-01T10:00:00Z"
+    );
+  });
+});
+
+describe("findSupersededRemoteBackup", () => {
+  const ours = artifact("ours", "2026-10-02T20:00:00.000Z", false, OUR_DEVICE);
+
+  it("returns another device's backup uploaded during the session", () => {
+    const remote = artifact(
+      "r1",
+      "2026-10-02T18:00:00.000Z",
+      false,
+      OTHER_DEVICE
+    );
+    const found = findSupersededRemoteBackup({
+      lastSyncedBackupAt: "2026-10-02T10:00:00.000Z",
+      artifacts: [artifact("old", "2026-10-02T10:00:00.000Z"), remote, ours],
+      ourDeviceId: OUR_DEVICE,
+      uploadedArtifactId: ours.id,
+    });
+    assert.equal(found?.id, "r1");
+  });
+
+  it("returns the newest of several foreign backups", () => {
+    const found = findSupersededRemoteBackup({
+      lastSyncedBackupAt: "2026-10-02T10:00:00.000Z",
+      artifacts: [
+        artifact("r1", "2026-10-02T12:00:00.000Z", false, OTHER_DEVICE),
+        artifact("r2", "2026-10-02T15:00:00.000Z", false, "third-device"),
+        ours,
+      ],
+      ourDeviceId: OUR_DEVICE,
+      uploadedArtifactId: ours.id,
+    });
+    assert.equal(found?.id, "r2");
+  });
+
+  it("ignores foreign backups the device already synced to", () => {
+    const found = findSupersededRemoteBackup({
+      lastSyncedBackupAt: "2026-10-02T12:00:00.000Z",
+      artifacts: [
+        artifact("r1", "2026-10-02T12:00:00.000Z", false, OTHER_DEVICE),
+        ours,
+      ],
+      ourDeviceId: OUR_DEVICE,
+      uploadedArtifactId: ours.id,
+    });
+    assert.equal(found, null);
+  });
+
+  it("ignores our own and legacy backups", () => {
+    const found = findSupersededRemoteBackup({
+      lastSyncedBackupAt: "2026-10-02T10:00:00.000Z",
+      artifacts: [
+        artifact("own", "2026-10-02T15:00:00.000Z", false, OUR_DEVICE),
+        artifact("legacy", "2026-10-02T16:00:00.000Z", false, ""),
+        ours,
+      ],
+      ourDeviceId: OUR_DEVICE,
+      uploadedArtifactId: ours.id,
+    });
+    assert.equal(found, null);
+  });
+
+  it("treats an unset marker as never synced", () => {
+    const found = findSupersededRemoteBackup({
+      lastSyncedBackupAt: undefined,
+      artifacts: [
+        artifact("r1", "2026-10-01T12:00:00.000Z", false, OTHER_DEVICE),
+        ours,
+      ],
+      ourDeviceId: OUR_DEVICE,
+      uploadedArtifactId: ours.id,
+    });
+    assert.equal(found?.id, "r1");
+  });
+});
+
+describe("previewHasLocalSaves (fail-safe local-save detection)", () => {
+  const empty = { overall: { totalGames: 0 }, games: {} };
+
+  it("reads an absent game in a successful empty preview as zero saves for Wine games", () => {
+    assert.equal(previewHasLocalSaves(empty, "123", true), false);
+  });
+
+  it("keeps an absent game inconclusive for non-Wine games", () => {
+    assert.equal(previewHasLocalSaves(empty, "123", false), true);
+  });
+
+  it("keeps an absent game inconclusive when ludusavi counted other games", () => {
+    const preview = { overall: { totalGames: 1 }, games: {} };
+    assert.equal(previewHasLocalSaves(preview, "123", true), true);
+  });
+
+  it("treats a missing preview or missing totals as inconclusive", () => {
+    assert.equal(previewHasLocalSaves(null, "123", true), true);
+    assert.equal(previewHasLocalSaves({ games: {} }, "123", true), true);
+  });
+
+  it("counts the files ludusavi found", () => {
+    const withFiles = {
+      overall: { totalGames: 1 },
+      games: { "123": { files: { "/save.dat": {} } } },
+    };
+    const noFiles = {
+      overall: { totalGames: 1 },
+      games: { "123": { files: {} } },
+    };
+    assert.equal(previewHasLocalSaves(withFiles, "123", false), true);
+    assert.equal(previewHasLocalSaves(noFiles, "123", true), false);
+    assert.equal(
+      previewHasLocalSaves(
+        { overall: { totalGames: 1 }, games: { "123": {} } },
+        "123",
+        true
+      ),
+      true
+    );
   });
 });

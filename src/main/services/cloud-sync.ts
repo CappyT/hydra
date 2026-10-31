@@ -5,7 +5,9 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import YAML from "yaml";
+import { Notification } from "electron";
 import type {
+  Game,
   GameShop,
   LocalArtifact,
   LudusaviBackupMapping,
@@ -28,15 +30,128 @@ import { assertLegacyCloudSaveWriteAllowed } from "./cloud-save/legacy-cloud-sav
 import i18next, { t } from "i18next";
 import { SystemPath } from "./system-path";
 import { Wine } from "./wine";
+import { Sandbox } from "./sandbox";
+import { updateGameRecord } from "./game-record-updater";
+import { assertBackupSourcesInsideRoot } from "./backup/backup-source-paths";
 import {
+  BACKUP_TMP_DIRNAME,
   getArtifactBackend,
+  getBackupScratchDir,
   restoreFromArtifactTar,
   decideLaunchSync,
+  findSupersededRemoteBackup,
+  laterTimestamp,
+  previewHasLocalSaves,
   resolveBackupsToKeep,
   selectArtifactsToPrune,
 } from "./backup";
 
+/** ludusavi found no save files for the game, so there is nothing to back up. */
+export class NoLocalSavesError extends Error {
+  constructor(objectId: string) {
+    super(`No save files found for ${objectId}`);
+    this.name = "NoLocalSavesError";
+  }
+}
+
+/**
+ * Where ludusavi scans for a game's saves and where a restore writes them:
+ * - `wine`: the game's Wine prefix (Linux, Windows executable).
+ * - `native`: the per-game sandbox home (Linux native game). ludusavi gets it
+ *   as HOME because the sandbox binds it over $HOME.
+ * - `legacy`: host paths (LaunchBox on Linux, and non-Linux platforms).
+ */
+interface SaveTarget {
+  mode: "wine" | "native" | "legacy";
+  winePrefix: string | null;
+  home: string | null;
+}
+
 export class CloudSync {
+  private static isWineGame(game: Game | null | undefined) {
+    return !game?.executablePath || /\.exe$/i.test(game.executablePath);
+  }
+
+  private static getSandboxHome(shop: GameShop, objectId: string) {
+    return path.join(
+      sandboxHomesPath,
+      sanitizeSandboxGameKey(levelKeys.game(shop, objectId))
+    );
+  }
+
+  private static async resolveSaveTarget(
+    game: Game | null | undefined,
+    shop: GameShop,
+    objectId: string
+  ): Promise<SaveTarget> {
+    const effectiveWinePrefixPath = Wine.getEffectivePrefixPath(
+      game?.winePrefixPath,
+      objectId
+    );
+
+    if (process.platform !== "linux") {
+      return {
+        mode: "legacy",
+        winePrefix: effectiveWinePrefixPath,
+        home: null,
+      };
+    }
+
+    if (shop === "launchbox") {
+      return { mode: "legacy", winePrefix: null, home: null };
+    }
+
+    if (CloudSync.isWineGame(game)) {
+      return { mode: "wine", winePrefix: effectiveWinePrefixPath, home: null };
+    }
+
+    const preferences = await db
+      .get<string, UserPreferences | null>(levelKeys.userPreferences, {
+        valueEncoding: "json",
+      })
+      .catch(() => null);
+
+    // Restore writes native saves only into the sandbox home; an unsandboxed
+    // game saves under the real home, which a restore must never target.
+    if (!Sandbox.isEnabled(preferences, game)) {
+      throw new Error(
+        "Save backups of native Linux games require the game sandbox"
+      );
+    }
+
+    const home = CloudSync.getSandboxHome(shop, objectId);
+    return {
+      mode: "native",
+      winePrefix: null,
+      home: fs.existsSync(home) ? fs.realpathSync(home) : home,
+    };
+  }
+
+  /** Home path recorded in the artifact; restore maps it to this device's. */
+  private static getArtifactHomeDir(target: SaveTarget) {
+    if (target.mode === "native") return target.home!;
+    if (target.mode === "legacy" && !target.winePrefix)
+      return normalizePath(SystemPath.getPath("home"));
+    return CloudSync.getWindowsLikeUserProfilePath(target.winePrefix);
+  }
+
+  /** Device name for conflict notices; legacy backups may lack a hostname. */
+  private static describeDevice(artifact: LocalArtifact | null | undefined) {
+    return artifact?.hostname || artifact?.deviceId || "unknown device";
+  }
+
+  /** ludusavi preview of the saves a backup of this game would capture. */
+  public static async getBackupPreview(shop: GameShop, objectId: string) {
+    const game = await gamesSublevel.get(levelKeys.game(shop, objectId));
+    const target = await CloudSync.resolveSaveTarget(game, shop, objectId);
+    return Ludusavi.getBackupPreview(
+      shop,
+      objectId,
+      target.winePrefix,
+      target.home
+    );
+  }
+
   public static getWindowsLikeUserProfilePath(winePrefixPath?: string | null) {
     if (process.platform === "linux") {
       if (!winePrefixPath) {
@@ -87,86 +202,125 @@ export class CloudSync {
   private static async bundleBackup(
     shop: GameShop,
     objectId: string,
-    winePrefix: string | null
+    target: SaveTarget
   ) {
-    const backupPath = path.join(backupsPath, `${shop}-${objectId}`);
+    // Scratch dirs left by a crashed run are never reused, so purge them. Every
+    // backup runs under runWithHydraSaveGuard, so no other bundle is active.
+    await fs.promises.rm(path.join(backupsPath, BACKUP_TMP_DIRNAME), {
+      recursive: true,
+      force: true,
+    });
+    const scratchPrefix = getBackupScratchDir(backupsPath, shop, objectId);
+    await fs.promises.mkdir(path.dirname(scratchPrefix), { recursive: true });
+    const backupPath = await fs.promises.mkdtemp(scratchPrefix + "-");
 
-    // Remove existing backup
-    if (fs.existsSync(backupPath)) {
-      try {
-        await fs.promises.rm(backupPath, { recursive: true });
-      } catch (error) {
-        logger.error("Failed to remove backup path", { backupPath, error });
+    try {
+      const result = await Ludusavi.backupGame(
+        shop,
+        objectId,
+        backupPath,
+        target.winePrefix,
+        false,
+        target.home
+      );
+
+      // An empty backup has no mapping.yaml: every restore of it fails, and it
+      // still takes a retention slot.
+      if (!result?.overall?.totalGames || !result.games?.[objectId]) {
+        throw new NoLocalSavesError(objectId);
       }
+
+      if (process.platform === "linux") {
+        const saveRoot =
+          target.mode === "wine"
+            ? target.winePrefix
+            : target.mode === "native"
+              ? target.home
+              : SystemPath.getPath("home");
+        if (!saveRoot) throw new Error("No save root for the backup check");
+        assertBackupSourcesInsideRoot(
+          Object.keys(result.games[objectId].files ?? {}),
+          saveRoot
+        );
+      }
+
+      const tarLocation = path.join(backupsPath, `${crypto.randomUUID()}.tar`);
+
+      try {
+        await tar.create(
+          {
+            gzip: false,
+            file: tarLocation,
+            cwd: backupPath,
+          },
+          ["."]
+        );
+      } catch (error) {
+        await fs.promises.rm(tarLocation, { force: true });
+        throw error;
+      }
+
+      return tarLocation;
+    } finally {
+      await fs.promises
+        .rm(backupPath, { recursive: true, force: true })
+        .catch((error) =>
+          logger.error("Failed to remove backup scratch", { backupPath, error })
+        );
     }
-
-    await Ludusavi.backupGame(shop, objectId, backupPath, winePrefix);
-
-    const tarLocation = path.join(backupsPath, `${crypto.randomUUID()}.tar`);
-
-    await tar.create(
-      {
-        gzip: false,
-        file: tarLocation,
-        cwd: backupPath,
-      },
-      ["."]
-    );
-
-    return tarLocation;
   }
 
   public static async uploadSaveGame(
     objectId: string,
     shop: GameShop,
     downloadOptionTitle: string | null,
-    label?: string
+    label?: string,
+    conflictSafety?: boolean
   ): Promise<LocalArtifact> {
     const game = await gamesSublevel.get(levelKeys.game(shop, objectId));
     if (!ACCOUNTLESS) assertLegacyCloudSaveWriteAllowed(game);
-    const effectiveWinePrefixPath = Wine.getEffectivePrefixPath(
-      game?.winePrefixPath,
-      objectId
-    );
-
-    const bundleLocation = await this.bundleBackup(
-      shop,
-      objectId,
-      effectiveWinePrefixPath
-    );
+    const target = await this.resolveSaveTarget(game, shop, objectId);
+    // Resolved before bundling: a missing prefix profile must fail early.
+    const homeDir = this.getArtifactHomeDir(target);
 
     let resolvedWinePrefixPath: string | null = null;
 
-    if (effectiveWinePrefixPath) {
-      resolvedWinePrefixPath = fs.existsSync(effectiveWinePrefixPath)
-        ? fs.realpathSync(effectiveWinePrefixPath)
-        : effectiveWinePrefixPath;
+    if (target.winePrefix) {
+      resolvedWinePrefixPath = fs.existsSync(target.winePrefix)
+        ? fs.realpathSync(target.winePrefix)
+        : target.winePrefix;
     }
 
-    const backend = await getArtifactBackend();
+    const bundleLocation = await this.bundleBackup(shop, objectId, target);
 
-    const artifact = await backend.upload(bundleLocation, {
-      shop,
-      objectId,
-      hostname: os.hostname(),
-      deviceId: getDeviceId(),
-      winePrefixPath: resolvedWinePrefixPath,
-      homeDir: this.getWindowsLikeUserProfilePath(effectiveWinePrefixPath),
-      downloadOptionTitle,
-      platform: process.platform,
-      label,
-    });
+    let artifact: LocalArtifact;
+    try {
+      const backend = await getArtifactBackend();
+
+      artifact = await backend.upload(bundleLocation, {
+        shop,
+        objectId,
+        hostname: os.hostname(),
+        deviceId: getDeviceId(),
+        winePrefixPath: resolvedWinePrefixPath,
+        homeDir,
+        downloadOptionTitle,
+        platform: process.platform,
+        label,
+        conflictSafety,
+      });
+    } finally {
+      try {
+        await fs.promises.unlink(bundleLocation);
+      } catch (error) {
+        logger.error("Failed to remove tar file", { bundleLocation, error });
+      }
+    }
 
     WindowManager.sendToAppWindows(
       `on-upload-complete-${objectId}-${shop}`,
       true
     );
-
-    try {
-      await fs.promises.unlink(bundleLocation);
-    } catch (error) {
-      logger.error("Failed to remove tar file", { bundleLocation, error });
-    }
 
     return artifact;
   }
@@ -200,48 +354,58 @@ export class CloudSync {
 
     const tarLocation = await backend.download(artifactId);
 
-    await restoreFromArtifactTar({
-      backupsRoot: backupsPath,
-      shop,
-      objectId,
-      tarLocation,
-      restore: (scratchDir) => {
-        if (process.platform === "linux" && shop !== "launchbox") {
-          const wine =
-            !game?.executablePath || /\.exe$/i.test(game.executablePath);
-          const destinationRoot = wine
-            ? effectiveWinePrefixPath
-            : path.join(
-                sandboxHomesPath,
-                sanitizeSandboxGameKey(levelKeys.game(shop, objectId))
-              );
-          if (!destinationRoot) throw new Error("No approved save destination");
-          assertSafeSandboxPath(
-            destinationRoot,
-            SystemPath.getPath("home"),
-            SystemPath.getPath("userData")
+    try {
+      await restoreFromArtifactTar({
+        backupsRoot: backupsPath,
+        shop,
+        objectId,
+        tarLocation,
+        restore: (scratchDir) => {
+          if (process.platform === "linux" && shop !== "launchbox") {
+            const wine = CloudSync.isWineGame(game);
+            const destinationRoot = wine
+              ? effectiveWinePrefixPath
+              : CloudSync.getSandboxHome(shop, objectId);
+            if (!destinationRoot)
+              throw new Error("No approved save destination");
+            assertSafeSandboxPath(
+              destinationRoot,
+              SystemPath.getPath("home"),
+              SystemPath.getPath("userData")
+            );
+            fs.mkdirSync(destinationRoot, { recursive: true });
+            return restoreLinuxBackup({
+              // Both roots canonical: the worker refuses symlinked ancestors.
+              sourceRoot: fs.realpathSync(path.join(scratchDir, objectId)),
+              destinationRoot: fs.realpathSync(destinationRoot),
+              artifactHome: artifact.homeDir,
+              artifactWinePrefix: artifact.winePrefixPath,
+              wineUserHome: wine
+                ? CloudSync.getWindowsLikeUserProfilePath(
+                    effectiveWinePrefixPath
+                  )
+                : undefined,
+              wine,
+            });
+          }
+          // LaunchBox saves live on host paths, never in a Wine prefix.
+          return CloudSync.restoreLudusaviBackup(
+            scratchDir,
+            objectId,
+            normalizePath(artifact.homeDir),
+            process.platform === "linux" ? null : effectiveWinePrefixPath,
+            artifact.winePrefixPath
           );
-          fs.mkdirSync(destinationRoot, { recursive: true });
-          return restoreLinuxBackup({
-            sourceRoot: path.join(scratchDir, objectId),
-            destinationRoot: fs.realpathSync(destinationRoot),
-            artifactHome: artifact.homeDir,
-            artifactWinePrefix: artifact.winePrefixPath,
-            wineUserHome: wine
-              ? CloudSync.getWindowsLikeUserProfilePath(effectiveWinePrefixPath)
-              : undefined,
-            wine,
-          });
-        }
-        return CloudSync.restoreLudusaviBackup(
-          scratchDir,
-          objectId,
-          normalizePath(artifact.homeDir),
-          effectiveWinePrefixPath,
-          artifact.winePrefixPath
-        );
-      },
-    });
+        },
+      });
+    } finally {
+      await backend.release?.(tarLocation).catch((error: unknown) =>
+        logger.error("Failed to release downloaded backup", {
+          artifactId,
+          error,
+        })
+      );
+    }
 
     return { createdAt: artifact.createdAt };
   }
@@ -259,39 +423,30 @@ export class CloudSync {
   private static async detectHasLocalSaves(
     shop: GameShop,
     objectId: string,
-    winePrefixPath: string | null | undefined
+    game: Game
   ): Promise<boolean> {
     try {
-      const effectiveWinePrefixPath = Wine.getEffectivePrefixPath(
-        winePrefixPath,
-        objectId
-      );
+      const target = await CloudSync.resolveSaveTarget(game, shop, objectId);
 
       const preview = await Ludusavi.getBackupPreview(
         shop,
         objectId,
-        effectiveWinePrefixPath
+        target.winePrefix,
+        target.home
       );
 
-      const gameData = preview?.games[objectId];
-
-      // No preview, or the game is absent from the scan (e.g. no known save path
-      // on this install) → we cannot positively confirm zero saves → fail-safe.
-      if (!gameData?.files) {
-        logger.info(
-          "Local-save detection inconclusive on fresh device; assuming saves exist",
-          { shop, objectId, reason: preview ? "no-game-data" : "no-preview" }
-        );
-        return true;
-      }
-
-      const fileCount = Object.keys(gameData.files).length;
-      const hasLocalSaves = fileCount > 0;
+      const hasLocalSaves = previewHasLocalSaves(
+        preview,
+        objectId,
+        target.mode === "wine"
+      );
 
       logger.info("Local-save detection on fresh device", {
         shop,
         objectId,
-        fileCount,
+        mode: target.mode,
+        totalGames: preview?.overall?.totalGames ?? null,
+        gameFound: !!preview?.games?.[objectId],
         hasLocalSaves,
       });
 
@@ -334,7 +489,7 @@ export class CloudSync {
         hasLocalSaves = await CloudSync.detectHasLocalSaves(
           shop,
           objectId,
-          game.winePrefixPath
+          game
         );
       }
 
@@ -349,8 +504,7 @@ export class CloudSync {
       if (plan.action === "none") return;
 
       if (plan.action === "adopt-baseline") {
-        await gamesSublevel.put(gameKey, {
-          ...game,
+        await updateGameRecord(gameKey, {
           lastSyncedBackupAt: plan.createdAt,
         });
         return;
@@ -362,19 +516,25 @@ export class CloudSync {
         // Deliberately NO finalizeBackup/prune here: pruning mid-operation could
         // race the restore or delete artifacts we still need.
         let conflictArtifact: LocalArtifact | null = null;
+        // The safety backup captures what ludusavi sees; when it sees no save
+        // files there is nothing local to preserve before the restore.
+        let nothingToPreserve = false;
         try {
           conflictArtifact = await CloudSync.uploadSaveGame(
             objectId,
             shop,
             null,
-            CloudSync.getConflictBackupLabel()
+            CloudSync.getConflictBackupLabel(),
+            true
           );
         } catch (error) {
+          nothingToPreserve = error instanceof NoLocalSavesError;
           logger.error(
             "Failed to back up local state before conflict restore",
             {
               shop,
               objectId,
+              nothingToPreserve,
               error,
             }
           );
@@ -389,7 +549,7 @@ export class CloudSync {
         // Keep local intact and leave the marker + unsyncedSince flag unchanged
         // so the conflict is re-detected and retried on the next launch. Warn the
         // user; never trade an un-backed-up local save for the remote.
-        if (!conflictArtifact) {
+        if (!conflictArtifact && !nothingToPreserve) {
           logger.error(
             "Conflict backup failed; keeping local saves, not restoring remote",
             { shop, objectId }
@@ -398,7 +558,7 @@ export class CloudSync {
           WindowManager.sendToAppWindows("on-cloud-sync-conflict", {
             shop,
             objectId,
-            hostname: remoteArtifact?.hostname ?? "",
+            hostname: CloudSync.describeDevice(remoteArtifact),
             resolution: "kept-local",
           });
           return;
@@ -409,24 +569,27 @@ export class CloudSync {
         // (selectArtifactsToPrune always keeps frozen artifacts). Only the user
         // can remove it later from the backup list. Best-effort: a freeze
         // failure must not stop the restore of the newer remote state.
-        try {
-          const backend = await getArtifactBackend();
-          await backend.setFrozen(conflictArtifact.id, true);
-        } catch (error) {
-          logger.error("Failed to freeze conflict safety backup", {
-            shop,
-            objectId,
-            artifactId: conflictArtifact.id,
-            error,
-          });
+        if (conflictArtifact) {
+          try {
+            await backend.setFrozen(conflictArtifact.id, true);
+          } catch (error) {
+            logger.error("Failed to freeze conflict safety backup", {
+              shop,
+              objectId,
+              artifactId: conflictArtifact.id,
+              error,
+            });
+          }
         }
 
         await CloudSync.restoreArtifact(shop, objectId, plan.artifactId!);
 
-        const latestGame = (await gamesSublevel.get(gameKey)) ?? game;
-        await gamesSublevel.put(gameKey, {
-          ...latestGame,
-          lastSyncedBackupAt: plan.createdAt,
+        await updateGameRecord(gameKey, {
+          // The safety backup is newer than the remote and carries this device
+          // id; a remote-dated marker would restore it on the next launch.
+          lastSyncedBackupAt: conflictArtifact
+            ? laterTimestamp(plan.createdAt!, conflictArtifact.createdAt)
+            : plan.createdAt,
           // The divergence is resolved (kept as a backup); clear the flag.
           unsyncedSince: null,
         });
@@ -441,7 +604,7 @@ export class CloudSync {
         WindowManager.sendToAppWindows("on-cloud-sync-conflict", {
           shop,
           objectId,
-          hostname: remoteArtifact?.hostname ?? "",
+          hostname: CloudSync.describeDevice(remoteArtifact),
           resolution: "kept-both",
         });
         return;
@@ -450,11 +613,7 @@ export class CloudSync {
       // action === "restore"
       await CloudSync.restoreArtifact(shop, objectId, plan.artifactId!);
 
-      // Re-read before persisting: the restore is async and other writers (e.g.
-      // the process watcher) may have touched the record meanwhile.
-      const latestGame = (await gamesSublevel.get(gameKey)) ?? game;
-      await gamesSublevel.put(gameKey, {
-        ...latestGame,
+      await updateGameRecord(gameKey, {
         lastSyncedBackupAt: plan.createdAt,
       });
 
@@ -466,12 +625,42 @@ export class CloudSync {
     } catch (error) {
       logger.error("Cloud sync on launch failed", { shop, objectId, error });
 
-      // Best-effort non-blocking warning: surfaced by the cloud-sync panel if
-      // the game-details page is open. The launch is never blocked.
       WindowManager.sendToAppWindows(
         `on-cloud-sync-error-${objectId}-${shop}`,
         error instanceof Error ? error.message : String(error)
       );
+
+      await CloudSync.handleSyncOnLaunchFailure(gameKey);
+    }
+  }
+
+  /**
+   * A failed sync-in leaves the remote state unknown. The launch goes on, so
+   * warn the user and mark the session as diverged: the next launch then
+   * treats a newer remote as a conflict, and the close-backup's supersede
+   * check freezes it. Never throws.
+   */
+  private static async handleSyncOnLaunchFailure(gameKey: string) {
+    try {
+      const game = await updateGameRecord(gameKey, (current) =>
+        current.unsyncedSince ? {} : { unsyncedSince: new Date().toISOString() }
+      );
+      if (!game) return;
+
+      // A desktop notification stays visible while the game takes the screen.
+      if (Notification.isSupported()) {
+        new Notification({
+          title: t("cloud_save_v2_auto_sync_failed_title", {
+            ns: "game_details",
+          }),
+          body: `${game.title}: ${t("cloud_save_v2_auto_sync_failed_description", { ns: "game_details" })}`,
+        }).show();
+      }
+    } catch (error) {
+      logger.error("Failed to report cloud sync on launch failure", {
+        gameKey,
+        error,
+      });
     }
   }
 
@@ -490,20 +679,102 @@ export class CloudSync {
     const gameKey = levelKeys.game(shop, objectId);
 
     try {
-      const game = await gamesSublevel.get(gameKey);
-      if (game) {
-        await gamesSublevel.put(gameKey, {
-          ...game,
-          lastSyncedBackupAt: artifact.createdAt,
-          // A clean close-backup captured this device's changes; no divergence.
-          unsyncedSince: null,
+      const markerBeforeUpload = (await gamesSublevel.get(gameKey))
+        ?.lastSyncedBackupAt;
+
+      const { freezeFailed } = await CloudSync.preserveSupersededRemoteBackup(
+        shop,
+        objectId,
+        artifact,
+        markerBeforeUpload
+      );
+
+      await updateGameRecord(gameKey, {
+        lastSyncedBackupAt: artifact.createdAt,
+        // A clean close-backup captured this device's changes; no divergence.
+        unsyncedSince: null,
+      });
+
+      // An unfrozen superseded backup is among the oldest after this upload,
+      // so retention could delete it.
+      if (freezeFailed) {
+        logger.error("Skipping backup pruning: superseded backup not frozen", {
+          shop,
+          objectId,
         });
+        return;
       }
 
       await CloudSync.pruneBackups(shop, objectId);
     } catch (error) {
       logger.error("Failed to finalize backup", { shop, objectId, error });
     }
+  }
+
+  /**
+   * Another device may have uploaded while this session ran (e.g. a suspended
+   * Deck resumes after the desktop played). This device's new backup is now
+   * the latest and would silently win, so freeze the other device's backup and
+   * warn, like the launch-side keep-both conflict. A listing failure skips only
+   * this check. Never throws.
+   */
+  private static async preserveSupersededRemoteBackup(
+    shop: GameShop,
+    objectId: string,
+    artifact: LocalArtifact,
+    markerBeforeUpload: string | undefined
+  ): Promise<{ freezeFailed: boolean }> {
+    let superseded: LocalArtifact | null;
+    let backend: Awaited<ReturnType<typeof getArtifactBackend>>;
+    try {
+      backend = await getArtifactBackend();
+      superseded = findSupersededRemoteBackup({
+        lastSyncedBackupAt: markerBeforeUpload,
+        artifacts: await backend.list(shop, objectId),
+        ourDeviceId: getDeviceId(),
+        uploadedArtifactId: artifact.id,
+      });
+    } catch (error) {
+      logger.error("Failed to check for a superseded remote backup", {
+        shop,
+        objectId,
+        error,
+      });
+      return { freezeFailed: false };
+    }
+
+    if (!superseded) return { freezeFailed: false };
+
+    let freezeFailed = false;
+    if (!superseded.isFrozen) {
+      try {
+        await backend.setFrozen(superseded.id, true);
+      } catch (error) {
+        freezeFailed = true;
+        logger.error("Failed to freeze superseded remote backup", {
+          shop,
+          objectId,
+          artifactId: superseded.id,
+          error,
+        });
+      }
+    }
+
+    logger.warn("Backup superseded another device's newer backup; kept both", {
+      shop,
+      objectId,
+      artifactId: artifact.id,
+      supersededId: superseded.id,
+    });
+
+    WindowManager.sendToAppWindows("on-cloud-sync-conflict", {
+      shop,
+      objectId,
+      hostname: CloudSync.describeDevice(superseded),
+      resolution: "kept-both",
+    });
+
+    return { freezeFailed };
   }
 
   /**
@@ -583,8 +854,11 @@ export class CloudSync {
       drives: Record<string, string>;
     };
 
-    const userProfilePath =
-      CloudSync.getWindowsLikeUserProfilePath(winePrefixPath);
+    const userProfilePath = winePrefixPath
+      ? CloudSync.getWindowsLikeUserProfilePath(winePrefixPath)
+      : normalizePath(SystemPath.getPath("home"));
+
+    const moves: { sourcePath: string; destinationPath: string }[] = [];
 
     manifest.backups.forEach((backup) => {
       Object.keys(backup.files).forEach((key) => {
@@ -619,16 +893,37 @@ export class CloudSync {
               )
             );
 
-        logger.info(`Moving ${sourcePath} to ${destinationPath}`);
-
-        fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
-
-        if (fs.existsSync(destinationPath)) {
-          fs.unlinkSync(destinationPath);
-        }
-
-        fs.renameSync(sourcePath, destinationPath);
+        moves.push({ sourcePath, destinationPath });
       });
     });
+
+    // Verify every source before touching any destination: a file missing
+    // from the archive must not cost the existing save.
+    for (const { sourcePath } of moves) {
+      if (!fs.lstatSync(sourcePath).isFile()) {
+        throw new Error(`Backup entry is not a regular file: ${sourcePath}`);
+      }
+    }
+
+    // Stage a copy next to each destination, then rename over it: the copy
+    // works across filesystems (EXDEV) and the rename replaces atomically.
+    const staged: { tempPath: string; destinationPath: string }[] = [];
+    try {
+      for (const { sourcePath, destinationPath } of moves) {
+        fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+        const tempPath = `${destinationPath}.hydra-restore-${crypto.randomUUID()}`;
+        staged.push({ tempPath, destinationPath });
+        fs.copyFileSync(sourcePath, tempPath, fs.constants.COPYFILE_EXCL);
+      }
+
+      for (const { tempPath, destinationPath } of staged) {
+        logger.info(`Restoring ${destinationPath}`);
+        fs.renameSync(tempPath, destinationPath);
+      }
+    } finally {
+      for (const { tempPath } of staged) {
+        fs.rmSync(tempPath, { force: true });
+      }
+    }
   }
 }

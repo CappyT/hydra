@@ -49,6 +49,7 @@ import {
 } from "./is-gamescope-available";
 import { buildGamescopeWrapper } from "./resolve-gamescope-wrapper";
 import { resolveLaunchCommand } from "./resolve-launch-command";
+import { shouldPrepareCompatibilityPrefix } from "./should-prepare-compatibility-prefix";
 import {
   wrapWithSandbox,
   openSeccompFd,
@@ -611,6 +612,14 @@ const prepareLinuxCompatibilityForLaunch = async (
   if (process.platform !== "linux" || !isWindowsExecutable(parsedPath)) {
     return {
       context: null,
+const localPrefixExists = (game: Game | null | undefined, objectId: string) => {
+  const prefixPath = Wine.getEffectivePrefixPath(
+    game?.winePrefixPath,
+    objectId
+  );
+  return !!prefixPath && fs.existsSync(prefixPath);
+};
+
       prefixReadyForRestore: true,
       prefixSafeForUpload: true,
     };
@@ -817,7 +826,15 @@ const launchGameWithCloudSaveChecks = async (
       launchGameRecord,
       objectId,
       shop,
-      shouldRunV2AutomaticSync || managedEpic
+      // Local sync-in restores into the prefix, so it must exist before then.
+      // Preparation runs on the host, so never on an existing (game-writable)
+      // prefix.
+      shouldPrepareCompatibilityPrefix({
+        v2AutomaticSync: shouldRunV2AutomaticSync,
+        managedEpic,
+        localAutomaticSync: !!launchGameRecord?.automaticCloudSync,
+        prefixExists: localPrefixExists(launchGameRecord, objectId),
+      })
     );
   }
   const {
@@ -1025,23 +1042,8 @@ const launchGameWithCloudSaveChecks = async (
     } catch (error) {
       logger.error("Cloud sync on launch threw unexpectedly", error);
     }
-
-    // Mark the start of a play session as local divergence: from now on this
-    // device has (potentially) un-backed-up save changes. A clean close-backup
-    // clears this; if the session crashes/is killed it stays set, so the next
-    // launch can detect a true cross-device conflict. Re-read first because
-    // syncOnLaunch may have just written the record.
-    try {
-      const currentGame = await gamesSublevel.get(gameKey);
-      if (currentGame) {
-        await gamesSublevel.put(gameKey, {
-          ...currentGame,
-          unsyncedSince: new Date().toISOString(),
-        });
-      }
-    } catch (error) {
-      logger.error("Failed to mark play session start for cloud sync", error);
-    }
+    // The process watcher marks the play session (unsyncedSince) once the game
+    // is seen running, so a refused or failed spawn leaves no false divergence.
   }
 
   if (process.platform === "linux") {

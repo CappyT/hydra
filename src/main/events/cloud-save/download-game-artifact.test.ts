@@ -101,6 +101,8 @@ const runDownload = async (
   });
 
   const dependencies: Record<string, unknown> = {
+    electron: { Notification: { isSupported: () => false } },
+    "./sandbox": { Sandbox: { isEnabled: () => true } },
     "@main/level": {
       db: { get: async () => null },
       gamesSublevel: { get: async () => game },
@@ -123,6 +125,10 @@ const runDownload = async (
       normalizePath: (value: string) => value,
     },
     "./backup/linux-restore": { restoreLinuxBackup },
+    "./backup/backup-source-paths": {
+      assertBackupSourcesInsideRoot: () => {},
+    },
+    "./game-record-updater": { updateGameRecord: async () => undefined },
     "@main/helpers/sandbox-paths": { assertSafeSandboxPath },
     "@main/helpers/sandbox-launch": {
       sanitizeSandboxGameKey: (value: string) => value,

@@ -70,7 +70,8 @@ export class Ludusavi {
     objectId: string,
     backupPath?: string | null,
     winePrefix?: string | null,
-    preview?: boolean
+    preview?: boolean,
+    homeOverride?: string | null
   ): Promise<LudusaviBackup> {
     return new Promise((resolve, reject) => {
       const args = [
@@ -89,6 +90,11 @@ export class Ludusavi {
       cp.execFile(
         this.resolveBinaryPath(),
         args,
+        {
+          env: homeOverride
+            ? this.buildHomeOverrideEnv(homeOverride)
+            : undefined,
+        },
         (err: cp.ExecFileException | null, stdout: string) => {
           if (err) {
             return reject(err);
@@ -100,10 +106,25 @@ export class Ludusavi {
     });
   }
 
+  /**
+   * Points ludusavi's `<home>` at another directory, e.g. a sandboxed game's
+   * per-game home. XDG overrides are dropped so XDG paths derive from HOME,
+   * like inside the sandbox where the home is bound over $HOME.
+   */
+  private static buildHomeOverrideEnv(home: string): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = { ...process.env, HOME: home };
+    delete env.XDG_DATA_HOME;
+    delete env.XDG_CONFIG_HOME;
+    delete env.XDG_STATE_HOME;
+    delete env.XDG_CACHE_HOME;
+    return env;
+  }
+
   public static async getBackupPreview(
     _shop: GameShop,
     objectId: string,
-    winePrefix?: string | null
+    winePrefix?: string | null,
+    homeOverride?: string | null
   ): Promise<LudusaviBackup | null> {
     const config = await this.getConfig();
 
@@ -112,7 +133,8 @@ export class Ludusavi {
       objectId,
       null,
       winePrefix,
-      true
+      true,
+      homeOverride
     );
 
     const customGame = config.customGames.find(
