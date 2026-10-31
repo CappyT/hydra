@@ -1,7 +1,8 @@
 /**
- * Returns the remote prefix with exactly one separator before the next path
- * segment. `name:` stays `name:` (a `/` would make it an absolute path on
- * local, sftp and ftp remotes); `name:dir/` stays `name:dir/`.
+ * Returns the remote prefix with exactly one `/` before the next path segment.
+ * A bare `name:` becomes `name:/`, the absolute form that earlier builds wrote
+ * to: switching to `name:` (relative to the remote home) would hide their
+ * backups. A remote that already ends with `/` is not doubled.
  */
 export const rcloneRemoteBase = (remote: string): string =>
-  remote.endsWith(":") || remote.endsWith("/") ? remote : `${remote}/`;
+  remote.endsWith("/") ? remote : `${remote}/`;
