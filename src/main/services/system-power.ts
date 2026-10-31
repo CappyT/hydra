@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { win32 } from "node:path";
 import { promisify } from "node:util";
 import type { SystemPowerAction } from "../../types/system-power";
+import { resolveSystemBinary } from "@main/helpers/resolve-system-binary";
 
 const execFileAsync = promisify(execFile);
 type PowerCommandRunner = (
@@ -59,7 +60,9 @@ export function getSystemPowerCommand(
       restart: "reboot",
       suspend: "suspend",
     };
-    return { file: "systemctl", args: [commands[action]] };
+    const systemctl = resolveSystemBinary(["systemctl"]);
+    if (!systemctl) throw new Error("systemctl not found in trusted paths");
+    return { file: systemctl, args: [commands[action]] };
   }
 
   if (platform === "darwin") {
