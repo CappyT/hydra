@@ -47,10 +47,12 @@ type Integration =
 
 interface RetroAchievementsSectionProps {
   upTarget: FocusOverrideTarget;
+  downTarget?: FocusOverrideTarget;
 }
 
 export function RetroAchievementsSection({
   upTarget,
+  downTarget = { type: "block" },
 }: Readonly<RetroAchievementsSectionProps>) {
   const { t } = useTranslation("settings");
   const { showSuccessToast, showErrorToast } = useBigPictureToast();
@@ -232,9 +234,9 @@ export function RetroAchievementsSection({
   const connectOverrides = useMemo<FocusOverrides>(
     () => ({
       up: { type: "item", itemId: RETROACHIEVEMENTS_WEB_API_KEY_INPUT_ID },
-      down: { type: "block" },
+      down: downTarget,
     }),
-    []
+    [downTarget]
   );
 
   const isConnected = integration.connected;
@@ -244,9 +246,9 @@ export function RetroAchievementsSection({
     () => ({
       up: upTarget,
       right: { type: "item", itemId: RETROACHIEVEMENTS_DISCONNECT_BUTTON_ID },
-      down: { type: "block" },
+      down: downTarget,
     }),
-    [upTarget]
+    [downTarget, upTarget]
   );
 
   const disconnectOverrides = useMemo<FocusOverrides>(
@@ -255,9 +257,9 @@ export function RetroAchievementsSection({
       left: isInvalid
         ? undefined
         : { type: "item", itemId: RETROACHIEVEMENTS_UPDATE_BUTTON_ID },
-      down: { type: "block" },
+      down: downTarget,
     }),
-    [isInvalid, upTarget]
+    [downTarget, isInvalid, upTarget]
   );
 
   const isConnectDisabled =

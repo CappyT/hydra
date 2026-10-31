@@ -15,6 +15,7 @@ import {
   getIntegrationProviderCheckboxFocusId,
   RETROACHIEVEMENTS_SECTION_REGION_ID,
   SETTINGS_HEADER_RETURN_TARGET,
+  STEAMGRIDDB_SECTION_REGION_ID,
   type IntegrationProviderId,
 } from "./settings-navigation";
 import {
@@ -46,6 +47,12 @@ interface IntegrationProviderDefinition
   featureFlag?: string;
   tokenPreferenceKey: IntegrationPreferenceKey;
 }
+
+const STEAMGRIDDB_DOWN_TARGET: FocusOverrideTarget = {
+  type: "region",
+  regionId: STEAMGRIDDB_SECTION_REGION_ID,
+  entryDirection: "down",
+};
 
 const REAL_DEBRID_API_TOKEN_URL = "https://real-debrid.com/apitoken";
 const PREMIUMIZE_API_TOKEN_URL = "https://www.premiumize.me/account";
@@ -194,6 +201,7 @@ export function IntegrationsSettingsSection({
               }
             : SETTINGS_HEADER_RETURN_TARGET
         }
+        downTarget={STEAMGRIDDB_DOWN_TARGET}
       />
 
       <SteamGridDbSection
