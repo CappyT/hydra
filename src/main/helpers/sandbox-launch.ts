@@ -31,6 +31,8 @@ import {
   sandboxSeccompFilterPath,
 } from "@main/constants";
 import { assertSafeSandboxPath } from "./sandbox-paths";
+import { moveLaunchEnvIntoPayload } from "./sandbox-env";
+import { resolveSystemBinary } from "./resolve-system-binary";
 import type { ResolvedLaunchCommand } from "./resolve-launch-command";
 
 /**
@@ -409,10 +411,24 @@ export const wrapWithSandbox = (
 
   logSandboxHardeningState(seccomp, userPreferences, game, networkIsolation);
 
+  // A gamescope from ~/.local/bin (SteamOS) is hidden by the /home tmpfs, so
+  // expose the exact trusted binary the launch runs, as for pasta.
+  const gamescopePath = resolveSystemBinary(["gamescope"]);
+  const wrapperRoBinds =
+    gamescopePath &&
+    [resolved.command, ...resolved.args].includes(gamescopePath)
+      ? [gamescopePath]
+      : [];
+
+  // Launch variables reach only the game, never bwrap, the wrapper or pasta.
+  // They also must not steer the host-side binds (XAUTHORITY, XDG_RUNTIME_DIR,
+  // GAMESCOPE_WAYLAND_DISPLAY), so the profile reads the host env only.
+  const payload = moveLaunchEnvIntoPayload(resolved);
+
   const { command, args } = Sandbox.wrapCommand({
-    command: resolved.command,
-    args: resolved.args,
-    env: { ...process.env, ...resolved.env },
+    command: payload.command,
+    args: payload.args,
+    env: process.env,
     gameDir,
     winePrefix,
     protonDir,
@@ -420,7 +436,7 @@ export const wrapWithSandbox = (
       ...additionalBinds,
       ...(game?.sandboxExtraPaths?.filter(Boolean) ?? []),
     ],
-    extraRoBinds: additionalRoBinds,
+    extraRoBinds: [...additionalRoBinds, ...wrapperRoBinds],
     homePersistDir,
     shareIpc: game?.sandboxShareIpc === true,
     hideX11,
@@ -432,7 +448,7 @@ export const wrapWithSandbox = (
   return {
     command,
     args,
-    env: resolved.env,
+    env: payload.env,
     seccompFilterPath,
   };
 };

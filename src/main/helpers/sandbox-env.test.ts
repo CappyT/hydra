@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, it } from "node:test";
 
-import { buildSandboxEnv } from "./sandbox-env.ts";
+import {
+  buildSandboxEnv,
+  moveLaunchEnvIntoPayload,
+  SANDBOX_ENV_PATH,
+} from "./sandbox-env.ts";
 
 describe("buildSandboxEnv", () => {
   it("drops secret-looking variables the game never needs", () => {
@@ -102,5 +110,85 @@ describe("buildSandboxEnv", () => {
     const result = buildSandboxEnv({ HOME: undefined, PATH: "/usr/bin" });
 
     assert.deepEqual(result, { PATH: "/usr/bin" });
+  });
+});
+
+describe("moveLaunchEnvIntoPayload", () => {
+  const tricky = {
+    LD_PRELOAD: "/games/My Game/hook.so",
+    QUOTED: `say "hi" 'there'`,
+    WITH_EQUALS: "a=b==c",
+    EMPTY: "",
+  };
+
+  it("moves every launch variable into env(1) argv and leaves the host env empty", () => {
+    const result = moveLaunchEnvIntoPayload({
+      command: "gamemoderun",
+      args: ["/games/My Game/game", "--flag"],
+      env: tricky,
+    });
+
+    assert.deepEqual(result.env, {});
+    assert.equal(result.command, SANDBOX_ENV_PATH);
+    assert.deepEqual(result.args, [
+      "LD_PRELOAD=/games/My Game/hook.so",
+      `QUOTED=say "hi" 'there'`,
+      "WITH_EQUALS=a=b==c",
+      "EMPTY=",
+      "gamemoderun",
+      "/games/My Game/game",
+      "--flag",
+    ]);
+  });
+
+  it("returns the command unchanged when there is no launch variable", () => {
+    const launch = { command: "/usr/bin/game", args: ["-x"], env: {} };
+    assert.deepEqual(moveLaunchEnvIntoPayload(launch), launch);
+  });
+
+  it("refuses a variable name env(1) would misparse", () => {
+    for (const name of ["-i", "A=B", "1X", "", "A B"])
+      assert.throws(
+        () =>
+          moveLaunchEnvIntoPayload({
+            command: "/usr/bin/game",
+            args: [],
+            env: { [name]: "x" },
+          }),
+        { code: "SANDBOX_UNAVAILABLE" },
+        name
+      );
+  });
+
+  it("delivers exact values to the payload, including a command path with '='", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "sandbox-env-"));
+    try {
+      const dir = path.join(root, "a=b dir");
+      fs.mkdirSync(dir);
+      const game = path.join(dir, "game");
+      fs.writeFileSync(
+        game,
+        '#!/bin/sh\nfor name in LD_PRELOAD QUOTED WITH_EQUALS EMPTY; do printenv "$name" || echo "<unset:$name>"; done\nprintf "%s|" "$@"\n'
+      );
+      fs.chmodSync(game, 0o755);
+
+      const payload = moveLaunchEnvIntoPayload({
+        command: game,
+        args: ["one two", "x=y"],
+        env: tricky,
+      });
+      const run = spawnSync(payload.command, payload.args, {
+        env: { PATH: "/usr/bin:/bin" },
+        encoding: "utf8",
+      });
+
+      assert.equal(run.status, 0, run.stderr);
+      assert.equal(
+        run.stdout,
+        `/games/My Game/hook.so\nsay "hi" 'there'\na=b==c\n\none two|x=y|`
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });
