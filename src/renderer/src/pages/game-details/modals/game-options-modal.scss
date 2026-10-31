@@ -7,6 +7,9 @@ $disc-menu-transition-duration: 0.15s;
   &__container {
     display: flex;
     min-height: 520px;
+    // Fixed height keeps the modal from resizing and re-centering on every
+    // tab switch; the panel scrolls so the tab column never scrolls away.
+    height: min(calc(100vh - 160px), 720px);
   }
 
   &__sidebar {
@@ -62,6 +65,7 @@ $disc-menu-transition-duration: 0.15s;
     gap: calc(globals.$spacing-unit * 2.5);
     min-width: 0;
     padding: calc(globals.$spacing-unit * 2.5);
+    overflow-y: auto;
 
     &--assets {
       padding-bottom: 0;
@@ -254,6 +258,11 @@ $disc-menu-transition-duration: 0.15s;
     &__container {
       flex-direction: column;
       min-height: 0;
+      height: auto;
+    }
+
+    &__panel {
+      overflow-y: visible;
     }
 
     &__sidebar {
