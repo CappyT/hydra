@@ -17,7 +17,7 @@ const LUDUSAVI_DIR = path.join(ROOT, "ludusavi");
 // downloads: an unknown platform/arch fails closed.
 const PLATFORM_KEY = `${process.platform}-${process.arch}`;
 
-const UMU_VERSION = "1.4.1";
+const UMU_VERSION = "1.4.4";
 const LUDUSAVI_VERSION = "0.29.0";
 const SEVEN_ZIP_VERSION = "26.02";
 
@@ -36,13 +36,13 @@ const components = [
     name: "umu-run",
     installedPath: path.join(BINARIES_DIR, "umu", "umu-run"),
     installedSha256:
-      "ecb44854bf16b87d08ba101da3459ac4f02f3ccf8bf40a8ac6ea3143446bccf8",
+      "d0005a58602041229cc467dab03dc0c0b9e8cce09a8145b16b7683244cf17804",
     // Open-Wine-Components/umu-launcher official release (arch-independent zipapp).
     assets: {
       "linux-x64": {
         url: `https://github.com/Open-Wine-Components/umu-launcher/releases/download/${UMU_VERSION}/umu-launcher-${UMU_VERSION}-zipapp.tar`,
         sha256:
-          "97b6ff2981912a6b9cd223ec4fb5c4e0a819e5c166811e0f82ae60fad0801c21",
+          "eb590691841f7fad3fc3ad8fd5db4ccb87849fe7948e62b28ece7a4ee48cc851",
       },
     },
     install: async (assetPath) => {
