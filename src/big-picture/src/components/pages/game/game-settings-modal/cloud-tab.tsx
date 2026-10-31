@@ -14,7 +14,7 @@ import type {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { platformToEmulationSavePlatform } from "@renderer/helpers";
-import { ACCOUNTLESS } from "@shared";
+import { ACCOUNTLESS, DEFAULT_BACKUPS_TO_KEEP } from "@shared";
 import {
   Button,
   Checkbox,
@@ -36,8 +36,6 @@ export const GAME_CLOUD_SETTINGS_PRIMARY_CONTROL_ID =
 const GAME_CLOUD_SETTINGS_AUTO_SYNC_ID = "game-cloud-settings-auto-sync";
 const GAME_CLOUD_SETTINGS_BACKUPS_TO_KEEP_ID =
   "game-cloud-settings-backups-to-keep";
-
-const DEFAULT_BACKUPS_TO_KEEP = 10;
 
 export interface GameCloudSettingsProps {
   game: LibraryGame;

@@ -1,7 +1,8 @@
 import "./backup.scss";
 
+import { DEFAULT_BACKUPS_TO_KEEP } from "@shared";
 import type { BackupBackend } from "@types";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   FloppyDiskIcon,
@@ -22,6 +23,7 @@ import type { FocusOverrides } from "../../services";
 import {
   BACKUP_AUTO_BACKUP_CHECKBOX_ID,
   BACKUP_BACKEND_SELECT_ID,
+  BACKUP_BACKUPS_TO_KEEP_INPUT_ID,
   BACKUP_LOCAL_PATH_BUTTON_ID,
   BACKUP_RCLONE_REMOTE_INPUT_ID,
   BACKUP_SAVE_BUTTON_ID,
@@ -40,6 +42,7 @@ interface BackupForm {
   backupLocalPath: string;
   rcloneRemote: string;
   autoBackupNewGames: boolean;
+  defaultBackupsToKeep: string;
 }
 
 const DEFAULT_FORM: BackupForm = {
@@ -47,6 +50,7 @@ const DEFAULT_FORM: BackupForm = {
   backupLocalPath: "",
   rcloneRemote: "",
   autoBackupNewGames: false,
+  defaultBackupsToKeep: "",
 };
 
 export function BackupSettingsSection({
@@ -61,15 +65,31 @@ export function BackupSettingsSection({
   const [testing, setTesting] = useState(false);
   const [pathPickerOpen, setPathPickerOpen] = useState(false);
 
+  const formRef = useRef(form);
+  formRef.current = form;
+  const lastLoadedRef = useRef<BackupForm>(DEFAULT_FORM);
+
   useEffect(() => {
     if (!userPreferences) return;
 
-    setForm({
+    const loaded: BackupForm = {
       backupBackend: userPreferences.backupBackend ?? "local",
       backupLocalPath: userPreferences.backupLocalPath ?? "",
       rcloneRemote: userPreferences.rcloneRemote ?? "",
       autoBackupNewGames: userPreferences.autoBackupNewGames ?? false,
-    });
+      defaultBackupsToKeep:
+        userPreferences.defaultBackupsToKeep?.toString() ?? "",
+    };
+
+    // Any preference update re-runs this effect: keep unsaved edits and only
+    // re-sync while the form still matches what was last loaded.
+    const isPristine = (
+      Object.keys(lastLoadedRef.current) as (keyof BackupForm)[]
+    ).every((key) => formRef.current[key] === lastLoadedRef.current[key]);
+
+    lastLoadedRef.current = loaded;
+
+    if (isPristine) setForm(loaded);
   }, [userPreferences]);
 
   const isLocalBackend = form.backupBackend === "local";
@@ -96,14 +116,22 @@ export function BackupSettingsSection({
   const autoBackupOverrides = useMemo<FocusOverrides>(
     () => ({
       up: { type: "item", itemId: secondFocusId },
-      down: { type: "item", itemId: BACKUP_SAVE_BUTTON_ID },
+      down: { type: "item", itemId: BACKUP_BACKUPS_TO_KEEP_INPUT_ID },
     }),
     [secondFocusId]
   );
 
-  const saveOverrides = useMemo<FocusOverrides>(
+  const backupsToKeepOverrides = useMemo<FocusOverrides>(
     () => ({
       up: { type: "item", itemId: BACKUP_AUTO_BACKUP_CHECKBOX_ID },
+      down: { type: "item", itemId: BACKUP_SAVE_BUTTON_ID },
+    }),
+    []
+  );
+
+  const saveOverrides = useMemo<FocusOverrides>(
+    () => ({
+      up: { type: "item", itemId: BACKUP_BACKUPS_TO_KEEP_INPUT_ID },
       right: { type: "item", itemId: BACKUP_TEST_BUTTON_ID },
       down: { type: "block" },
     }),
@@ -112,7 +140,7 @@ export function BackupSettingsSection({
 
   const testOverrides = useMemo<FocusOverrides>(
     () => ({
-      up: { type: "item", itemId: BACKUP_AUTO_BACKUP_CHECKBOX_ID },
+      up: { type: "item", itemId: BACKUP_BACKUPS_TO_KEEP_INPUT_ID },
       left: { type: "item", itemId: BACKUP_SAVE_BUTTON_ID },
       down: { type: "block" },
     }),
@@ -125,6 +153,18 @@ export function BackupSettingsSection({
   }, []);
 
   const handleSave = useCallback(async () => {
+    const rawBackupsToKeep = form.defaultBackupsToKeep.trim();
+    const backupsToKeep =
+      rawBackupsToKeep === "" ? undefined : Number(rawBackupsToKeep);
+
+    if (
+      backupsToKeep !== undefined &&
+      (!Number.isInteger(backupsToKeep) || backupsToKeep < 1)
+    ) {
+      showErrorToast(t("default_backups_to_keep_invalid"));
+      return;
+    }
+
     setSaving(true);
 
     try {
@@ -133,6 +173,7 @@ export function BackupSettingsSection({
         backupLocalPath: form.backupLocalPath || null,
         rcloneRemote: form.rcloneRemote || null,
         autoBackupNewGames: form.autoBackupNewGames,
+        defaultBackupsToKeep: backupsToKeep,
       });
       showSuccessToast(t("changes_saved"));
     } catch {
@@ -272,6 +313,30 @@ export function BackupSettingsSection({
                 }))
               }
             />
+
+            <div className="backup-settings-section__field">
+              <Input
+                type="number"
+                min={1}
+                step={1}
+                label={t("default_backups_to_keep")}
+                placeholder={String(DEFAULT_BACKUPS_TO_KEEP)}
+                value={form.defaultBackupsToKeep}
+                focusId={BACKUP_BACKUPS_TO_KEEP_INPUT_ID}
+                focusNavigationOverrides={backupsToKeepOverrides}
+                onChange={(event) =>
+                  setForm((currentForm) => ({
+                    ...currentForm,
+                    defaultBackupsToKeep: event.target.value,
+                  }))
+                }
+              />
+              <p className="backup-settings-section__hint">
+                {t("default_backups_to_keep_description", {
+                  count: DEFAULT_BACKUPS_TO_KEEP,
+                })}
+              </p>
+            </div>
 
             <div className="backup-settings-section__actions">
               <Button

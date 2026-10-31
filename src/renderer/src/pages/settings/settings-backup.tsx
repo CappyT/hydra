@@ -9,6 +9,7 @@ import {
 } from "@renderer/components";
 import { useAppSelector, useToast } from "@renderer/hooks";
 import { settingsContext } from "@renderer/context";
+import { DEFAULT_BACKUPS_TO_KEEP } from "@shared";
 import type { BackupBackend } from "@types";
 
 export function SettingsBackup() {
@@ -28,6 +29,7 @@ export function SettingsBackup() {
     backupLocalPath: "" as string,
     rcloneRemote: "" as string,
     autoBackupNewGames: false,
+    defaultBackupsToKeep: "" as string,
   });
 
   useEffect(() => {
@@ -37,6 +39,8 @@ export function SettingsBackup() {
         backupLocalPath: userPreferences.backupLocalPath ?? "",
         rcloneRemote: userPreferences.rcloneRemote ?? "",
         autoBackupNewGames: userPreferences.autoBackupNewGames ?? false,
+        defaultBackupsToKeep:
+          userPreferences.defaultBackupsToKeep?.toString() ?? "",
       });
     }
   }, [userPreferences]);
@@ -54,6 +58,18 @@ export function SettingsBackup() {
   };
 
   const handleSave = async () => {
+    const rawBackupsToKeep = form.defaultBackupsToKeep.trim();
+    const backupsToKeep =
+      rawBackupsToKeep === "" ? undefined : Number(rawBackupsToKeep);
+
+    if (
+      backupsToKeep !== undefined &&
+      (!Number.isInteger(backupsToKeep) || backupsToKeep < 1)
+    ) {
+      showErrorToast(t("default_backups_to_keep_invalid"));
+      return;
+    }
+
     setSaving(true);
     try {
       await updateUserPreferences({
@@ -61,6 +77,7 @@ export function SettingsBackup() {
         backupLocalPath: form.backupLocalPath || null,
         rcloneRemote: form.rcloneRemote || null,
         autoBackupNewGames: form.autoBackupNewGames,
+        defaultBackupsToKeep: backupsToKeep,
       });
       showSuccessToast(t("changes_saved"));
     } catch (_err) {
@@ -159,6 +176,24 @@ export function SettingsBackup() {
           }
         />
         <p>{t("auto_backup_new_games_description")}</p>
+
+        <TextField
+          label={t("default_backups_to_keep")}
+          type="number"
+          min={1}
+          step={1}
+          value={form.defaultBackupsToKeep}
+          placeholder={String(DEFAULT_BACKUPS_TO_KEEP)}
+          onChange={(event) =>
+            setForm((prev) => ({
+              ...prev,
+              defaultBackupsToKeep: event.target.value,
+            }))
+          }
+          hint={t("default_backups_to_keep_description", {
+            count: DEFAULT_BACKUPS_TO_KEEP,
+          })}
+        />
 
         <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
           <Button onClick={handleSave} disabled={saving}>

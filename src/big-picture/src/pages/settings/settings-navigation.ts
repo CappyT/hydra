@@ -45,6 +45,7 @@ export const BACKUP_BACKEND_SELECT_ID = "backup-backend-select";
 export const BACKUP_LOCAL_PATH_BUTTON_ID = "backup-local-path-button";
 export const BACKUP_RCLONE_REMOTE_INPUT_ID = "backup-rclone-remote-input";
 export const BACKUP_AUTO_BACKUP_CHECKBOX_ID = "backup-auto-backup-checkbox";
+export const BACKUP_BACKUPS_TO_KEEP_INPUT_ID = "backup-backups-to-keep-input";
 export const BACKUP_SAVE_BUTTON_ID = "backup-save-button";
 export const BACKUP_TEST_BUTTON_ID = "backup-test-button";
 export const INTEGRATIONS_SECTION_REGION_ID = "integrations-section-region";
