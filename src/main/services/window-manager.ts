@@ -28,6 +28,7 @@ import {
   Tray,
   WebContentsView,
   app,
+  dialog,
   nativeImage,
   nativeTheme,
   screen,
@@ -40,6 +41,7 @@ import UserAgent from "user-agents";
 import { HydraApi } from "./hydra-api";
 import { logger } from "./logger";
 import {
+import { SandboxUnavailableError } from "./sandbox-command-builder";
   addSteamGridDbCacheControl,
   isSteamGridDbArtworkRequest,
 } from "./steam-grid-db-cache";
@@ -1393,12 +1395,21 @@ export class WindowManager {
             // every launch wrapper. Imported lazily to avoid a load-time cycle
             // (launch-game imports this service).
             const { launchGame } = await import("@main/helpers/launch-game");
-            await launchGame({
-              shop: game.shop,
-              objectId: game.objectId,
-              executablePath: game.executablePath,
-              launchOptions: game.launchOptions,
-            });
+            try {
+              await launchGame({
+                shop: game.shop,
+                objectId: game.objectId,
+                executablePath: game.executablePath,
+                launchOptions: game.launchOptions,
+              });
+            } catch (error) {
+              // Same refusal dialog as the openGame IPC handler.
+              if (error instanceof SandboxUnavailableError) {
+                dialog.showErrorBox("Hydra", error.message);
+                return;
+              }
+              logger.error("Failed to launch game from tray", error);
+            }
           },
         }));
 

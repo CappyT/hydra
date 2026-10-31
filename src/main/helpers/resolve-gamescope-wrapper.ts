@@ -3,6 +3,7 @@ import { screen } from "electron";
 
 import { WindowManager } from "@main/services/window-manager";
 import { logger } from "@main/services/logger";
+import { SandboxUnavailableError } from "@main/services/sandbox-command-builder";
 import { resolveSystemBinary } from "./resolve-system-binary";
 
 /**
@@ -72,7 +73,9 @@ export const buildGamescopeWrapper = (): string[] => {
   // launch if the trusted binary disappears after the availability check.
   const gamescopeBinary = resolveSystemBinary(["gamescope"]);
   if (!gamescopeBinary)
-    throw new Error("Trusted gamescope binary is unavailable");
+    throw new SandboxUnavailableError(
+      "Trusted gamescope binary is unavailable. Game launch refused."
+    );
   const wrapper = [gamescopeBinary, "-f"];
 
   try {
