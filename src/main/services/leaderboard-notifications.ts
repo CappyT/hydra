@@ -5,6 +5,7 @@ import { getGameAssets } from "@main/events/catalogue/get-game-assets";
 import {
   buildLeaderboardNotificationTarget,
   buildLeaderboardNotificationText,
+  filterAccountlessFeatures,
   GLOBAL_LEADERBOARDS_FEATURE,
   parseLeaderboardNotification,
   type LeaderboardNotificationInfo,
@@ -35,7 +36,9 @@ const isGlobalLeaderboardsEnabled = (signal: AbortSignal) =>
     .then(
       (features) =>
         Array.isArray(features) &&
-        features.includes(GLOBAL_LEADERBOARDS_FEATURE)
+        filterAccountlessFeatures(features).includes(
+          GLOBAL_LEADERBOARDS_FEATURE
+        )
     )
     .catch((error) => {
       if (!signal.aborted) logger.warn("Could not load feature flags", error);

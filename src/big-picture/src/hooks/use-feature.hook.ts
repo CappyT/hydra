@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { filterAccountlessFeatures } from "@shared";
 
 export enum Feature {
   CheckDownloadWritePermission = "CHECK_DOWNLOAD_WRITE_PERMISSION",
@@ -16,9 +17,11 @@ const FEATURES_STORAGE_KEY = "features";
 
 function getStoredFeatures() {
   try {
-    return JSON.parse(
-      globalThis.window.localStorage.getItem(FEATURES_STORAGE_KEY) ?? "[]"
-    ) as string[];
+    return filterAccountlessFeatures(
+      JSON.parse(
+        globalThis.window.localStorage.getItem(FEATURES_STORAGE_KEY) ?? "[]"
+      ) as string[]
+    );
   } catch {
     return [];
   }
@@ -33,7 +36,7 @@ export function useFeature() {
     globalThis.window.electron.hydraApi
       .get<string[]>("/features", { needsAuth: false })
       .then((resolvedFeatures) => {
-        const nextFeatures = resolvedFeatures ?? [];
+        const nextFeatures = filterAccountlessFeatures(resolvedFeatures ?? []);
         globalThis.window.localStorage.setItem(
           FEATURES_STORAGE_KEY,
           JSON.stringify(nextFeatures)

@@ -29,6 +29,7 @@ import { format } from "date-fns";
 import { AchievementNotificationInfo, GameRepack } from "@types";
 
 export * from "./accountless";
+export * from "./accountless-features";
 export * from "./backups";
 export * from "./archive-org";
 export * from "./constants";
