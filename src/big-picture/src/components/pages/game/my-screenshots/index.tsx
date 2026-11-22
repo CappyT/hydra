@@ -12,6 +12,7 @@ import {
   ACCOUNTLESS,
   buildGameScreenshotsPath,
   createScreenshotWriteBus,
+  resolveScreenshotPreferences,
   type MyScreenshotItem,
   type ScreenshotWriteBus,
 } from "@shared";
@@ -29,7 +30,12 @@ import {
   type ScreenshotViewerEntry,
 } from "../../screenshots";
 import { getItemFocusTarget } from "../../../../helpers";
-import { Feature, useFeature, useUserDetails } from "../../../../hooks";
+import {
+  Feature,
+  useFeature,
+  useUserDetails,
+  useUserPreferences,
+} from "../../../../hooks";
 import {
   NavigationService,
   type FocusOverrides,
@@ -337,6 +343,7 @@ export function GameMyScreenshots({
 }: Readonly<GameMyScreenshotsProps>) {
   const { t } = useTranslation("big_picture");
   const { isFeatureEnabled } = useFeature();
+  const userPreferences = useUserPreferences();
   const [modalTab, setModalTab] = useState<GameScreenshotsTab | null>(null);
   const [writeBus] = useState(createScreenshotWriteBus);
   const isEnabled = isFeatureEnabled(Feature.Screenshots);
@@ -405,19 +412,21 @@ export function GameMyScreenshots({
     mine.hasLoaded ||
     (hasWaitedForPublished && mine.hasLoadedLocal && !mine.hasLocalFailed);
   const hasCommunity = !ACCOUNTLESS && communityShop !== "custom";
+  const isCommunityHidden =
+    resolveScreenshotPreferences(userPreferences).hideCommunity;
   const hasNoScreenshotsOfMine =
     mine.hasLoaded && !mine.hasFailed && !mine.isPartial && items.length === 0;
+  const fallsBackToCommunity =
+    hasCommunity && !isCommunityHidden && hasNoScreenshotsOfMine;
   const community = useSidebarCommunityScreenshots({
-    enabled: isEnabled && hasCommunity && hasNoScreenshotsOfMine,
+    enabled: isEnabled && fallsBackToCommunity,
     shop: communityShop,
     objectId: communityObjectId,
     writeBus,
   });
-  const showCommunity = hasNoScreenshotsOfMine && community.items.length > 0;
+  const showCommunity = fallsBackToCommunity && community.items.length > 0;
   const title = t(
-    hasCommunity && hasNoScreenshotsOfMine
-      ? "community_screenshots_tab"
-      : "my_screenshots",
+    fallsBackToCommunity ? "community_screenshots_tab" : "my_screenshots",
     { ns: "screenshots" }
   );
   const showGrid = isSettled && items.length > 0 && !mine.hasFailed;
@@ -426,7 +435,7 @@ export function GameMyScreenshots({
   const getViewAllTab = (): GameScreenshotsTab | null => {
     if (showCommunity) return "community";
     if (showGrid) return "mine";
-    if (hasCommunity && mine.hasLoaded && !hasNoScreenshotsOfMine) {
+    if (hasCommunity && mine.hasLoaded && !fallsBackToCommunity) {
       return "mine";
     }
     return null;
@@ -526,6 +535,7 @@ export function GameMyScreenshots({
           objectId={objectId}
           communityShop={communityShop}
           communityObjectId={communityObjectId}
+          isCommunityHidden={isCommunityHidden}
           writeBus={writeBus}
           initialTab={modalTab ?? "mine"}
           onClose={closeModal}

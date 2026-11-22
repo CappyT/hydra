@@ -70,6 +70,7 @@ export const SCREENSHOT_SETTINGS_FOCUS_IDS = {
   captureSound: "screenshot-settings-capture-sound",
   toast: "screenshot-settings-toast",
   defaultVisibility: "screenshot-settings-default-visibility",
+  hideCommunity: "screenshot-settings-hide-community",
   folder: "screenshot-settings-folder",
   folderReset: "screenshot-settings-folder-reset",
   folderOpen: "screenshot-settings-folder-open",
@@ -98,6 +99,7 @@ type ScreenshotPreferenceUpdate = Pick<
   | "screenshotCaptureSoundEnabled"
   | "screenshotToastEnabled"
   | "screenshotDefaultVisibility"
+  | "hideCommunityScreenshots"
 >;
 
 function withoutPreferenceKeys(
@@ -364,7 +366,10 @@ function getInactiveFocusIds(
   if (options.isGamepadComboDisabled) {
     for (const focusId of comboIds) inactiveIds.add(focusId);
   }
-  if (ACCOUNTLESS) inactiveIds.add(ids.defaultVisibility);
+  if (ACCOUNTLESS) {
+    inactiveIds.add(ids.defaultVisibility);
+    inactiveIds.add(ids.hideCommunity);
+  }
 
   return inactiveIds;
 }
@@ -395,6 +400,7 @@ function buildScreenshotSettingsRows(options: ScreenshotSettingsRowsOptions) {
     [ids.captureSound],
     [ids.toast],
     [ids.defaultVisibility],
+    [ids.hideCommunity],
     folderRow,
   ]
     .map((row) => row.filter((focusId) => !inactiveIds.has(focusId)))
@@ -823,6 +829,16 @@ export function ScreenshotSettingsSection({
               }
             />
           )}
+
+          {!ACCOUNTLESS &&
+            renderCheckbox(
+              ids.hideCommunity,
+              t("screenshots_settings_hide_community"),
+              preferences.hideCommunity,
+              (hideCommunityScreenshots) =>
+                void update({ hideCommunityScreenshots }),
+              false
+            )}
 
           <div className="screenshot-settings__row">
             <span className="screenshot-settings__label">

@@ -17,7 +17,7 @@ import { useLocation } from "react-router-dom";
 import { ACCOUNTLESS, isAchievementSouvenirsEnabled } from "@shared";
 import type { UserPreferences } from "@types";
 
-import "./settings-behavior.scss";
+import "./settings-context-content-gameplay.scss";
 
 const buildForm = (preferences: UserPreferences | null) => ({
   autoplayGameTrailers: preferences?.autoplayGameTrailers ?? true,
@@ -247,7 +247,7 @@ export function SettingsContextContentGameplay() {
             ) : (
               <button
                 type="button"
-                className="settings-behavior__hydra-cloud-row"
+                className="settings-context-content-gameplay__hydra-cloud-row"
                 onClick={() => showHydraCloudModal("achievements")}
               >
                 <CheckboxField
@@ -262,7 +262,7 @@ export function SettingsContextContentGameplay() {
               </button>
             )}
 
-            <div className="settings-behavior__screenshots-directory">
+            <div className="settings-context-content-gameplay__screenshots-directory">
               <TextField
                 label={t("screenshots_directory")}
                 value={screenshotsPath}
@@ -280,7 +280,7 @@ export function SettingsContextContentGameplay() {
                     </Button>
                     {hasCustomScreenshotsPath && (
                       <Button
-                        className="settings-behavior__reset-screenshots-button"
+                        className="settings-context-content-gameplay__reset-screenshots-button"
                         theme="outline"
                         disabled={!canManageScreenshots}
                         tooltip={t("reset_screenshots_directory")}
@@ -295,7 +295,7 @@ export function SettingsContextContentGameplay() {
               />
 
               <Button
-                className="settings-behavior__open-screenshots-button"
+                className="settings-context-content-gameplay__open-screenshots-button"
                 theme="outline"
                 disabled={!canManageScreenshots}
                 onClick={handleOpenScreenshotsPath}
@@ -341,29 +341,23 @@ export function SettingsContextContentGameplay() {
           }
         />
 
-        {!ACCOUNTLESS && (
-          <CheckboxField
-            label={t("hide_library_steam_badges")}
-            checked={form.hideSteamLibraryBadges}
-            onChange={() =>
-              handleChange({
-                hideSteamLibraryBadges: !form.hideSteamLibraryBadges,
-              })
-            }
-          />
-        )}
+        <CheckboxField
+          label={t("hide_library_steam_badges")}
+          checked={form.hideSteamLibraryBadges}
+          onChange={() =>
+            handleChange({
+              hideSteamLibraryBadges: !form.hideSteamLibraryBadges,
+            })
+          }
+        />
 
-        {!ACCOUNTLESS && (
-          <CheckboxField
-            label={t("hide_library_epic_badges")}
-            checked={form.hideEpicLibraryBadges}
-            onChange={() =>
-              handleChange({
-                hideEpicLibraryBadges: !form.hideEpicLibraryBadges,
-              })
-            }
-          />
-        )}
+        <CheckboxField
+          label={t("hide_library_epic_badges")}
+          checked={form.hideEpicLibraryBadges}
+          onChange={() =>
+            handleChange({ hideEpicLibraryBadges: !form.hideEpicLibraryBadges })
+          }
+        />
 
         <CheckboxField
           label={t("hide_library_achievement_progress")}

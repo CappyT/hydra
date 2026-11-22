@@ -4,6 +4,7 @@ import type {
   ScreenshotHotkeyBinding,
   UserPreferences,
 } from "@types";
+import { ACCOUNTLESS } from "./accountless";
 import {
   normalizeScreenshotGamepadCombo,
   normalizeScreenshotHotkey,
@@ -17,6 +18,9 @@ export const SCREENSHOT_VISIBILITY_OPTIONS: ProfileVisibility[] = [
 
 export const SCREENSHOT_CUSTOM_GAME_TITLE_MAX_LENGTH = 100;
 
+export const HIDE_COMMUNITY_SCREENSHOTS_SETTING_ID =
+  "hide-community-screenshots";
+
 export interface ResolvedScreenshotPreferences {
   enabled: boolean;
   hotkey: ScreenshotHotkeyBinding;
@@ -26,6 +30,7 @@ export interface ResolvedScreenshotPreferences {
   toastEnabled: boolean;
   defaultVisibility: ProfileVisibility;
   showSensitive: boolean;
+  hideCommunity: boolean;
 }
 
 export const resolveScreenshotPreferences = (
@@ -41,6 +46,9 @@ export const resolveScreenshotPreferences = (
   toastEnabled: preferences?.screenshotToastEnabled ?? true,
   defaultVisibility: preferences?.screenshotDefaultVisibility ?? "PUBLIC",
   showSensitive: preferences?.showSensitiveScreenshots ?? false,
+  // Accountless fork: the community feed needs a Hydra account.
+  hideCommunity:
+    ACCOUNTLESS || (preferences?.hideCommunityScreenshots ?? false),
 });
 
 export const formatScreenshotHotkeyKey = (key: string) =>
