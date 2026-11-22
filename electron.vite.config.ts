@@ -5,7 +5,6 @@ import {
   loadEnv,
   swcPlugin,
 } from "electron-vite";
-import JavaScriptObfuscator from "javascript-obfuscator";
 import { resolve } from "path";
 import { transformWithEsbuild, type Plugin } from "vite";
 import svgr from "vite-plugin-svgr";
@@ -28,10 +27,17 @@ const mangleIdentifiers = (): Plugin => ({
 
 const buildSeed = Math.floor(Math.random() * 2 ** 31);
 
+// Fork: ship readable bundles so the AppImage can be audited against the
+// source. The obfuscator is only loaded when this is turned on.
+const OBFUSCATE_BUNDLES = false;
+
 const obfuscate = (): Plugin => ({
   name: "hydra:obfuscate",
-  apply: "build",
-  generateBundle: (_options, bundle) => {
+  apply: () => OBFUSCATE_BUNDLES,
+  generateBundle: async (_options, bundle) => {
+    const { default: JavaScriptObfuscator } = await import(
+      "javascript-obfuscator"
+    );
     for (const file of Object.values(bundle)) {
       if (file.type !== "chunk") continue;
 
