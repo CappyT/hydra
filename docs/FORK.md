@@ -409,6 +409,20 @@ runs Steam-library executables through the same sandboxed path as every other
 game. Steam account integration (OAuth, library import, playtime sync) needs a
 Hydra account and stays hidden under `ACCOUNTLESS`.
 
+## Account-only remote features
+
+Upstream keys several features on remote flags from the anonymous
+`GET /features` endpoint, so a flag the API serves as on shows the feature
+after a merge. `filterAccountlessFeatures`
+(`src/shared/accountless-features.ts`) drops the account-only flags at every
+reader (renderer and Big Picture `useFeature`, main-process flag checks).
+Leaderboards, screenshot comments and chat images stay off this way. When an
+upstream release adds an account-only flag, add it to `ACCOUNT_ONLY_FEATURES`.
+
+Screenshots stay local: capture, the screenshots folder and the local viewer
+work. Upload, the upload fields (visibility, quality, caption), the community
+feed and tab, and screenshot telemetry are off under `ACCOUNTLESS`.
+
 ## Emulator detection
 
 Emulator launches and detection run the emulator binary unsandboxed, so

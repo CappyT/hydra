@@ -150,6 +150,11 @@ Procedure per upstream release tag:
    stop and discuss with the owner before proceeding. Existing-feature fixes
    and inert (auth-guarded) additions can proceed, but any new upsell UI
    must be gated behind `ACCOUNTLESS` in a follow-up commit on `main`.
+   Also diff the `Feature` enums (`src/renderer/src/hooks/use-feature.ts`,
+   `src/big-picture/src/hooks/use-feature.hook.ts`) and read the live
+   `GET /features` response: a flag the API serves as on ships the feature
+   after the merge. Account-only flags go into `ACCOUNT_ONLY_FEATURES`
+   (`src/shared/accountless-features.ts`).
 3. **Screen fork-sensitive surfaces** in the incoming diff:
    - game-launch paths (anything calling `openGame`/`launchGame`/
      `shell.openPath`, tray, sidebar, shortcuts) — no sandbox bypass;
