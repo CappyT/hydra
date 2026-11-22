@@ -18,6 +18,7 @@ import type {
   UserPreferences,
 } from "@types";
 import {
+  ACCOUNTLESS,
   DEFAULT_SCREENSHOT_GAMEPAD_COMBO,
   DEFAULT_SCREENSHOT_HOTKEY,
   SCREENSHOT_GAMEPAD_BUTTONS,
@@ -363,6 +364,7 @@ function getInactiveFocusIds(
   if (options.isGamepadComboDisabled) {
     for (const focusId of comboIds) inactiveIds.add(focusId);
   }
+  if (ACCOUNTLESS) inactiveIds.add(ids.defaultVisibility);
 
   return inactiveIds;
 }
@@ -806,18 +808,21 @@ export function ScreenshotSettingsSection({
             (screenshotToastEnabled) => void update({ screenshotToastEnabled })
           )}
 
-          <DropdownSelect
-            className="screenshot-settings__visibility"
-            label={t("screenshots_settings_default_visibility")}
-            value={preferences.defaultVisibility}
-            options={visibilityOptions}
-            disabled={settingsDisabled}
-            focusId={ids.defaultVisibility}
-            focusNavigationOverrides={navigation[ids.defaultVisibility]}
-            onValueChange={(screenshotDefaultVisibility) =>
-              void update({ screenshotDefaultVisibility })
-            }
-          />
+          {/* Accountless fork: visibility only applies to an upload. */}
+          {!ACCOUNTLESS && (
+            <DropdownSelect
+              className="screenshot-settings__visibility"
+              label={t("screenshots_settings_default_visibility")}
+              value={preferences.defaultVisibility}
+              options={visibilityOptions}
+              disabled={settingsDisabled}
+              focusId={ids.defaultVisibility}
+              focusNavigationOverrides={navigation[ids.defaultVisibility]}
+              onValueChange={(screenshotDefaultVisibility) =>
+                void update({ screenshotDefaultVisibility })
+              }
+            />
+          )}
 
           <div className="screenshot-settings__row">
             <span className="screenshot-settings__label">

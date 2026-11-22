@@ -15,6 +15,7 @@ import type {
   ScreenshotSort,
 } from "@types";
 import {
+  ACCOUNTLESS,
   groupByCaptureDay,
   INITIAL_SCREENSHOT_SPOILER_PAGING,
   buildGameScreenshotsPath,
@@ -833,7 +834,7 @@ export function GameScreenshotsModal({
   const { setFocus } = useNavigation();
   const [tab, setTab] = useState<GameScreenshotsTab>(initialTab);
   const [hasOpenedCommunity, setHasOpenedCommunity] = useState(false);
-  const hasCommunity = communityShop !== "custom";
+  const hasCommunity = !ACCOUNTLESS && communityShop !== "custom";
   const activeTab = hasCommunity ? tab : "mine";
   const emptyMineFocusId = hasCommunity
     ? GAME_SCREENSHOTS_MODAL_BROWSE_COMMUNITY_ID

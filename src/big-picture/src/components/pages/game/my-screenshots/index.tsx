@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { GameShop, LocalScreenshot, ProfileScreenshot } from "@types";
 import {
+  ACCOUNTLESS,
   buildGameScreenshotsPath,
   createScreenshotWriteBus,
   type MyScreenshotItem,
@@ -403,7 +404,7 @@ export function GameMyScreenshots({
   const isSettled =
     mine.hasLoaded ||
     (hasWaitedForPublished && mine.hasLoadedLocal && !mine.hasLocalFailed);
-  const hasCommunity = communityShop !== "custom";
+  const hasCommunity = !ACCOUNTLESS && communityShop !== "custom";
   const hasNoScreenshotsOfMine =
     mine.hasLoaded && !mine.hasFailed && !mine.isPartial && items.length === 0;
   const community = useSidebarCommunityScreenshots({

@@ -13,6 +13,7 @@ import { useAppSelector } from "@renderer/hooks";
 import { useScreenshotInputStatus } from "@renderer/hooks/use-screenshot-input-status";
 import { logger } from "@renderer/logger";
 import {
+  ACCOUNTLESS,
   SCREENSHOT_VISIBILITY_OPTIONS,
   resolveScreenshotPreferences,
 } from "@shared";
@@ -232,25 +233,27 @@ export function SettingsContextScreenshots() {
         />
       </div>
 
-      <div className="settings-context-panel__group">
-        <h3>{t("screenshots_upload_group")}</h3>
+      {!ACCOUNTLESS && (
+        <div className="settings-context-panel__group">
+          <h3>{t("screenshots_upload_group")}</h3>
 
-        <SelectField
-          className="settings-screenshots__select"
-          label={t("screenshots_default_visibility")}
-          value={form.defaultVisibility}
-          options={visibilityOptions}
-          onChange={(event) => {
-            const { value } = event.target;
-            if (!isScreenshotVisibility(value)) return;
+          <SelectField
+            className="settings-screenshots__select"
+            label={t("screenshots_default_visibility")}
+            value={form.defaultVisibility}
+            options={visibilityOptions}
+            onChange={(event) => {
+              const { value } = event.target;
+              if (!isScreenshotVisibility(value)) return;
 
-            savePreferences(
-              { defaultVisibility: value },
-              { screenshotDefaultVisibility: value }
-            );
-          }}
-        />
-      </div>
+              savePreferences(
+                { defaultVisibility: value },
+                { screenshotDefaultVisibility: value }
+              );
+            }}
+          />
+        </div>
+      )}
 
       <div className="settings-context-panel__group">
         <h3>{t("screenshots_folder_group")}</h3>

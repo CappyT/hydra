@@ -6,7 +6,11 @@ import {
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { LocalScreenshot } from "@types";
-import { getLocalScreenshotTitle, isScreenshotUploadRetryable } from "@shared";
+import {
+  ACCOUNTLESS,
+  getLocalScreenshotTitle,
+  isScreenshotUploadRetryable,
+} from "@shared";
 import { logger } from "@renderer/logger";
 
 import {
@@ -97,7 +101,8 @@ export function LocalScreenshotSidebar({
   const canRetry =
     screenshot.state === "failed" &&
     isScreenshotUploadRetryable(screenshot.lastError);
-  const canUpload = isUndecided || canRetry;
+  // Accountless fork: uploads go to the Hydra community.
+  const canUpload = !ACCOUNTLESS && (isUndecided || canRetry);
   const isBusy = pendingAction !== null;
   const uploadFocusId = getUploadFocusId(clientId);
   const deleteFocusId = getDeleteFocusId(clientId);
@@ -181,14 +186,14 @@ export function LocalScreenshotSidebar({
             <span className="screenshot-lightbox__date">
               {formatScreenshotDate(screenshot.capturedAt, language)}
             </span>
-            {screenshot.state === "uploaded" ? null : (
+            {ACCOUNTLESS || screenshot.state === "uploaded" ? null : (
               <span className="local-screenshot-sidebar__badge">
                 {t("screenshots_not_uploaded")}
               </span>
             )}
           </div>
 
-          {hasForm ? (
+          {hasForm && !ACCOUNTLESS ? (
             <div className="local-screenshot-sidebar__fields">
               <ReviewFields
                 clientId={clientId}

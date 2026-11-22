@@ -16,6 +16,7 @@ import {
 } from "@renderer/components/screenshots";
 import { GAME_SCREENSHOT_SORT_STORAGE_KEY } from "@renderer/session-state-keys";
 import {
+  ACCOUNTLESS,
   INITIAL_SCREENSHOT_SPOILER_PAGING,
   isSpoilerPagingPaused,
   resumeSpoilerPaging,
@@ -252,7 +253,14 @@ export function GameScreenshotsModal({
   const [tab, setTab] = useState<GameScreenshotsTab>(initialTab);
   const tabs: { id: GameScreenshotsTab; label: string }[] = [
     { id: "mine", label: t("my_screenshots") },
-    { id: "community", label: t("community_screenshots_tab") },
+    ...(ACCOUNTLESS
+      ? []
+      : [
+          {
+            id: "community" as const,
+            label: t("community_screenshots_tab"),
+          },
+        ]),
   ];
 
   useEffect(() => {

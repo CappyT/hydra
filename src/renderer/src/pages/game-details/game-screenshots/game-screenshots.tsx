@@ -6,7 +6,7 @@ import Skeleton from "react-loading-skeleton";
 import { Button } from "@renderer/components";
 import { ScreenshotLightbox } from "@renderer/components/screenshots";
 import { useFeature } from "@renderer/hooks";
-import { createScreenshotWriteBus } from "@shared";
+import { ACCOUNTLESS, createScreenshotWriteBus } from "@shared";
 
 import { SidebarSection } from "../sidebar-section/sidebar-section";
 import { GameScreenshotThumbnail } from "./game-screenshot-thumbnail";
@@ -89,7 +89,7 @@ function GameScreenshotsBox({
     objectId: catalogueGame.objectId,
     sort: "top",
     take: SIDEBAR_SCREENSHOT_COUNT,
-    isEnabled: hasNoScreenshotsOfMine,
+    isEnabled: !ACCOUNTLESS && hasNoScreenshotsOfMine,
     writeBus,
   });
   const communityItems = community.feed.items.slice(
@@ -124,7 +124,7 @@ function GameScreenshotsBox({
 
   const renderCommunity = () => {
     const isCommunityLoading =
-      !community.feed.hasLoaded && !community.feed.hasFailed;
+      !ACCOUNTLESS && !community.feed.hasLoaded && !community.feed.hasFailed;
     if (isCommunityLoading && communityItems.length === 0) {
       return renderSkeleton();
     }
@@ -247,7 +247,7 @@ function GameScreenshotsBox({
   return (
     <SidebarSection
       title={
-        hasNoScreenshotsOfMine
+        hasNoScreenshotsOfMine && !ACCOUNTLESS
           ? t("community_screenshots_tab")
           : t("my_screenshots")
       }

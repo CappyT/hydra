@@ -5,7 +5,7 @@ import { ScreenshotReviewFields } from "@renderer/components/screenshot-upload-f
 import type { ScreenshotReviewDraft } from "@renderer/components/screenshot-upload-form/screenshot-review-state";
 import { useScreenshotReviewActions } from "@renderer/components/screenshot-upload-form/use-screenshot-review-actions";
 import { useDate } from "@renderer/hooks";
-import { getLocalScreenshotTitle } from "@shared";
+import { ACCOUNTLESS, getLocalScreenshotTitle } from "@shared";
 import type { LocalScreenshot } from "@types";
 
 interface LocalScreenshotLightboxPanelProps {
@@ -54,22 +54,26 @@ export function LocalScreenshotLightboxPanel({
             {formatDateTime(screenshot.capturedAt)}
           </time>
         </p>
-        {screenshot.state === "uploaded" ? null : (
+        {ACCOUNTLESS || screenshot.state === "uploaded" ? null : (
           <span className="local-screenshot-panel__badge">
             {t("not_uploaded")}
           </span>
         )}
       </header>
 
-      <div className="local-screenshot-panel__fields">
-        <ScreenshotReviewFields
-          screenshot={screenshot}
-          draft={draft}
-          isBusy={isBusy}
-          onDraftChange={onDraftChange}
-          onDraftCommit={onDraftCommit}
-        />
-      </div>
+      {/* Accountless fork: visibility, quality and caption only apply to an
+          upload. */}
+      {!ACCOUNTLESS && (
+        <div className="local-screenshot-panel__fields">
+          <ScreenshotReviewFields
+            screenshot={screenshot}
+            draft={draft}
+            isBusy={isBusy}
+            onDraftChange={onDraftChange}
+            onDraftCommit={onDraftCommit}
+          />
+        </div>
+      )}
 
       <div className="local-screenshot-panel__footer">
         <div className="local-screenshot-panel__actions">

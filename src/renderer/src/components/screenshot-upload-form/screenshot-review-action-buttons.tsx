@@ -1,7 +1,7 @@
 import { TrashIcon, UploadIcon } from "@primer/octicons-react";
 import { useTranslation } from "react-i18next";
 import type { LocalScreenshot } from "@types";
-import { isScreenshotUploadRetryable } from "@shared";
+import { ACCOUNTLESS, isScreenshotUploadRetryable } from "@shared";
 import { Button } from "@renderer/components";
 
 import { isScreenshotUndecided } from "./screenshot-review-state";
@@ -35,6 +35,10 @@ export function ScreenshotReviewActionButtons({
       <TrashIcon size={16} />
     </Button>
   );
+
+  // Accountless fork: uploads go to the Hydra community, so a local
+  // screenshot only offers delete.
+  if (ACCOUNTLESS) return deleteButton;
 
   if (isUploading) {
     return (

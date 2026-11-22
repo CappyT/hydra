@@ -3,6 +3,7 @@ import type {
   ScreenshotTelemetryEventType,
 } from "@types";
 
+import { ACCOUNTLESS } from "@shared";
 import { isRejectedGroupedSouvenirRequest } from "../achievements/grouped-souvenir-retry-policy";
 import { HydraApi } from "../hydra-api";
 import { logger } from "../logger";
@@ -80,6 +81,7 @@ export class ScreenshotTelemetry {
     outcome: string,
     reason?: string
   ) {
+    if (ACCOUNTLESS) return;
     const platform = getPlatform();
     if (!platform) return;
 
