@@ -1,5 +1,20 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const { flipFuses, FuseVersion, FuseV1Options } = require("@electron/fuses");
+
+// Upstream declares these as `electronFuses` in electron-builder.yml.
+// electron-builder flips fuses after afterPack, on the path where this hook
+// leaves the sh launcher, so the fork flips them here on the real binary.
+const FUSES = {
+  version: FuseVersion.V1,
+  [FuseV1Options.RunAsNode]: false,
+  [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
+  [FuseV1Options.EnableNodeCliInspectArguments]: false,
+  [FuseV1Options.EnableCookieEncryption]: true,
+  [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
+  [FuseV1Options.OnlyLoadAppFromAsar]: true,
+  [FuseV1Options.GrantFileProtocolExtraPrivileges]: true,
+};
 
 // electron-builder afterPack hook.
 //
@@ -114,6 +129,8 @@ exports.default = async function afterPack(context) {
     );
     return;
   }
+
+  await flipFuses(launcherPath, FUSES);
 
   // Move the real Electron binary aside (overwriting any stale .bin), then
   // install the sh launcher in its place with executable permissions.
