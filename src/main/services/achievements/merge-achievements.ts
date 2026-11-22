@@ -1,5 +1,4 @@
 import type {
-  AchievementNotificationInfo,
   Game,
   GameShop,
   SteamAchievement,
@@ -17,15 +16,15 @@ import { randomUUID } from "node:crypto";
 import { WindowManager } from "../window-manager";
 import { HydraApi } from "../hydra-api";
 import { getUnlockedAchievements } from "@main/events/user/get-unlocked-achievements";
-import { publishNewAchievementNotification } from "../notifications";
 import { ACCOUNTLESS } from "@shared";
 import { achievementsLogger } from "../logger";
 import { db, levelKeys } from "@main/level";
 import { getGameAchievementData } from "./get-game-achievement-data";
 import { AchievementWatcherManager } from "./achievement-watcher-manager";
-import { buildAchievementNotificationInfo } from "./build-achievement-notification-info";
+import { resolveNotifiedAchievements } from "./notified-achievements";
 import { AchievementMemoryStore } from "./achievement-memory-store";
-import { achievementNotificationPresenter } from "../achievement-notification-presenter-electron";
+import { UnlockedAchievementsCache } from "./unlocked-achievements-cache";
+import { publishAchievementUnlockNotifications } from "./achievement-unlock-notifications";
 import { ScreenshotService } from "../screenshot";
 import { PendingAchievementSouvenirStore } from "./pending-achievement-souvenir-store";
 import { PendingGroupedSouvenirStore } from "./grouped-souvenir-store";
@@ -151,91 +150,26 @@ const saveAchievementsInMemory = async (
     language: gameAchievement?.language,
     catalogueValidator: gameAchievement?.catalogueValidator,
   });
+  const since = UnlockedAchievementsCache.invalidate(shop, objectId);
 
   if (!sendUpdateEvent) return;
 
   return getUnlockedAchievements(objectId, shop, true, current)
     .then((achievements) => {
       if (!current()) return;
+      UnlockedAchievementsCache.set(
+        shop,
+        objectId,
+        achievements,
+        current,
+        since
+      );
       WindowManager.mainWindow?.webContents.send(
         `on-update-achievements-${objectId}-${shop}`,
         achievements
       );
     })
     .catch(() => {});
-};
-
-interface PublishAchievementUnlockNotificationsOptions {
-  game: Game;
-  newAchievements: UnlockedAchievement[];
-  unlockedAchievements: UnlockedAchievement[];
-  achievementsData: SteamAchievement[];
-  mergedLocalAchievements: UnlockedAchievement[];
-  userPreferences: UserPreferences;
-}
-
-const publishAchievementUnlockNotifications = ({
-  game,
-  newAchievements,
-  unlockedAchievements,
-  achievementsData,
-  mergedLocalAchievements,
-  userPreferences,
-}: PublishAchievementUnlockNotificationsOptions) => {
-  if (
-    !newAchievements.length ||
-    userPreferences.achievementNotificationsEnabled === false
-  ) {
-    return;
-  }
-
-  const achievementsInfo: AchievementNotificationInfo[] =
-    buildAchievementNotificationInfo(
-      newAchievements,
-      achievementsData,
-      unlockedAchievements.length
-    );
-
-  achievementsLogger.log(
-    "Publishing achievement notification",
-    game.objectId,
-    game.title
-  );
-
-  const customEnabled =
-    userPreferences.achievementCustomNotificationsEnabled !== false &&
-    process.platform !== "darwin";
-
-  const position =
-    userPreferences.achievementCustomNotificationPosition ?? "top-left";
-
-  const publishOsNotification = () =>
-    publishNewAchievementNotification({
-      achievements: achievementsInfo,
-      unlockedAchievementCount: mergedLocalAchievements.length,
-      totalAchievementCount: achievementsData.length,
-      gameTitle: game.title,
-      gameIcon: game.iconUrl,
-    });
-
-  if (process.platform === "linux") {
-    const shownInApp =
-      customEnabled &&
-      WindowManager.sendAchievementToFocusedWindow(position, achievementsInfo);
-
-    if (!shownInApp) {
-      publishOsNotification();
-    }
-  } else if (customEnabled) {
-    // No OS fallback: the user opted into the custom notification, so a failure
-    // must not surface as a duplicate system toast.
-    achievementNotificationPresenter.enqueueAchievements(
-      position,
-      achievementsInfo
-    );
-  } else {
-    publishOsNotification();
-  }
 };
 
 const mergeAchievementsLocally = async (
@@ -309,10 +243,15 @@ const mergeAchievementsLocally = async (
   if (publishNotification) {
     publishAchievementUnlockNotifications({
       game,
-      newAchievements,
-      unlockedAchievements,
-      achievementsData,
-      mergedLocalAchievements,
+      achievements: resolveNotifiedAchievements(
+        newAchievements,
+        achievementsData
+      ),
+      completesGame:
+        newAchievements.length + unlockedAchievements.length ===
+        achievementsData.length,
+      unlockedAchievementCount: mergedLocalAchievements.length,
+      totalAchievementCount: achievementsData.length,
       userPreferences,
     });
   }

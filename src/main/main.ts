@@ -3,10 +3,12 @@ import {
   startEpicSyncOnStartup,
 } from "./services/epic";
 import { downloadsSublevel } from "./level/sublevels/downloads";
+import { recoverInterruptedInstallers } from "./helpers/recover-interrupted-installers";
 import { orderBy } from "lodash-es";
 import { Downloader } from "@shared";
 import { levelKeys, db } from "./level";
 import { refreshGlobalTrackersUrlCache } from "@main/helpers";
+import { syncRetroAchievementsEmulatorCredentials } from "@main/services/retro-achievements/emulator-credentials/emulator-credential-sync";
 import { type Download, type UserPreferences } from "../types";
 import path from "node:path";
 import fs from "node:fs";
@@ -29,6 +31,7 @@ import {
   SSEClient,
   Wine,
   WindowManager,
+  ScreenshotInputService,
   logger,
   migrateCloudSaveAutomaticSyncDefaults,
   groupedSouvenirWorker,
@@ -44,6 +47,8 @@ import { startSteamSyncOnStartup } from "./services/steam-integration/steam-star
 import { migrateEmulatorCloudSaveDefaults } from "./services/cloud-save/automatic-sync-emulator-migration";
 import { watchSteamLibraries } from "./services/steam-integration/steam-install-watcher";
 import { migrateGameVisibilityFields } from "./services/library-sync/game-visibility-migration";
+import { initializeScreenshots } from "./services/screenshots";
+import { setTrackedGamesRunningListenerErrorReporter } from "./services/game-running-state";
 
 const hasMissingSeedFiles = async (download: Download): Promise<boolean> => {
   if (!download.folderName) return false;
@@ -90,6 +95,10 @@ export const loadState = async () => {
   );
 
   Wine.syncUserPreferences(userPreferences);
+  setTrackedGamesRunningListenerErrorReporter((error) =>
+    logger.error("Tracked games running listener failed", error)
+  );
+  ScreenshotInputService.syncUserPreferences(userPreferences);
 
   await import("./events");
 
@@ -128,9 +137,17 @@ export const loadState = async () => {
   }
 
   void watchSteamLibraries();
+  void syncRetroAchievementsEmulatorCredentials();
 
   await HydraApi.setupApi().then(async () => {
-    if (!ACCOUNTLESS) await initializeEpicIntegration();
+    void ScreenshotInputService.refreshFeatureFlag();
+    if (!ACCOUNTLESS) {
+      try {
+        await initializeEpicIntegration();
+      } catch (err) {
+        logger.warn("Epic integration initialization failed on startup", err);
+      }
+    }
     uploadGamesBatch();
     void migrateDownloadSources();
 
@@ -142,12 +159,21 @@ export const loadState = async () => {
       await DownloadSourcesChecker.checkForChanges();
     })();
 
+    initializeScreenshots();
+
     if (HydraApi.isLoggedIn()) {
       SSEClient.connect();
       void groupedSouvenirWorker.trigger();
       void startSteamSyncOnStartup();
       if (!ACCOUNTLESS) void startEpicSyncOnStartup();
     }
+  });
+
+  void recoverInterruptedInstallers().catch((error) => {
+    logger.error(
+      "[GameInstaller] Failed to recover interrupted installs",
+      error
+    );
   });
 
   const downloadToResume =

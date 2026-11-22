@@ -1,23 +1,30 @@
 import { setHeaderTitle } from "@renderer/features";
 import { useAppDispatch, useUserDetails } from "@renderer/hooks";
-import { useContext, useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   buildGameDetailsPath,
   formatDownloadProgress,
   isGameCompleted,
 } from "@renderer/helpers";
-import { LockIcon, PersonIcon, TrophyIcon } from "@primer/octicons-react";
+import {
+  LockIcon,
+  PeopleIcon,
+  PersonIcon,
+  TrophyIcon,
+  XIcon,
+} from "@primer/octicons-react";
 import { gameDetailsContext } from "@renderer/context";
 import type { ComparedAchievements } from "@types";
-import { Link, ProgressBar } from "@renderer/components";
+import {
+  ACCOUNTLESS,
+  getComparedOwnerUnlockedNames,
+  getComparedTargetAchievements,
+} from "@shared";
+import { Button, Link, ProgressBar } from "@renderer/components";
 import { ComparedAchievementList } from "./compared-achievement-list";
 import { AchievementList } from "./achievement-list";
-import { AchievementPanel } from "./achievement-panel";
-import { ComparedAchievementPanel } from "./compared-achievement-panel";
 import { useSubscription } from "@renderer/hooks/use-subscription";
-import { ACCOUNTLESS } from "@shared";
-import { RetroAchievementsConnectBanner } from "@renderer/components/retro-achievements-connect-banner/retro-achievements-connect-banner";
 import "./achievements-content.scss";
 
 interface UserInfo {
@@ -31,6 +38,8 @@ interface UserInfo {
 interface AchievementsContentProps {
   otherUser: UserInfo | null;
   comparedAchievements: ComparedAchievements | null;
+  isComparing: boolean;
+  onComparingChange: (isComparing: boolean) => void;
 }
 
 interface AchievementSummaryProps {
@@ -50,7 +59,7 @@ function AchievementSummary({ user, isComparison }: AchievementSummaryProps) {
       <div className="achievements-content__profile-avatar">
         {user.profileImageUrl ? (
           <img
-            className="achievements-content__profile-avatar"
+            className="achievements-content__profile-avatar-image"
             src={user.profileImageUrl}
             alt={user.displayName}
           />
@@ -134,57 +143,52 @@ function AchievementSummary({ user, isComparison }: AchievementSummaryProps) {
 export function AchievementsContent({
   otherUser,
   comparedAchievements,
+  isComparing,
+  onComparingChange,
 }: AchievementsContentProps) {
   const { t } = useTranslation("achievement");
-  const heroRef = useRef<HTMLDivElement | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [isHeaderStuck, setIsHeaderStuck] = useState(false);
-
   const { gameTitle, objectId, shop, game, shopDetails, achievements } =
     useContext(gameDetailsContext);
   const dispatch = useAppDispatch();
 
   const { userDetails, hasActiveSubscription } = useUserDetails();
+  const { showHydraCloudModal } = useSubscription();
+  const [scrollElement, setScrollElement] = useState<HTMLElement | null>(null);
+
+  const handleCompareClick = () => {
+    if (!isComparing && !hasActiveSubscription) {
+      showHydraCloudModal("achievements");
+      return;
+    }
+
+    onComparingChange(!isComparing);
+  };
+
   useEffect(() => {
     dispatch(setHeaderTitle(gameTitle));
   }, [dispatch, gameTitle]);
+
+  const otherUserAchievements = useMemo(
+    () =>
+      comparedAchievements
+        ? getComparedTargetAchievements(comparedAchievements)
+        : [],
+    [comparedAchievements]
+  );
+
+  const viewerUnlockedNames = useMemo(
+    () =>
+      comparedAchievements
+        ? getComparedOwnerUnlockedNames(comparedAchievements)
+        : new Set<string>(),
+    [comparedAchievements]
+  );
 
   const heroImage =
     game?.customHeroImageUrl || shopDetails?.assets?.libraryHeroImageUrl || "";
 
   const logoImage =
     game?.customLogoImageUrl || shopDetails?.assets?.logoImageUrl || "";
-
-  const onScroll: React.UIEventHandler<HTMLElement> = (event) => {
-    const heroHeight = heroRef.current?.clientHeight ?? 150;
-
-    const scrollY = (event.target as HTMLDivElement).scrollTop;
-    if (scrollY >= heroHeight && !isHeaderStuck) {
-      setIsHeaderStuck(true);
-    }
-
-    if (scrollY <= heroHeight && isHeaderStuck) {
-      setIsHeaderStuck(false);
-    }
-  };
-
-  const getProfileImage = (
-    user: Pick<UserInfo, "profileImageUrl" | "displayName">
-  ) => {
-    return (
-      <div className="achievements-content__comparison__small-avatar">
-        {user.profileImageUrl ? (
-          <img
-            className="achievements-content__comparison__small-avatar"
-            src={user.profileImageUrl}
-            alt={user.displayName}
-          />
-        ) : (
-          <PersonIcon size={24} />
-        )}
-      </div>
-    );
-  };
 
   if (!objectId || !shop || !gameTitle) return null;
   // Accountless mode has no profile; render the page with a local placeholder
@@ -200,8 +204,7 @@ export function AchievementsContent({
   return (
     <div className="achievements-content__achievements-list">
       <section
-        ref={containerRef}
-        onScroll={onScroll}
+        ref={setScrollElement}
         className="achievements-content__achievements-list__section"
       >
         <div className="achievements-content__achievements-list__section__container">
@@ -215,10 +218,7 @@ export function AchievementsContent({
                 loading="lazy"
               />
             )}
-            <div
-              ref={heroRef}
-              className="achievements-content__achievements-list__section__container__hero"
-            >
+            <div className="achievements-content__achievements-list__section__container__hero">
               <div className="achievements-content__achievements-list__section__container__hero__content">
                 <Link
                   to={buildGameDetailsPath({
@@ -239,62 +239,78 @@ export function AchievementsContent({
                     </span>
                   )}
                 </Link>
+
+                {otherUser && (
+                  <Button
+                    theme="outline"
+                    className="achievements-content__compare-button"
+                    onClick={handleCompareClick}
+                  >
+                    {isComparing ? (
+                      <XIcon size={16} />
+                    ) : (
+                      <PeopleIcon size={16} />
+                    )}
+                    {isComparing ? t("stop_comparing") : t("compare_with_me")}
+                  </Button>
+                )}
               </div>
             </div>
 
             <div className="achievements-content__achievements-list__section__container__achievements-summary-wrapper">
-              <AchievementSummary
-                user={{
-                  ...summaryUser,
-                  totalAchievementCount: comparedAchievements
-                    ? comparedAchievements.owner.totalAchievementCount
-                    : achievements!.length,
-                  unlockedAchievementCount: comparedAchievements
-                    ? comparedAchievements.owner.unlockedAchievementCount
-                    : achievements!.filter(
-                        (achievement) => achievement.unlocked
-                      ).length,
-                }}
-                isComparison={otherUser !== null}
-              />
+              {(!otherUser || isComparing) && (
+                <AchievementSummary
+                  user={{
+                    ...summaryUser,
+                    totalAchievementCount: comparedAchievements
+                      ? comparedAchievements.owner.totalAchievementCount
+                      : achievements!.length,
+                    unlockedAchievementCount: comparedAchievements
+                      ? comparedAchievements.owner.unlockedAchievementCount
+                      : achievements!.filter(
+                          (achievement) => achievement.unlocked
+                        ).length,
+                  }}
+                  isComparison={otherUser !== null}
+                />
+              )}
 
               {otherUser && <AchievementSummary user={otherUser} />}
             </div>
           </div>
         </div>
 
-        {otherUser && (
-          <div
-            className={`achievements-content__achievements-list__section__table-header ${isHeaderStuck ? "achievements-content__achievements-list__section__table-header--stuck" : ""}`}
-          >
-            <div
-              className={`achievements-content__achievements-list__section__table-header__container ${hasActiveSubscription ? "achievements-content__achievements-list__section__table-header__container--has-active-subscription" : "achievements-content__achievements-list__section__table-header__container--has-no-active-subscription"}`}
-            >
-              <div></div>
-              {hasActiveSubscription && userDetails && (
-                <div className="achievements-content__achievements-list__section__table-header__container__user-avatar">
-                  {getProfileImage({ ...userDetails })}
-                </div>
-              )}
-              <div className="achievements-content__achievements-list__section__table-header__container__other-user-avatar">
-                {getProfileImage(otherUser)}
-              </div>
-            </div>
-          </div>
+        {otherUser && isComparing && (
+          <ComparedAchievementList
+            scrollElement={scrollElement}
+            achievements={comparedAchievements!}
+            owner={summaryUser}
+            target={otherUser}
+          />
         )}
 
-        <RetroAchievementsConnectBanner />
+        {otherUser && !isComparing && (
+          <AchievementList
+            scrollElement={scrollElement}
+            achievements={otherUserAchievements}
+            viewerUnlockedNames={viewerUnlockedNames}
+            pointsSummary={
+              comparedAchievements
+                ? {
+                    earned:
+                      comparedAchievements.target.achievementsPointsEarnedSum,
+                    total: comparedAchievements.achievementsPointsTotal,
+                  }
+                : undefined
+            }
+          />
+        )}
 
-        {otherUser ? (
-          <>
-            <ComparedAchievementPanel achievements={comparedAchievements!} />
-            <ComparedAchievementList achievements={comparedAchievements!} />
-          </>
-        ) : (
-          <>
-            <AchievementPanel achievements={achievements!} />
-            <AchievementList achievements={achievements!} />
-          </>
+        {!otherUser && (
+          <AchievementList
+            scrollElement={scrollElement}
+            achievements={achievements!}
+          />
         )}
       </section>
     </div>

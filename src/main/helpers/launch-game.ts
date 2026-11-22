@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { GameShop, type Game, type UserPreferences } from "@types";
 import { db, downloadsSublevel, gamesSublevel, levelKeys } from "@main/level";
+import { isEpicUpdateInterrupted } from "@shared";
 import { updateGameExecutablePath } from "./update-executable-path";
 import {
   clearCloudSaveLaunchGuard,
@@ -39,7 +40,11 @@ import {
 import { updateGameRecord } from "@main/services/game-record-updater";
 import { CommonRedistManager } from "@main/services/common-redist-manager";
 import { runAchievementMetadataExport } from "@main/services/achievements/metadata-export";
-import { parseExecutablePath } from "../events/helpers/parse-executable-path";
+import {
+  parseExecutablePath,
+  readExecutableShortcut,
+  type ExecutableShortcut,
+} from "../events/helpers/parse-executable-path";
 import { isGamemodeAvailable } from "./is-gamemode-available";
 import { isMangohudAvailable } from "./is-mangohud-available";
 import {
@@ -84,6 +89,7 @@ export interface LaunchGameOptions {
   launchOptions?: string | null;
   epicSavePolicy?: "local-once";
   epicOffline?: boolean;
+  epicSkipUpdateCheck?: boolean;
 }
 
 const LAUNCH_DELAY_IN_MS = 2_000;
@@ -144,9 +150,11 @@ const launchNatively = (
   useMangohud = false,
   useGamemode = false,
   useGamescope = false,
-  sandbox?: SandboxLaunchInput
+  sandbox?: SandboxLaunchInput,
+  shortcut: ExecutableShortcut | null = null
 ): number | null => {
-  const workingDirectory = path.dirname(executablePath);
+  const workingDirectory =
+    shortcut?.workingDirectory ?? path.dirname(executablePath);
   const sandboxEnabled = Sandbox.isEnabled(
     sandbox?.userPreferences,
     sandbox?.game
@@ -154,6 +162,7 @@ const launchNatively = (
   const resolvedLaunchCommand = wrapWithSandbox(
     resolveLaunchCommand({
       baseCommand: executablePath,
+      baseArgs: shortcut?.arguments,
       launchOptions,
       wrapperCommands: [
         ...(useGamemode ? ["gamemoderun"] : []),
@@ -557,7 +566,7 @@ const launchWindowsBinaryOnLinux = async (
       onStatus: reportUmuStatus,
       wasGameDetected: () => wasGameLauncherGameDetected(gameKey),
     });
-    if (umuPid !== null) {
+    if (umuPid !== undefined) {
       launchedGamePids.set(gameKey, umuPid);
       // The flag must describe this pid: a stale one would make closeGame
       // tear down an unsandboxed process tree.
@@ -748,6 +757,7 @@ const launchGameWithCloudSaveChecks = async (
   const { shop, objectId, executablePath, launchOptions } = options;
 
   const parsedPath = parseExecutablePath(executablePath);
+  const shortcut = readExecutableShortcut(executablePath);
 
   const gameKey = levelKeys.game(shop, objectId);
   const game = await gamesSublevel.get(gameKey);
@@ -975,6 +985,11 @@ const launchGameWithCloudSaveChecks = async (
             winePrefixPath: compatibilityContext?.winePrefixPath,
             epicSavePolicy: options.epicSavePolicy,
             epicOffline: options.epicOffline,
+            epicSkipUpdateCheck:
+              options.epicSkipUpdateCheck &&
+              !isEpicUpdateInterrupted(
+                (await downloadsSublevel.get(gameKey)) ?? null
+              ),
             onStatus: createUmuStatusReporter(gameKey),
             // Runs once the Linux prefix exists, so Hydra restores into it and
             // records its upload guard against the prepared environment.
@@ -1112,7 +1127,9 @@ const launchGameWithCloudSaveChecks = async (
     launchOptions,
     useMangohud,
     useGamemode,
-    useGamescope
+    useGamescope,
+    undefined,
+    shortcut
   );
 };
 

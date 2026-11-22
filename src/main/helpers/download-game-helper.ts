@@ -8,6 +8,9 @@ import {
 } from "@main/level";
 import type { UserPreferences } from "@types";
 import { DownloadOrchestrator } from "@main/services/download-orchestrator";
+import { getDownloadParts } from "@main/services/download/download-parts";
+import { assertMultipartHosterDownloadsEnabled } from "@main/services/download/multipart-hoster-feature";
+import { type Downloader, MULTIPART_DOWNLOADERS } from "@shared";
 import { canDiscardDownload, type GameShop } from "../../types";
 
 interface PrepareGameEntryParams {
@@ -16,6 +19,20 @@ interface PrepareGameEntryParams {
   objectId: string;
   shop: GameShop;
 }
+
+export const getMultipartDownloadParts = async (
+  uri: string,
+  parts: unknown,
+  downloader: Downloader
+): Promise<string[] | undefined> => {
+  const downloadParts = getDownloadParts(uri, parts);
+  if (!downloadParts) return undefined;
+  if (!MULTIPART_DOWNLOADERS.has(downloader)) {
+    throw new Error("This downloader does not support multi-part downloads.");
+  }
+  await assertMultipartHosterDownloadsEnabled();
+  return downloadParts;
+};
 
 export const clearFinishedDownload = async (
   shop: GameShop,

@@ -66,6 +66,7 @@ import {
   stopLinuxGameCaptureSession,
 } from "./linux-game-capture-session";
 import { updateGameRecord } from "./game-record-updater";
+import { onScreenshotGameClosed, onScreenshotGameStarted } from "./screenshots";
 import { GameExecutables } from "./game-executables";
 import {
   onManagedEpicClosed,
@@ -458,7 +459,7 @@ export const watchProcesses = async () => {
       const sandboxPid = sandboxedGamePids.has(gameKey)
         ? launchedGamePids.get(gameKey)
         : undefined;
-      const closeSync = onCloseGame(game, closeWork);
+      const closeSync = onCloseGame(game, { pendingWork: closeWork });
       // Steam Deck shortcut cold start: quit once the game and its close work
       // are done, so Steam stops showing the shortcut as running.
       void quitAfterGameExit(gameKey, [closeSync, ...closeWork], {
@@ -554,6 +555,8 @@ async function onOpenGame(game: Game, matchedPath: string) {
     performanceNow: now,
     matchedPath,
   });
+
+  void onScreenshotGameStarted(gameKey);
 
   // On Linux, keep the launcher visible briefly and let it auto-close itself.
   if (process.platform !== "linux") {
@@ -748,8 +751,12 @@ function onTickGame(game: Game) {
 
 const onCloseGame = (
   game: Game,
-  pendingWork?: Array<Promise<unknown> | undefined>
+  options: {
+    isShutdown?: boolean;
+    pendingWork?: Array<Promise<unknown> | undefined>;
+  } = {}
 ) => {
+  const { pendingWork } = options;
   const authContext = HydraApi.getAuthContext();
   const hydraRevision = getHydraPlaytimeRevision(
     levelKeys.game(game.shop, game.objectId)
@@ -805,6 +812,8 @@ const onCloseGame = (
     delta
   );
   pendingWork?.push(playtimeWrite);
+
+  if (!options.isShutdown) onScreenshotGameClosed(gameKey);
 
   if (game.shop === "custom") return;
 
@@ -880,13 +889,15 @@ const onCloseGame = (
 };
 
 export const clearGamesPlaytime = async () => {
-  for (const game of gamesPlaytime.keys()) {
-    const gameData = await gamesSublevel.get(game);
+  await Promise.all(
+    Array.from(gamesPlaytime.keys(), async (game) => {
+      const gameData = await gamesSublevel.get(game);
 
-    if (gameData) {
-      await onCloseGame(gameData);
-    }
-  }
+      if (gameData) {
+        await onCloseGame(gameData, { isShutdown: true });
+      }
+    })
+  );
 
   clearGamesPlaytimeState();
 };

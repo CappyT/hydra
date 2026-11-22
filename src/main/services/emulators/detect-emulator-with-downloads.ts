@@ -7,13 +7,14 @@ import { getEmulatorInstallRoot } from "./emulator-install-root.js";
 
 export const detectEmulatorWithDownloads = async (
   binary: DetectableBinary,
-  options?: { resolveVersion?: boolean }
+  options?: { resolveVersion?: boolean; includeDriveRoots?: boolean }
 ): Promise<DetectionResult | null> => {
   // Fork: emulators install under a launcher-owned root. Download dirs are
   // never searched: any download can occupy `<downloads>/<EmulatorName>`, and
   // detection runs the found binary unsandboxed.
   return detectEmulator(binary, {
     resolveVersion: options?.resolveVersion,
+    includeDriveRoots: options?.includeDriveRoots,
     downloadDirectories: [getEmulatorInstallRoot()],
   });
 };

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -7,7 +6,6 @@ import type { LibraryGame } from "@types";
 import {
   ACCOUNTLESS,
   getGameCatalogueIdentity,
-  groupLibraryGames,
   removeDiacritics,
 } from "@shared";
 
@@ -17,8 +15,12 @@ import {
   useDownload,
   useLibrary,
   useToast,
+  useGlobalLeaderboardsFeature,
 } from "@renderer/hooks";
-import { selectIsLibraryLoading } from "@renderer/features";
+import {
+  selectGroupedLibrary,
+  selectIsLibraryLoading,
+} from "@renderer/features";
 import { routes } from "./routes";
 
 import "./sidebar.scss";
@@ -28,6 +30,7 @@ import {
   categoryShowsPlatforms,
   categoryShowsSources,
   filterLibraryGames,
+  getAvailableLibrarySources,
   hasImportedLibraryGames,
   readStoredLibraryFilters,
   type LibraryCategory,
@@ -49,15 +52,13 @@ import {
   SIDEBAR_PLAYABLE_ONLY_STORAGE_KEY,
   SIDEBAR_SOURCES_STORAGE_KEY,
 } from "@renderer/session-state";
-import { SidebarGameItem } from "./sidebar-game-item";
 import { SidebarNotifications } from "./sidebar-notifications";
-import { SidebarGameListSkeleton } from "./sidebar-game-list-skeleton";
+import { SidebarGameList } from "./sidebar-game-list";
 import { SidebarProfile } from "./sidebar-profile";
 
 const SIDEBAR_MIN_WIDTH = 200;
 const SIDEBAR_INITIAL_WIDTH = 250;
 const SIDEBAR_MAX_WIDTH = 450;
-const SIDEBAR_GAME_ITEM_HEIGHT = 42;
 
 const SIDEBAR_SORT_OPTIONS = new Set<SortOption>([
   "title_asc",
@@ -88,11 +89,11 @@ const readStoredSidebarPlatforms = (): string[] => {
 
 export function Sidebar() {
   const { t } = useTranslation(["sidebar", "library"]);
+  const { isEnabled: isGlobalLeaderboardsEnabled } =
+    useGlobalLeaderboardsFeature();
   const { library, updateLibrary } = useLibrary();
   const isLibraryLoading = useAppSelector(selectIsLibraryLoading);
-  const runningGameId = useAppSelector(
-    (state) => state.gameRunning.gameRunning?.id
-  );
+  const groupedLibrary = useAppSelector(selectGroupedLibrary);
   const [deckyPluginInfo, setDeckyPluginInfo] = useState<{
     installed: boolean;
     version: string | null;
@@ -161,9 +162,16 @@ export function Sidebar() {
     [library]
   );
   const hasPlatforms = uniquePlatforms.length > 0;
+  const availableSources = useMemo(
+    () => getAvailableLibrarySources(library),
+    [library]
+  );
   const effectiveSources = useMemo(
-    () => (hasImportedGames ? selectedSources : []),
-    [hasImportedGames, selectedSources]
+    () =>
+      hasImportedGames
+        ? selectedSources.filter((source) => availableSources.includes(source))
+        : [],
+    [hasImportedGames, selectedSources, availableSources]
   );
   const effectivePlatforms = useMemo(
     () => (hasPlatforms ? selectedPlatforms : []),
@@ -185,11 +193,8 @@ export function Sidebar() {
   );
 
   const orderedLibrary = useMemo(
-    () =>
-      orderSidebarGames(
-        groupLibraryGames(library, runningGameId ? [runningGameId] : [])
-      ),
-    [library, orderSidebarGames, runningGameId]
+    () => orderSidebarGames(groupedLibrary),
+    [groupedLibrary, orderSidebarGames]
   );
 
   const sortedLibrary = useMemo(
@@ -215,11 +220,6 @@ export function Sidebar() {
 
   const { showSuccessToast, showErrorToast } = useToast();
 
-  const [isGameListScrolled, setIsGameListScrolled] = useState(false);
-  const [scrollbarWidth, setScrollbarWidth] = useState(0);
-
-  const gameListRef = useRef<HTMLDivElement>(null);
-
   const [filterQuery, setFilterQuery] = useState("");
 
   useEffect(() => {
@@ -233,6 +233,8 @@ export function Sidebar() {
   const isSearching = filterQuery.trim().length > 0;
 
   const visibleGames = useMemo(() => {
+    if (isLibraryLoading) return [];
+
     if (isSearching) {
       const normalizedQuery = removeDiacritics(filterQuery).toLowerCase();
 
@@ -244,7 +246,14 @@ export function Sidebar() {
     return showPlayableOnly
       ? sortedLibrary.filter(isGamePlayable)
       : sortedLibrary;
-  }, [isSearching, filterQuery, searchIndex, showPlayableOnly, sortedLibrary]);
+  }, [
+    isLibraryLoading,
+    isSearching,
+    filterQuery,
+    searchIndex,
+    showPlayableOnly,
+    sortedLibrary,
+  ]);
 
   const hasActiveFilter =
     library.length > 0 &&
@@ -254,23 +263,6 @@ export function Sidebar() {
         effectivePlatforms.length > 0) ||
       showPlayableOnly ||
       isSearching);
-
-  const virtualizer = useVirtualizer({
-    count: visibleGames.length,
-    getScrollElement: () => gameListRef.current,
-    estimateSize: () => SIDEBAR_GAME_ITEM_HEIGHT,
-    overscan: 5,
-  });
-
-  useEffect(() => {
-    const el = gameListRef.current;
-    if (!el) return;
-    const measure = () => setScrollbarWidth(el.offsetWidth - el.clientWidth);
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
 
   const handleFilter: React.ChangeEventHandler<HTMLInputElement> = (event) => {
     setFilterQuery(event.target.value);
@@ -448,28 +440,31 @@ export function Sidebar() {
     };
   }, [isResizing]);
 
-  const getGameTitle = (game: LibraryGame) => {
-    if (lastPacket?.gameId === game.id) {
-      return t("downloading", {
-        title: game.title,
-        percentage: progress,
-      });
-    }
+  const getGameTitle = useCallback(
+    (game: LibraryGame) => {
+      if (lastPacket?.gameId === game.id) {
+        return t("downloading", {
+          title: game.title,
+          percentage: progress,
+        });
+      }
 
-    if (
-      game.download?.queued &&
-      game.download.status !== "removed" &&
-      game.download.status !== "complete" &&
-      game.download.status !== "seeding"
-    ) {
-      return t("queued", { title: game.title });
-    }
+      if (
+        game.download?.queued &&
+        game.download.status !== "removed" &&
+        game.download.status !== "complete" &&
+        game.download.status !== "seeding"
+      ) {
+        return t("queued", { title: game.title });
+      }
 
-    if (game.download?.status === "paused")
-      return t("paused", { title: game.title });
+      if (game.download?.status === "paused")
+        return t("paused", { title: game.title });
 
-    return game.title;
-  };
+      return game.title;
+    },
+    [lastPacket?.gameId, progress, t]
+  );
 
   const handleSidebarItemClick = (path: string) => {
     if (path !== location.pathname) {
@@ -477,15 +472,18 @@ export function Sidebar() {
     }
   };
 
-  const handleSidebarGameClick = (game: LibraryGame) => {
-    const path = buildGameDetailsPath({
-      ...game,
-      ...getGameCatalogueIdentity(game),
-    });
-    if (path !== location.pathname) {
-      navigate(path);
-    }
-  };
+  const handleSidebarGameClick = useCallback(
+    (game: LibraryGame) => {
+      const path = buildGameDetailsPath({
+        ...game,
+        ...getGameCatalogueIdentity(game),
+      });
+      if (path !== location.pathname) {
+        navigate(path);
+      }
+    },
+    [location.pathname, navigate]
+  );
 
   return (
     <aside
@@ -517,23 +515,28 @@ export function Sidebar() {
         <div className="sidebar__content">
           <section className="sidebar__section">
             <ul className="sidebar__menu">
-              {routes.map(({ nameKey, path, render }) => (
-                <li
-                  key={nameKey}
-                  className={cn("sidebar__menu-item", {
-                    "sidebar__menu-item--active": location.pathname === path,
-                  })}
-                >
-                  <button
-                    type="button"
-                    className="sidebar__menu-item-button"
-                    onClick={() => handleSidebarItemClick(path)}
+              {routes
+                .filter(
+                  (route) =>
+                    !route.isGlobalLeaderboards || isGlobalLeaderboardsEnabled
+                )
+                .map(({ nameKey, path, render }) => (
+                  <li
+                    key={nameKey}
+                    className={cn("sidebar__menu-item", {
+                      "sidebar__menu-item--active": location.pathname === path,
+                    })}
                   >
-                    {render()}
-                    <span>{t(nameKey)}</span>
-                  </button>
-                </li>
-              ))}
+                    <button
+                      type="button"
+                      className="sidebar__menu-item-button"
+                      onClick={() => handleSidebarItemClick(path)}
+                    >
+                      {render()}
+                      <span>{t(nameKey)}</span>
+                    </button>
+                  </li>
+                ))}
 
               <SidebarNotifications />
 
@@ -604,7 +607,8 @@ export function Sidebar() {
                 showSources={
                   categoryShowsSources(sidebarCategory) && hasImportedGames
                 }
-                selectedSources={selectedSources}
+                sources={availableSources}
+                selectedSources={effectiveSources}
                 onSourcesChange={handleSelectedSourcesChange}
                 showPlatforms={
                   categoryShowsPlatforms(sidebarCategory) && hasPlatforms
@@ -615,56 +619,14 @@ export function Sidebar() {
               />
             </div>
 
-            <div
-              className={`sidebar__game-list${isGameListScrolled ? " sidebar__game-list--scrolled" : ""}`}
-            >
-              <div
-                ref={gameListRef}
-                className="sidebar__game-list-scroll"
-                onScroll={(e) =>
-                  setIsGameListScrolled(
-                    (e.currentTarget as HTMLElement).scrollTop > 0
-                  )
-                }
-              >
-                {isLibraryLoading && <SidebarGameListSkeleton />}
-
-                {hasActiveFilter && visibleGames.length === 0 && (
-                  <p className="sidebar__game-list-empty">
-                    {t("library:no_results")}
-                  </p>
-                )}
-
-                <div
-                  style={{
-                    height: `${virtualizer.getTotalSize()}px`,
-                    position: "relative",
-                  }}
-                >
-                  {virtualizer.getVirtualItems().map((virtualItem) => {
-                    const game = visibleGames[virtualItem.index];
-                    return (
-                      <div
-                        key={game.id}
-                        style={{
-                          position: "absolute",
-                          top: 0,
-                          left: 0,
-                          right: 16 - scrollbarWidth,
-                          transform: `translateY(${virtualItem.start}px)`,
-                        }}
-                      >
-                        <SidebarGameItem
-                          game={game}
-                          handleSidebarGameClick={handleSidebarGameClick}
-                          getGameTitle={getGameTitle}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
+            <SidebarGameList
+              games={visibleGames}
+              isLoading={isLibraryLoading}
+              hasActiveFilter={hasActiveFilter}
+              emptyLabel={t("library:no_results")}
+              onGameClick={handleSidebarGameClick}
+              getGameTitle={getGameTitle}
+            />
           </section>
         </div>
       </div>

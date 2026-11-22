@@ -18,10 +18,7 @@ import {
   ClassicsIcon,
   type LibraryCategory,
 } from "@renderer/pages/library/category-filter";
-import {
-  LIBRARY_SOURCES,
-  type LibrarySource,
-} from "@renderer/pages/library/library-category";
+import { type LibrarySource } from "@renderer/pages/library/library-category";
 import type { SortOption } from "@renderer/pages/library/filter-options";
 import { SourceIcon } from "@renderer/pages/library/source-icon";
 import "./sidebar-filter-menu.scss";
@@ -37,6 +34,7 @@ interface SidebarFilterMenuProps {
   showFavoritesFirst: boolean;
   onToggleFavoritesFirst: (next: boolean) => void;
   showSources: boolean;
+  sources: readonly LibrarySource[];
   selectedSources: LibrarySource[];
   onSourcesChange: (sources: LibrarySource[]) => void;
   showPlatforms: boolean;
@@ -145,6 +143,7 @@ export function SidebarFilterMenu({
   showFavoritesFirst,
   onToggleFavoritesFirst,
   showSources,
+  sources,
   selectedSources,
   onSourcesChange,
   showPlatforms,
@@ -157,8 +156,8 @@ export function SidebarFilterMenu({
   const tooltipId = useId();
   const pointerInteractionRef = useRef(false);
   const librarySources = ACCOUNTLESS
-    ? LIBRARY_SOURCES.filter((source) => source !== "steam")
-    : LIBRARY_SOURCES;
+    ? sources.filter((source) => source !== "steam")
+    : sources;
 
   const categoryOptions: {
     value: LibraryCategory;
@@ -338,10 +337,10 @@ export function SidebarFilterMenu({
                       icon: <SourceIcon source={source} />,
                     }))}
                     selected={selectedSources}
-                    onChange={(sources) =>
+                    onChange={(selected) =>
                       onSourcesChange(
                         librarySources.filter((source) =>
-                          sources.includes(source)
+                          selected.includes(source)
                         )
                       )
                     }

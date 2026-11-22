@@ -10,6 +10,7 @@ export * from "./game-stats-cache";
 // without an account there is no cloud copy, so local disk is the only truth.
 export * from "./game-achievements";
 export * from "./game-collections";
+export * from "./catalogue-names-cache";
 export * from "./keys";
 export * from "./themes";
 export * from "./download-sources";
@@ -19,6 +20,7 @@ export * from "./emulators";
 export * from "./retroarch";
 export * from "./pending-achievement-souvenirs";
 export * from "./grouped-achievement-souvenirs";
+export * from "./screenshots";
 export * from "./ps2-memory-card-saves";
 export * from "./ps1-memory-card-saves";
 export * from "./cloud-save-local-hash-cache";

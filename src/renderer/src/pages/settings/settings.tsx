@@ -4,7 +4,7 @@ import {
   SettingsContextProvider,
 } from "@renderer/context";
 import { SettingsAccount } from "./settings-account";
-import { useUserDetails } from "@renderer/hooks";
+import { useFeature, useUserDetails } from "@renderer/hooks";
 import { Fragment, useMemo } from "react";
 import "./settings.scss";
 import {
@@ -18,12 +18,13 @@ import {
   VideoIcon,
   ShieldCheckIcon,
 } from "@primer/octicons-react";
-import { Gamepad2, Wrench } from "lucide-react";
+import { Camera, Gamepad2, Wrench } from "lucide-react";
 import { SettingsContextGeneral } from "./settings-context-general";
 import { SettingsContextDownloads } from "./settings-context-downloads";
 import { SettingsContextDownloadSources } from "./settings-context-download-sources";
 import { SettingsContextNotifications } from "./settings-context-notifications";
 import { SettingsContextContentGameplay } from "./settings-context-content-gameplay";
+import { SettingsContextScreenshots } from "./settings-context-screenshots";
 import { SettingsContextIntegrations } from "./settings-context-integrations";
 import { SettingsContextCompatibility } from "./settings-context-compatibility";
 import { SettingsContextBigPicture } from "./settings-context-big-picture";
@@ -34,6 +35,8 @@ export default function Settings() {
   const { t } = useTranslation("settings");
 
   const { userDetails } = useUserDetails();
+  const { isFeatureEnabled, Feature } = useFeature();
+  const isScreenshotsEnabled = isFeatureEnabled(Feature.Screenshots);
 
   const categories = useMemo(
     () => [
@@ -62,6 +65,15 @@ export default function Settings() {
         label: t("content_gameplay"),
         icon: <PlayIcon size={16} />,
       },
+      ...(isScreenshotsEnabled
+        ? [
+            {
+              id: "screenshots" as const,
+              label: t("screenshots_category"),
+              icon: <Camera size={16} />,
+            },
+          ]
+        : []),
       {
         id: "integrations" as const,
         label: t("integrations"),
@@ -98,7 +110,7 @@ export default function Settings() {
         group: "classics" as const,
       },
     ],
-    [t, userDetails]
+    [t, userDetails, isScreenshotsEnabled]
   );
 
   return (
@@ -129,6 +141,10 @@ export default function Settings() {
 
             if (selectedCategoryId === "content_gameplay") {
               return <SettingsContextContentGameplay />;
+            }
+
+            if (selectedCategoryId === "screenshots") {
+              return <SettingsContextScreenshots />;
             }
 
             if (selectedCategoryId === "integrations") {

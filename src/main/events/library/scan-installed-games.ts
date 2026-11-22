@@ -12,6 +12,7 @@ import {
   type KnownGameExecutable,
 } from "@main/helpers/game-executable-ranking";
 import { updateGameExecutablePath } from "@main/helpers/update-executable-path";
+import { WINDOWS_GAME_DIRECTORIES } from "@main/helpers/installer-target-directories";
 import { downloadsSublevel, gamesSublevel, levelKeys } from "@main/level";
 import { AchievementWatcherManager } from "@main/services/achievements/achievement-watcher-manager";
 import { createGame } from "@main/services/library-sync";
@@ -32,8 +33,6 @@ import {
   loadSteamAppInfo,
 } from "@main/services/steam-integration/steam-launch-executables";
 import type { Game, GameShop } from "@types";
-
-const SCAN_DIRECTORIES = [String.raw`C:\Games`, String.raw`D:\Games`];
 
 const DISCOVERED_GAMES_SHOP: GameShop = "steam";
 const DISCOVERED_GAMES_CHUNK_SIZE = 4;
@@ -185,7 +184,7 @@ const getDefaultScanDirectories = async (
   });
 
   return [
-    ...SCAN_DIRECTORIES,
+    ...WINDOWS_GAME_DIRECTORIES,
     ...steamFallbackDirectories,
     ...(downloadsPath ? [downloadsPath] : []),
   ];

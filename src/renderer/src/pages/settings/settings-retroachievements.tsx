@@ -72,10 +72,16 @@ export function SettingsRetroAchievements() {
   const [deleteAchievementsOnDisconnect, setDeleteAchievementsOnDisconnect] =
     useState(true);
 
+  const hasLocalApiKey = useAppSelector((state) =>
+    Boolean(state.userPreferences.value?.retroAchievementsWebApiKey)
+  );
+
   const connectedUsername = integration.connected ? integration.username : null;
   const isInvalid =
     integration.connected &&
     integration.retroAchievementsAccountStatus === "invalid_credentials";
+  const isMissingLocalKey =
+    integration.connected && !isInvalid && !hasLocalApiKey;
 
   useEffect(() => {
     setAvatarError(false);
@@ -496,21 +502,26 @@ export function SettingsRetroAchievements() {
     );
   };
 
-  const status = isInvalid
-    ? t("retroachievements_status_invalid_credentials")
-    : integration.connected
+  const getStatus = () => {
+    if (isInvalid) return t("retroachievements_status_invalid_credentials");
+    if (isMissingLocalKey) return t("retroachievements_status_missing_key");
+    return integration.connected
       ? t("retroachievements_status_active")
       : t("integration_status_not_connected");
+  };
+
+  const getStatusTone = () => {
+    if (isInvalid || isMissingLocalKey) return "warning";
+    return integration.connected ? "success" : "neutral";
+  };
 
   return (
     <>
       <SettingsIntegrationCard
         title={t("retroachievements")}
         logo={<img src={retroAchievementsLogo} alt="" />}
-        status={status}
-        statusTone={
-          isInvalid ? "warning" : integration.connected ? "success" : "neutral"
-        }
+        status={getStatus()}
+        statusTone={getStatusTone()}
         actions={renderActions()}
         loading={isLoading}
       >

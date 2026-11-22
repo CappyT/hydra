@@ -9,6 +9,7 @@ import {
   useAppSelector,
   useDownload,
   useToast,
+  useFeature,
   useLibraryGamePresentation,
   useUserDetails,
 } from "@renderer/hooks";
@@ -123,6 +124,10 @@ export function GameDetailsContextProvider({
 
   // Guards the one-shot Linux auto-locate to a single attempt per page visit.
   const hasAttemptedLocateRef = useRef(false);
+  const { isFeatureEnabled, Feature } = useFeature();
+  const multipartHosterDownloads = isFeatureEnabled(
+    Feature.MultipartHosterDownloads
+  );
 
   const userPreferences = useAppSelector(
     (state) => state.userPreferences.value
@@ -603,7 +608,8 @@ export function GameDetailsContextProvider({
           ensureArray<GameRepack>(
             downloads,
             `/games/${catalogueShop}/${catalogueObjectId}/download-sources`
-          )
+          ),
+          multipartHosterDownloads
         );
 
         setRepacks(downloadOptions);
@@ -627,7 +633,7 @@ export function GameDetailsContextProvider({
     return () => {
       cancelled = true;
     };
-  }, [shop, catalogueShop, catalogueObjectId]);
+  }, [shop, catalogueShop, catalogueObjectId, multipartHosterDownloads]);
 
   const getDownloadsPath = async () => {
     if (userPreferences?.downloadsPath) return userPreferences.downloadsPath;

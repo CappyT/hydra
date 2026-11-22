@@ -22,6 +22,7 @@ import type { GameShop } from "@types";
 import { ACCOUNTLESS } from "@shared";
 import { AchievementMemoryStore } from "@main/services/achievements/achievement-memory-store";
 import { AchievementSouvenirStore } from "@main/services/achievements/achievement-souvenir-store";
+import { UnlockedAchievementsCache } from "@main/services/achievements/unlocked-achievements-cache";
 import {
   cancelPendingSouvenirsForGame,
   deleteLocalSouvenirAssetsForGame,
@@ -149,6 +150,7 @@ const resetGameAchievementsNow = async (
       );
     }
     assertCurrent();
+    const since = UnlockedAchievementsCache.invalidate(shop, objectId);
 
     await deleteLocalSouvenirAssetsForGame(levelKey);
     assertCurrent();
@@ -162,6 +164,13 @@ const resetGameAchievementsNow = async (
     );
 
     assertCurrent();
+    UnlockedAchievementsCache.set(
+      game.shop,
+      game.objectId,
+      updatedAchievements,
+      current,
+      since
+    );
     WindowManager.mainWindow?.webContents.send(
       `on-update-achievements-${game.objectId}-${game.shop}`,
       updatedAchievements
@@ -181,6 +190,7 @@ const resetGameAchievements = (
   if (!ACCOUNTLESS && !context) {
     return Promise.reject(new AchievementSyncCancelledError());
   }
+  UnlockedAchievementsCache.invalidate(shop, objectId);
   return achievementSyncCoordinator.resetGame(
     levelKeys.game(shop, objectId),
     () => resetGameAchievementsNow(shop, objectId, context),
