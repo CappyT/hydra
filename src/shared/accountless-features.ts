@@ -13,6 +13,9 @@ export const ACCOUNT_ONLY_FEATURES: ReadonlySet<string> = new Set([
   "LEADERBOARD_REPORTS",
   "LEADERBOARD_BADGES",
   "LEADERBOARD_WRITES",
+  "GAMIFICATION",
+  "GAMIFICATION_SHOP",
+  "RECOMPILATION_CLOUD_SAVES",
 ]);
 
 export const filterAccountlessFeatures = <T>(features: T): T =>

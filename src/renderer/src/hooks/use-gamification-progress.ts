@@ -4,6 +4,7 @@ import {
   setGamificationProgress,
 } from "@renderer/features";
 import { ensureArray } from "@renderer/helpers";
+import { filterAccountlessFeatures } from "@shared";
 import { logger } from "@renderer/logger";
 import type { GamificationProgress } from "@types";
 import { useAppDispatch, useAppSelector } from "./redux";
@@ -60,7 +61,9 @@ export function useGamificationFeatureSync() {
       .get<string[]>("/features", { needsAuth: false })
       .then((response) => {
         if (cancelled) return;
-        const features = ensureArray<string>(response, "/features");
+        const features = filterAccountlessFeatures(
+          ensureArray<string>(response, "/features")
+        );
         localStorage.setItem("features", JSON.stringify(features));
         dispatch(
           setGamificationFeatures(toGamificationFeatures(features, true))

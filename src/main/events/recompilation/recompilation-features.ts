@@ -1,3 +1,4 @@
+import { filterAccountlessFeatures } from "@shared";
 import { HydraApi } from "@main/services/hydra-api";
 import { logger } from "@main/services/logger";
 
@@ -22,7 +23,9 @@ export const isRecompilationCloudSaveEnabled = async () => {
     });
     const enabled =
       Array.isArray(features) &&
-      features.includes(RECOMPILATION_CLOUD_SAVES_FEATURE);
+      filterAccountlessFeatures(features).includes(
+        RECOMPILATION_CLOUD_SAVES_FEATURE
+      );
     cachedCloudSaves = { enabled, fetchedAt: performance.now() };
     return enabled;
   } catch (error) {
