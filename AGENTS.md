@@ -40,7 +40,9 @@ Target hardware: Fedora desktop (AMD/Wayland/GNOME) and a Steam Deck
   launches are the one intentional exemption** (owner decision): classics discs
   and RetroArch ROMs spawn the emulator unsandboxed like upstream, because
   emulator binaries have verifiable provenance and are mostly open source. The
-  sandbox covers game executables launched through `launchGame`.
+  sandbox covers game executables launched through `launchGame`, and recompiled
+  ports (`spawnSandboxedRecompilation`): the Hydra API picks the port binary, so
+  the port and its ROM tool run sandboxed and are not an emulator exemption.
 - **Gate, don't delete.** Account-only features are guarded behind
   `ACCOUNTLESS`, never removed — deleting diverges harder than gating.
   Cloud/subscription upsell UI (buttons, banners, "Hydra Cloud benefit"

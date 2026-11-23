@@ -46,7 +46,13 @@ git remote add upstream https://github.com/hydralauncher/hydra.git
   are intentionally removed here; do not reintroduce them when resolving.
 - **`electron-builder.yml`** — keep the fork's packaging config. The Linux target is
   **AppImage only** (deb/rpm dropped for build speed — the fork only ships AppImage); no
-  upstream code signing / auto-update endpoints.
+  upstream code signing / auto-update endpoints. No Legendary pack hooks: the fork does
+  not ship Epic. No `electronFuses` block: electron-builder flips fuses after
+  `afterPack`, on the path where `scripts/after-pack.cjs` leaves the Steam Deck sh
+  launcher, so `after-pack.cjs` flips upstream's fuses on the real binary first.
+- **`electron.vite.config.ts`** — `OBFUSCATE_BUNDLES` stays `false`. The fork ships
+  readable main and preload bundles so the AppImage can be audited against the source,
+  and `javascript-obfuscator` is never loaded.
 
 ### CI workflows
 
@@ -113,6 +119,32 @@ longer hard-crashes boot.
 
 Game executables launched through `launchGame` — native, Wine/Proton via umu,
 tray, deep link, Steam shortcuts — are always sandboxed; there is no bypass.
+
+Recompiled ports run under the same sandbox
+(`src/main/events/recompilation/recompilation-sandbox.ts`), because the Hydra
+API picks the GitHub repository and release that the port binary comes from.
+The port and its ROM installer tool get a per-port home
+(`recompilation:<slug>`) and bind their install folder read-write. The folders
+that `recompilation-meta.json` copies the ROM or a config into bind read-write
+at the same host path, so the launcher and the port see the same files. The
+user's ROM binds read-only: the file itself plus the tracks that a `.cue`,
+`.gdi` or `.m3u` index lists in its own folder (`.ccd`/`.mds` add their
+same-name sidecars). A listed name with a folder part is ignored, and each ROM
+bind passes `assertSafeSandboxPath`, so a downloaded index cannot expose other
+host files. Saves the port writes outside these binds stay in its sandbox home,
+as for games. Closing a port sends SIGTERM to the port's own processes inside
+the sandbox, then `Sandbox.killSandboxTree` after the grace period; quitting
+Hydra kills a running port (`--die-with-parent`).
+
+The port can write every folder it binds, and the launcher writes there later
+(update extraction, ROM copy, config edits). So the ROM choice lives in the
+`recompilationRomChoices` sublevel, never in the port folder; the ROM copy is
+a reflink copy, never a hard link to the user's file (on ext4 that is a full
+copy); the install marker is read only when it is a regular file; and at the
+start of each install, launch and ROM preparation, and again after the ROM
+tool runs, `removeEscapingSymlinks` deletes every link that does not resolve
+inside the folder or under `/usr` or `/etc`, every dangling link and every
+FIFO, socket or device the port left there.
 
 The game bind is the game's install dir (`<downloadPath>/<folderName>`) when the
 executable lives inside it, so an exe in `Binaries/Win64/` still sees its assets.
