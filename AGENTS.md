@@ -69,8 +69,10 @@ All of this is on `main` and shipped; docs/FORK.md has the operational detail.
   (`<userData>/sandbox-homes/`), env-var scrub allowlist (no host secrets leak
   into game env), per-game spoofed `/etc/machine-id`, `--die-with-parent`,
   fail-closed launch guard. Per-game and global toggles (default ON). Applies
-  to game executables launched through `launchGame`; emulator launches
-  (classics + RetroArch) are intentionally NOT sandboxed — see the policy above.
+  to game executables launched through `launchGame`, and to recompiled ports,
+  their ROM tools and self-extracting AppImage releases
+  (`recompilation-sandbox.ts`); emulator launches (classics + RetroArch) are
+  intentionally NOT sandboxed — see the policy above.
 - **seccomp filter** (pure-Node cBPF assembler, `sandbox-seccomp.ts`):
   cumulative levels low/medium(default)/high, per-rule errno, multi-arch
   (x86_64 + i386), per-game override + audit mode (blocks → kernel log,
@@ -89,10 +91,10 @@ All of this is on `main` and shipped; docs/FORK.md has the operational detail.
   conflict detection with keep-both resolution (frozen safety backup, never
   destructive), fresh-device restore only on positive zero-local-saves
   determination. Backends: local directory (default) or system rclone.
-- **Accountless features**: local game collections, achievements with local
-  identity + reset, RetroAchievements via direct RA Web API (key in global
-  settings), local desktop notifications, PS1/PS2 emulation saves stored
-  locally, auto-backup pref for new games.
+- **Accountless features**: local game collections (custom order stored
+  locally), achievements with local identity + reset, RetroAchievements via
+  direct RA Web API (key in global settings), local desktop notifications,
+  PS1/PS2 emulation saves stored locally, auto-backup pref for new games.
 - **Big Picture parity**: all fork controls (hardening, backups, collections,
   RA credentials, toasts) exist in the Big Picture UI with gamepad
   navigation. BP i18n caveat: the DOM-walk `exact` dicts in
@@ -164,6 +166,11 @@ Procedure per upstream release tag:
      deep link;
    - app startup (`src/main/index.ts`) — CLI flags (`--big-picture`,
      `--no-tray`), tray behavior, host-deps check must survive;
+   - launcher reads and writes in folders a sandboxed port can write
+     (recompilation trophies, configs, settings, ROM copies): they must go
+     through `portFs` (`recompilation-port-fs.ts`), or run inside
+     `withSanitizedPort` while no process of the port runs; new path
+     templates in `recompilation-meta.json` become read-write binds;
    - anything under our fork files (`sandbox-*.ts`, `cloud-sync`/backup,
      `resolve-*-wrapper.ts`) — usually untouched by upstream but verify;
    - preload/IPC surface used by Big Picture parity.

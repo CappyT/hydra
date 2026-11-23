@@ -124,27 +124,47 @@ Recompiled ports run under the same sandbox
 (`src/main/events/recompilation/recompilation-sandbox.ts`), because the Hydra
 API picks the GitHub repository and release that the port binary comes from.
 The port and its ROM installer tool get a per-port home
-(`recompilation:<slug>`) and bind their install folder read-write. The folders
-that `recompilation-meta.json` copies the ROM or a config into bind read-write
-at the same host path, so the launcher and the port see the same files. The
-user's ROM binds read-only: the file itself plus the tracks that a `.cue`,
-`.gdi` or `.m3u` index lists in its own folder (`.ccd`/`.mds` add their
-same-name sidecars). A listed name with a folder part is ignored, and each ROM
-bind passes `assertSafeSandboxPath`, so a downloaded index cannot expose other
-host files. Saves the port writes outside these binds stay in its sandbox home,
-as for games. Closing a port sends SIGTERM to the port's own processes inside
-the sandbox, then `Sandbox.killSandboxTree` after the grace period; quitting
-Hydra kills a running port (`--die-with-parent`).
+(`recompilation:<slug>`) and bind their install folder read-write. Each folder
+that a Linux path template in `recompilation-meta.json` names (ROM copy
+targets, configs, settings and online-name files, trophy files) binds
+read-write at the same host path, so the launcher and the port see the same
+files. `getPortPathTemplates` skips `win32`/`darwin` branches and
+`<winAppData>` templates, expands `{titleId}` to each listed title id, and a
+folder inside another bind collapses into the outer bind. The user's ROM binds
+read-only: a game folder (or the folder of an `eboot.bin`) as a whole, else the
+file itself plus the tracks that a `.cue`, `.gdi` or `.m3u` index lists in its
+own folder (`.ccd`/`.mds` add their same-name sidecars). A listed name with a
+folder part is ignored, and each ROM bind passes `assertSafeSandboxPath`, so a
+downloaded index cannot expose other host files. Saves the port writes outside
+these binds stay in its sandbox home, as for games. Closing a port sends
+SIGTERM to the port's own processes inside the sandbox, then
+`Sandbox.killSandboxTree` after the grace period; quitting Hydra kills a
+running port (`--die-with-parent`). A release shipped as an AppImage unpacks
+itself (`--appimage-extract`) in the port's sandbox (its home and spoofed
+machine-id), with the staging folder writable and the downloaded AppImage
+read-only. Writable binds pass `assertSafeSandboxPath` before the launcher
+creates them, and a test over the real `recompilation-meta.json` fails when a
+bind is not a port-specific folder inside the XDG config or data folder.
 
 The port can write every folder it binds, and the launcher writes there later
-(update extraction, ROM copy, config edits). So the ROM choice lives in the
-`recompilationRomChoices` sublevel, never in the port folder; the ROM copy is
-a reflink copy, never a hard link to the user's file (on ext4 that is a full
-copy); the install marker is read only when it is a regular file; and at the
-start of each install, launch and ROM preparation, and again after the ROM
-tool runs, `removeEscapingSymlinks` deletes every link that does not resolve
-inside the folder or under `/usr` or `/etc`, every dangling link and every
-FIFO, socket or device the port left there.
+(update extraction, ROM copy, config edits, trophy resets). So the ROM choice
+lives in the `recompilationRomChoices` sublevel, never in the port folder; the
+ROM copy is a reflink copy, never a hard link to the user's file (on ext4 that
+is a full copy). The install marker and the trophy files go through `portFs`
+(`recompilation-port-fs.ts`): no final symlink, no blocking open, regular files
+only, reads capped at 64 MiB. `removeEscapingSymlinks` deletes every link that
+does not resolve inside the folder or under `/usr` or `/etc`, every dangling
+link and every FIFO, socket or device. It runs on the install folder and the
+binds at the start of each install, launch, ROM preparation and trophy reset,
+after the ROM tool runs, and on each extracted release before the launcher
+unpacks nested archives and copies it. A running process can swap a folder
+for a link during that walk, so `recompilation-sandbox-locks.ts` tracks the
+writable folders of every live sandboxed process: a sanitize or a trophy reset
+on them fails with `RecompilationSandboxBusyError` (a launch reports the port
+as running), and no sandbox starts on folders the launcher is working in. The
+pending trophy reset file is also port-writable: anything but the expected
+shape is dropped, and its file path counts only when it is one of the port's
+own trophy files.
 
 The game bind is the game's install dir (`<downloadPath>/<folderName>`) when the
 executable lives inside it, so an exe in `Binaries/Win64/` still sees its assets.
