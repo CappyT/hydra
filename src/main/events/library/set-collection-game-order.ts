@@ -7,6 +7,7 @@ import { registerEvent } from "../register-event";
 import { gamesSublevel } from "@main/level";
 import { HydraApi, logger } from "@main/services";
 import {
+  ACCOUNTLESS,
   applyLibraryCollectionOrder,
   getLibraryCollectionIds,
   getLibraryCollectionOrderPositions,
@@ -79,15 +80,18 @@ const saveCollectionGameOrder = async (
     storedGames
   );
 
-  await HydraApi.put(
-    `/profile/games/collections/${encodeURIComponent(collectionId)}/order`,
-    {
-      games: games
-        .filter((game) => game.shop !== "custom")
-        .map(({ shop, objectId }) => ({ shop, objectId })),
-    },
-    { timeout: ORDER_SAVE_TIMEOUT_MS, authContext: authContext ?? undefined }
-  );
+  // Fork: collections are local without an account, so the order is too.
+  if (!ACCOUNTLESS) {
+    await HydraApi.put(
+      `/profile/games/collections/${encodeURIComponent(collectionId)}/order`,
+      {
+        games: games
+          .filter((game) => game.shop !== "custom")
+          .map(({ shop, objectId }) => ({ shop, objectId })),
+      },
+      { timeout: ORDER_SAVE_TIMEOUT_MS, authContext: authContext ?? undefined }
+    );
+  }
 
   const positions = getLibraryCollectionOrderPositions(games);
 
