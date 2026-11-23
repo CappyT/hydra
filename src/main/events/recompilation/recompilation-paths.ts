@@ -1,10 +1,11 @@
-import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 import type { RecompilationRef } from "@types";
 import { getDownloadsPath } from "@main/events/helpers/get-downloads-path";
 import { recompilationInstallsSublevel } from "@main/level";
+
+import { portFs } from "./recompilation-port-fs";
 
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9._-]{0,99}$/i;
 const OBJECT_ID_PATTERN = /^\d{1,20}$/;
@@ -52,10 +53,9 @@ export const readInstallMarker = async (
 ): Promise<InstallMarker | null> => {
   try {
     const markerPath = path.join(installDirectory, INSTALL_MARKER_FILE);
-    // Fork: the sandboxed port can write this folder; a FIFO or link here would
-    // stall or redirect the read.
-    if (!(await fs.promises.lstat(markerPath)).isFile()) return null;
-    const raw = await fs.promises.readFile(markerPath, "utf-8");
+    // Fork: the sandboxed port can write this folder, also while the launcher
+    // reads; a FIFO or link here would stall or redirect the read.
+    const raw = await portFs.readFile(markerPath, "utf-8");
     return JSON.parse(raw) as InstallMarker;
   } catch {
     return null;

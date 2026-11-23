@@ -47,7 +47,9 @@ import {
   shouldPrepareAfterUpdate,
 } from "./recompilation-rom";
 import {
+  prepareExtractionSandbox,
   prepareRecompilationSandbox,
+  RecompilationSandboxBusyError,
   reportRecompilationSandboxError,
   sanitizeRecompilationInstall,
   spawnSandboxedRecompilation,
@@ -182,36 +184,54 @@ const APPIMAGE_EXTRACT_TIMEOUT_MS = 10 * 60 * 1000;
  * the image that 7-Zip opens instead, and symlinks 7-Zip refuses. The
  * AppImage's own extractor handles both; it lands in `squashfs-root`.
  */
-const extractAppImageWithItself = (
+const extractAppImageWithItself = async (
   appImagePath: string,
-  stagingDirectory: string
-) =>
-  new Promise<void>((resolve, reject) => {
-    const child = spawn(appImagePath, ["--appimage-extract"], {
-      cwd: stagingDirectory,
-      env: getPortEnv({}),
-      stdio: "ignore",
-      shell: false,
-    });
+  stagingDirectory: string,
+  slug: string
+) => {
+  // Fork: the downloaded AppImage runs its own extractor, so it runs sandboxed.
+  const sandbox = await prepareExtractionSandbox(
+    slug,
+    stagingDirectory,
+    appImagePath
+  );
+  return new Promise<void>((resolve, reject) => {
+    const child = spawnSandboxedRecompilation(
+      sandbox,
+      appImagePath,
+      ["--appimage-extract"],
+      {
+        cwd: stagingDirectory,
+        baseEnv: getPortEnv({}),
+        stdio: ["ignore", "ignore", "ignore"],
+      }
+    );
+    // Fork: settle only on exit, so the staging folder is not removed while
+    // the extractor can still write it.
+    let timedOut = false;
     const timeout = setTimeout(() => {
+      timedOut = true;
       child.kill("SIGKILL");
-      reject(new Error("--appimage-extract timed out"));
     }, APPIMAGE_EXTRACT_TIMEOUT_MS);
     child.once("error", (error) => {
+      if (child.pid !== undefined) return;
       clearTimeout(timeout);
       reject(error);
     });
     child.once("exit", (code) => {
       clearTimeout(timeout);
-      if (code === 0) resolve();
+      if (timedOut) reject(new Error("--appimage-extract timed out"));
+      else if (code === 0) resolve();
       else reject(new Error(`--appimage-extract exited with ${code}`));
     });
   });
+};
 
 const extractReleaseArchive = async (
   archivePath: string,
   assetName: string,
-  stagingDirectory: string
+  stagingDirectory: string,
+  slug: string
 ) => {
   try {
     await SevenZip.extractFile({
@@ -227,7 +247,7 @@ const extractReleaseArchive = async (
     await fs.promises.mkdir(stagingDirectory, { recursive: true });
     // Only this user runs the downloaded AppImage, once, to unpack it.
     await fs.promises.chmod(archivePath, 0o700);
-    await extractAppImageWithItself(archivePath, stagingDirectory);
+    await extractAppImageWithItself(archivePath, stagingDirectory, slug);
   }
 };
 
@@ -236,7 +256,8 @@ const extractRelease = async (
   assetName: string,
   installDirectory: string,
   portName: string,
-  executableOverride: string | null
+  executableOverride: string | null,
+  slug: string
 ) => {
   const stagingDirectory = `${installDirectory}.partial`;
   await fs.promises.rm(stagingDirectory, { recursive: true, force: true });
@@ -249,9 +270,18 @@ const extractRelease = async (
         path.join(stagingDirectory, path.basename(assetName))
       );
     } else {
-      await extractReleaseArchive(archivePath, assetName, stagingDirectory);
+      await extractReleaseArchive(
+        archivePath,
+        assetName,
+        stagingDirectory,
+        slug
+      );
     }
+    // Fork: an extracted release may carry links out of its folder; the
+    // launcher unpacks, chmods and copies through this tree next.
+    await sanitizeRecompilationInstall(stagingDirectory);
     await extractNestedArchives(stagingDirectory);
+    await sanitizeRecompilationInstall(stagingDirectory);
     const root = await resolveExtractedRoot(stagingDirectory);
     await restoreExecutableBits(root);
     const executablePath = await findRecompilationExecutable(
@@ -388,7 +418,8 @@ const downloadAndInstall = async (
     asset.name,
     installDirectory,
     details.name,
-    getRecompilationExecutableOverride(ref.slug)
+    getRecompilationExecutableOverride(ref.slug),
+    ref.slug
   );
 
   const marker: InstallMarker = {
@@ -586,7 +617,15 @@ const launchRecompilation = async (
 ): Promise<RecompilationActionResult> => {
   const state = await getRecompilationInstallState(ref);
   if (!state?.installPath) return { ok: false, reason: "not_installed" };
-  await sanitizeRecompilationInstall(state.installPath);
+  try {
+    await sanitizeRecompilationInstall(state.installPath);
+  } catch (error) {
+    // Another session or a ROM tool of this port still runs.
+    if (error instanceof RecompilationSandboxBusyError) {
+      return { ok: false, reason: "already_running" };
+    }
+    throw error;
+  }
   if (!state.executablePath) return { ok: false, reason: "no_executable" };
 
   const executablePath = await refreshDeclaredEntry(

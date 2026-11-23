@@ -20,15 +20,22 @@ import { assertSafeSandboxPath, within } from "@main/helpers/sandbox-paths";
 import recompilationMeta from "./recompilation-meta.json";
 import {
   getRecompilationBaseDirectory,
+  getRecompilationInstallDirectory,
   resolveRecompilationPath,
 } from "./recompilation-paths";
 import {
+  getPortPathTemplates,
   getRecompilationSandboxPaths,
-  getRomSetupTemplates,
   listRomFiles,
   removeEscapingSymlinks,
-  type PortRomMeta,
 } from "./recompilation-sandbox-paths";
+import {
+  assertSandboxCanStart,
+  trackLiveSandbox,
+  whileSandboxQuiet,
+} from "./recompilation-sandbox-locks";
+
+export { RecompilationSandboxBusyError } from "./recompilation-sandbox-locks";
 
 /**
  * A recompiled port is a native binary that the Hydra API picks from a GitHub
@@ -36,7 +43,8 @@ import {
  * stay exempt; ports do not.
  */
 export interface RecompilationSandbox {
-  gameKey: string;
+  /** Persistent per-port home; null runs with an ephemeral home. */
+  gameKey: string | null;
   installDirectory: string;
   userPreferences: UserPreferences | null;
   binds: string[];
@@ -61,19 +69,15 @@ export const prepareRecompilationSandbox = async (
 
   const { binds, roBinds } = getRecompilationSandboxPaths(
     installDirectory,
-    getRomSetupTemplates(
-      (recompilationMeta as unknown as Record<string, { rom?: PortRomMeta }>)[
-        slug
-      ]?.rom
+    getPortPathTemplates(
+      (recompilationMeta as Record<string, unknown>)[slug]
     ).map((template) => resolveRecompilationPath(template, baseDirectory)),
     romPath ? await listRomFiles(romPath) : []
   );
-  // bwrap needs each bind source to exist; the port expects these folders anyway.
-  for (const directory of binds) fs.mkdirSync(directory, { recursive: true });
-
   if (Sandbox.isEnabled(userPreferences, null)) {
-    // wrapWithSandbox checks only writable binds; a ROM bind gets the same rules.
-    for (const file of roBinds) {
+    // wrapWithSandbox checks only writable binds; a ROM bind gets the same
+    // rules. Writable binds are checked here too, before the mkdir below.
+    for (const file of [...binds, ...roBinds]) {
       assertSafeSandboxPath(
         file,
         process.env.HOME || "/home",
@@ -81,6 +85,8 @@ export const prepareRecompilationSandbox = async (
       );
     }
   }
+  // bwrap needs each bind source to exist; the port expects these folders anyway.
+  for (const directory of binds) fs.mkdirSync(directory, { recursive: true });
 
   return {
     gameKey: `recompilation:${slug}`,
@@ -101,6 +107,11 @@ export interface SandboxedRecompilationSpawnOptions {
   detached?: boolean;
 }
 
+const getWritableRoots = (sandbox: RecompilationSandbox) => [
+  sandbox.installDirectory,
+  ...sandbox.binds,
+];
+
 /**
  * Removes links the port planted towards writable host paths in the folders
  * it can write, before the launcher writes there. No-op when the sandbox is off.
@@ -109,9 +120,51 @@ export const sanitizeRecompilationFolders = async (
   sandbox: RecompilationSandbox
 ) => {
   if (!Sandbox.isEnabled(sandbox.userPreferences, null)) return;
-  for (const root of [sandbox.installDirectory, ...sandbox.binds]) {
-    await removeEscapingSymlinks(root);
-  }
+  const roots = getWritableRoots(sandbox);
+  await whileSandboxQuiet(roots, async () => {
+    for (const root of roots) await removeEscapingSymlinks(root);
+  });
+};
+
+/**
+ * The sandbox for a release that unpacks itself (an AppImage run with
+ * `--appimage-extract`): the port's home, the staging folder writable and the
+ * downloaded release read-only.
+ */
+export const prepareExtractionSandbox = async (
+  slug: string,
+  stagingDirectory: string,
+  archivePath: string
+): Promise<RecompilationSandbox> => ({
+  // The port's own key: the release comes from the same source as the port,
+  // and the key gives it the spoofed machine-id.
+  gameKey: `recompilation:${slug}`,
+  installDirectory: stagingDirectory,
+  userPreferences: await db
+    .get<string, UserPreferences | null>(levelKeys.userPreferences, {
+      valueEncoding: "json",
+    })
+    .catch(() => null),
+  binds: [],
+  roBinds: [archivePath],
+});
+
+/**
+ * Sanitizes the install folder and every bind of a port, then runs
+ * `operation` (a launcher write there) before a sandbox of the port can start.
+ * Throws RecompilationSandboxBusyError while a process of the port runs.
+ */
+export const withSanitizedPort = async <T>(
+  slug: string,
+  operation: () => Promise<T>
+): Promise<T> => {
+  const installDirectory = await getRecompilationInstallDirectory(slug);
+  await sanitizeRecompilationInstall(installDirectory);
+  const sandbox = await prepareRecompilationSandbox(slug, installDirectory);
+  return whileSandboxQuiet(getWritableRoots(sandbox), async () => {
+    await sanitizeRecompilationFolders(sandbox);
+    return operation();
+  });
 };
 
 /** Same as sanitizeRecompilationFolders, for the install folder before an update. */
@@ -124,7 +177,9 @@ export const sanitizeRecompilationInstall = async (
     })
     .catch(() => null);
   if (Sandbox.isEnabled(userPreferences, null)) {
-    await removeEscapingSymlinks(installDirectory);
+    await whileSandboxQuiet([installDirectory], () =>
+      removeEscapingSymlinks(installDirectory)
+    );
   }
 };
 
@@ -142,6 +197,8 @@ export const spawnSandboxedRecompilation = (
   args: string[],
   options: SandboxedRecompilationSpawnOptions
 ): ChildProcess => {
+  const roots = getWritableRoots(sandbox);
+  assertSandboxCanStart(roots);
   const sandboxEnabled = Sandbox.isEnabled(sandbox.userPreferences, null);
   const base = resolveLaunchCommand({ baseCommand: command, baseArgs: args });
   const resolved = wrapWithSandbox(
@@ -158,7 +215,7 @@ export const spawnSandboxedRecompilation = (
 
   const seccompFd = openSeccompFd(resolved);
   try {
-    return spawn(resolved.command, resolved.args, {
+    const child = spawn(resolved.command, resolved.args, {
       cwd: options.cwd,
       env: {
         ...(sandboxEnabled
@@ -170,6 +227,8 @@ export const spawnSandboxedRecompilation = (
       detached: options.detached ?? false,
       shell: false,
     });
+    trackLiveSandbox(child, roots);
+    return child;
   } finally {
     // The child inherited its own dup at fd 3; closing this copy is safe.
     closeSeccompFd(seccompFd);

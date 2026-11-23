@@ -1,4 +1,3 @@
-import { promises as fs } from "node:fs";
 import path from "node:path";
 
 import type { RecompilationRef, UnlockedAchievement } from "@types";
@@ -15,7 +14,10 @@ import {
   resolveRecompilationPath,
 } from "./recompilation-paths";
 import recompilationMeta from "./recompilation-meta.json";
+// Fork: the sandboxed port can write these files; see recompilation-port-fs.ts.
+import { portFs as fs } from "./recompilation-port-fs";
 import { getRecompilationChosenTitleId } from "./recompilation-rom";
+import { withSanitizedPort } from "./recompilation-sandbox";
 import {
   getTrophySourcePath,
   keepCatalogueTrophies,
@@ -337,6 +339,45 @@ interface PendingTrophyReset {
   file?: string;
 }
 
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value);
+
+/**
+ * Fork: the file sits in the port folder, so the port can write it. Anything
+ * but the expected shape is dropped.
+ */
+const parsePendingTrophyReset = (
+  contents: string
+): PendingTrophyReset | null => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(contents);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  const { ids, log, file } = parsed as Record<string, unknown>;
+  if (
+    (ids !== undefined &&
+      !(Array.isArray(ids) && ids.every((id) => typeof id === "string"))) ||
+    (file !== undefined && typeof file !== "string")
+  ) {
+    return null;
+  }
+  const mark = log as Partial<LogResetMark> | null | undefined;
+  if (
+    mark != null &&
+    !(isFiniteNumber(mark.ino) && isFiniteNumber(mark.offset))
+  ) {
+    return null;
+  }
+  return {
+    ids: (ids as string[] | undefined) ?? [],
+    log: mark ? { ino: mark.ino!, offset: mark.offset! } : null,
+    file: file as string | undefined,
+  };
+};
+
 const pendingResetPath = async (slug: string) =>
   path.join(await getRecompilationInstallDirectory(slug), PENDING_RESET_FILE);
 
@@ -346,9 +387,7 @@ const savePendingTrophyReset = async (
 ) => {
   const file = await pendingResetPath(slug);
   const saved = await readText(file);
-  const previous: PendingTrophyReset | null = saved
-    ? (JSON.parse(saved) as PendingTrophyReset)
-    : null;
+  const previous = saved ? parsePendingTrophyReset(saved) : null;
   await fs.writeFile(
     file,
     JSON.stringify({
@@ -370,17 +409,9 @@ const readPendingTrophyReset = async (
 ): Promise<PendingTrophyReset | null> => {
   const contents = await readText(await pendingResetPath(slug));
   if (contents === null) return null;
-  try {
-    const pending = JSON.parse(contents) as PendingTrophyReset;
-    return {
-      ids: pending.ids ?? [],
-      log: pending.log ?? null,
-      file: pending.file,
-    };
-  } catch {
-    await clearPendingTrophyReset(slug);
-    return null;
-  }
+  const pending = parsePendingTrophyReset(contents);
+  if (!pending) await clearPendingTrophyReset(slug);
+  return pending;
 };
 
 /**
@@ -391,14 +422,23 @@ const readPendingTrophyReset = async (
 export const applyPendingTrophyReset = async (ref: RecompilationRef) => {
   const pending = await readPendingTrophyReset(ref.slug);
   if (!pending) return;
-  const resolved = await resolveRecompilationTrophyFiles(ref);
-  const files =
-    resolved && pending.file ? { ...resolved, file: pending.file } : resolved;
-  if (files) {
-    await removeResetTrophies(files, pending.ids);
-    if (pending.log) await stripLogBeforeMark(files.file, pending.log);
-  }
-  await clearPendingTrophyReset(ref.slug);
+  await withSanitizedPort(ref.slug, async () => {
+    const resolved = await resolveRecompilationTrophyFiles(ref);
+    // Fork: the pending file sits in the port folder, so its path is honoured
+    // only when it is one of the port's own trophy files.
+    const knownFiles = (await resolveAllRecompilationTrophyFiles(ref)).map(
+      (candidate) => candidate.file
+    );
+    const pendingFile =
+      pending.file && knownFiles.includes(pending.file) ? pending.file : null;
+    const files =
+      resolved && pendingFile ? { ...resolved, file: pendingFile } : resolved;
+    if (files) {
+      await removeResetTrophies(files, pending.ids);
+      if (pending.log) await stripLogBeforeMark(files.file, pending.log);
+    }
+    await clearPendingTrophyReset(ref.slug);
+  });
 };
 
 export const startRecompilationTrophyWatcher = (
@@ -464,11 +504,11 @@ export const startRecompilationTrophyWatcher = (
       if (resetIds.size === 0 && !logMark) return;
 
       const work = portClosed
-        ? removeResetTrophies(resolved, [...resetIds])
-            .then(() =>
-              logMark ? stripLogBeforeMark(resolved.file, logMark) : undefined
-            )
-            .then(() => clearPendingTrophyReset(ref.slug))
+        ? withSanitizedPort(ref.slug, async () => {
+            await removeResetTrophies(resolved, [...resetIds]);
+            if (logMark) await stripLogBeforeMark(resolved.file, logMark);
+            await clearPendingTrophyReset(ref.slug);
+          })
         : logTrophyIdsBeforeMark(resolved.file, logMark).then((logIds) =>
             savePendingTrophyReset(ref.slug, {
               ids: [...new Set([...resetIds, ...logIds])],

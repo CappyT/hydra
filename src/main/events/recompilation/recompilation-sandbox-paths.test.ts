@@ -6,8 +6,8 @@ import path from "node:path";
 import { after, describe, it } from "node:test";
 
 import {
+  getPortPathTemplates,
   getRecompilationSandboxPaths,
-  getRomSetupTemplates,
   listRomFiles,
   removeEscapingSymlinks,
 } from "./recompilation-sandbox-paths.ts";
@@ -22,25 +22,108 @@ const write = (file: string, content = "") => {
   return file;
 };
 
-describe("getRomSetupTemplates", () => {
-  it("collects the Linux copy target, imported files and config file", () => {
+describe("getPortPathTemplates", () => {
+  it("collects the Linux path templates of every meta section", () => {
     assert.deepEqual(
-      getRomSetupTemplates({
-        copyTo: { linux: "<home>/.config/Zelda64Recompiled/mm.z64" },
-        imported: { linux: ["<xdgData>/sm64/sm64.o2r", "<base>/sm64.o2r"] },
-        path: { config: { file: "<appData>/TwilitRealm/config.json" } },
+      getPortPathTemplates({
+        executable: { win32: "Game.exe" },
+        rom: {
+          path: {
+            arg: ["{rom}"],
+            config: {
+              file: {
+                win32: "<base>/launcher.ini",
+                linux: "<xdgConfig>/launcher/settings.json",
+              },
+            },
+          },
+          copyTo: { linux: "<home>/.config/Zelda64Recompiled/mm.z64" },
+          imported: { linux: ["<xdgData>/sm64/sm64.o2r", "<base>/sm64.o2r"] },
+          folder: ["eboot.bin", "sce_sys/param.sfo"],
+        },
+        trophies: { path: { linux: "<xdgData>/port/trophies.txt" } },
       }),
       [
+        "<xdgConfig>/launcher/settings.json",
         "<home>/.config/Zelda64Recompiled/mm.z64",
         "<xdgData>/sm64/sm64.o2r",
         "<base>/sm64.o2r",
-        "<appData>/TwilitRealm/config.json",
+        "<xdgData>/port/trophies.txt",
       ]
     );
   });
 
-  it("returns nothing for a port without ROM setup", () => {
-    assert.deepEqual(getRomSetupTemplates(undefined), []);
+  it("skips Windows-only folders outside a win32 branch", () => {
+    assert.deepEqual(
+      getPortPathTemplates({
+        settings: ["<winAppData>/Port/port.ini", "<xdgData>/Port/port.ini"],
+      }),
+      ["<xdgData>/Port/port.ini"]
+    );
+  });
+
+  it("expands {titleId} to each listed title id, once each", () => {
+    assert.deepEqual(
+      getPortPathTemplates({
+        rom: { titleIds: ["CUSA00001", "CUSA00002"] },
+        trophies: {
+          path: { linux: "<xdgData>/port/{titleId}/trophies.json" },
+          reset: ["<xdgData>/port/{titleId}/trophies.json"],
+        },
+      }),
+      [
+        "<xdgData>/port/CUSA00001/trophies.json",
+        "<xdgData>/port/CUSA00002/trophies.json",
+      ]
+    );
+  });
+
+  it("returns nothing for an unknown port", () => {
+    assert.deepEqual(getPortPathTemplates(undefined), []);
+  });
+});
+
+describe("recompilation-meta.json binds", () => {
+  const home = "/home/u";
+  const xdgConfig = `${home}/.config`;
+  const xdgData = `${home}/.local/share`;
+  const base = "/data/hydra/recompilations/port";
+  // Same tokens as resolveRecompilationPath on Linux.
+  const resolve = (template: string) =>
+    path.normalize(
+      template
+        .replaceAll("<base>", base)
+        .replaceAll("<home>", home)
+        .replaceAll("<xdgData>", xdgData)
+        .replaceAll("<appData>", xdgData)
+        .replaceAll("<xdgConfig>", xdgConfig)
+        .replaceAll("{romName}", "")
+    );
+  const meta = JSON.parse(
+    fs.readFileSync(
+      new URL("./recompilation-meta.json", import.meta.url),
+      "utf8"
+    )
+  ) as Record<string, unknown>;
+
+  // Every writable bind comes from upstream meta; a broad one such as
+  // ~/.cache must fail here and get a human review.
+  it("binds only port-specific folders inside the XDG config and data dirs", () => {
+    for (const [slug, entry] of Object.entries(meta)) {
+      const { binds } = getRecompilationSandboxPaths(
+        base,
+        getPortPathTemplates(entry).map(resolve),
+        []
+      );
+      for (const bind of binds) {
+        assert.ok(
+          [xdgConfig, xdgData].some(
+            (root) => bind !== root && bind.startsWith(`${root}/`)
+          ),
+          `${slug} binds ${bind}`
+        );
+      }
+    }
   });
 });
 
@@ -49,6 +132,19 @@ describe("listRomFiles", () => {
     const rom = write(path.join(scratch, "single", "mm.z64"));
     write(path.join(scratch, "single", "unrelated.txt"));
     assert.deepEqual(await listRomFiles(rom), [rom]);
+  });
+
+  it("returns a game folder as a whole", async () => {
+    const folder = path.join(scratch, "ps4", "CUSA00001");
+    write(path.join(folder, "eboot.bin"));
+    write(path.join(folder, "sce_sys", "param.sfo"));
+    assert.deepEqual(await listRomFiles(folder), [folder]);
+  });
+
+  it("maps an eboot.bin to its game folder", async () => {
+    const folder = path.join(scratch, "ps4-eboot", "CUSA00002");
+    const eboot = write(path.join(folder, "EBOOT.BIN"));
+    assert.deepEqual(await listRomFiles(eboot), [folder]);
   });
 
   it("adds the tracks a cue sheet lists next to it", async () => {
@@ -144,6 +240,22 @@ describe("getRecompilationSandboxPaths", () => {
       ]
     );
     assert.deepEqual(roBinds, ["/home/u/Downloads/mm.z64"]);
+  });
+
+  it("binds only the outermost of nested setup folders", () => {
+    const { binds } = getRecompilationSandboxPaths(
+      install,
+      [
+        "/home/u/.local/share/port/CUSA00001/trophies.json",
+        "/home/u/.local/share/port/settings.ini",
+        "/home/u/.config/port/config.json",
+      ],
+      []
+    );
+    assert.deepEqual(binds.sort(), [
+      "/home/u/.config/port",
+      "/home/u/.local/share/port",
+    ]);
   });
 
   it("tells a sibling with a shared prefix from a child named ..foo", () => {

@@ -1,4 +1,5 @@
-import { promises as fs } from "node:fs";
+// Fork: the sandboxed port can write these files; see recompilation-port-fs.ts.
+import { portFs as fs } from "./recompilation-port-fs";
 
 import type { Game, RecompilationRef } from "@types";
 
@@ -7,6 +8,7 @@ import {
   emptyTrophyBitmask,
   stripTrophyLogLines,
 } from "./recompilation-trophies";
+import { withSanitizedPort } from "./recompilation-sandbox";
 import {
   clearPendingTrophyReset,
   resolveAllRecompilationTrophyFiles,
@@ -68,9 +70,12 @@ const resetPortTrophies = async (ref: RecompilationRef, isRunning: boolean) => {
     return;
   }
 
-  for (const files of await resolveAllRecompilationTrophyFiles(ref)) {
-    await clearTrophyFiles(files);
-  }
+  // Throws while a ROM tool or another session of the port runs.
+  await withSanitizedPort(ref.slug, async () => {
+    for (const files of await resolveAllRecompilationTrophyFiles(ref)) {
+      await clearTrophyFiles(files);
+    }
+  });
 };
 
 /**

@@ -3,19 +3,50 @@ import path from "node:path";
 
 import { within } from "../../helpers/sandbox-paths";
 
-export interface PortRomMeta {
-  copyTo?: { linux?: string };
-  imported?: { linux?: string[] };
-  path?: { config?: { file?: string } };
-}
+const TITLE_ID_TOKEN = "{titleId}";
+const WINDOWS_ONLY_TOKENS = ["<winAppData>", "<winLocalAppData>"];
 
-/** Host files that the ROM setup copies, reads back or edits for a port. */
-export const getRomSetupTemplates = (rom: PortRomMeta | undefined) =>
-  [
-    rom?.copyTo?.linux,
-    ...(rom?.imported?.linux ?? []),
-    rom?.path?.config?.file,
-  ].filter((template): template is string => Boolean(template));
+/**
+ * Every host path template in a port's recompilation-meta.json entry that
+ * applies to Linux: ROM targets, configs, settings files, online name files
+ * and trophy files. Windows branches are skipped and `{titleId}` expands to
+ * each title id the port lists.
+ */
+export const getPortPathTemplates = (entry: unknown): string[] => {
+  const templates: string[] = [];
+  const walk = (value: unknown) => {
+    if (typeof value === "string") {
+      if (
+        value.startsWith("<") &&
+        !WINDOWS_ONLY_TOKENS.some((token) => value.includes(token))
+      ) {
+        templates.push(value);
+      }
+    } else if (Array.isArray(value)) {
+      value.forEach(walk);
+    } else if (value && typeof value === "object") {
+      for (const [key, child] of Object.entries(value)) {
+        if (key !== "win32" && key !== "darwin") walk(child);
+      }
+    }
+  };
+  walk(entry);
+
+  const titleIds = (entry as { rom?: { titleIds?: unknown } } | undefined)?.rom
+    ?.titleIds;
+  const ids = Array.isArray(titleIds)
+    ? titleIds.filter((id): id is string => typeof id === "string")
+    : [];
+  return [
+    ...new Set(
+      templates.flatMap((template) =>
+        template.includes(TITLE_ID_TOKEN)
+          ? ids.map((id) => template.replaceAll(TITLE_ID_TOKEN, id))
+          : [template]
+      )
+    ),
+  ];
+};
 
 const TRACK_LIST_PATTERNS: Record<string, RegExp> = {
   ".cue": /^\s*FILE\s+(?:"([^"]+)"|(\S+))/i,
@@ -46,14 +77,24 @@ const listedNames = async (indexFile: string): Promise<string[]> => {
 };
 
 /**
- * The files of a ROM: the file itself, plus the tracks a disc index lists in
- * its own folder and its same-name sidecars (`.sbi`, `.sub`, ...). An `.m3u`
- * playlist adds each listed disc and its tracks. Names match the folder
- * case-insensitively, as emulators do. A name with a folder part, or a track
- * whose real path leaves the index folder, is ignored, so a downloaded index
- * cannot pull an unrelated host file into the sandbox.
+ * The files of a ROM: a game folder as a whole, or the file itself plus the
+ * tracks a disc index lists in its own folder and its same-name sidecars
+ * (`.sbi`, `.sub`, ...). An `.m3u` playlist adds each listed disc and its
+ * tracks. Names match the folder case-insensitively, as emulators do. A name
+ * with a folder part, or a track whose real path leaves the index folder, is
+ * ignored, so a downloaded index cannot pull an unrelated host file into the
+ * sandbox.
  */
 export const listRomFiles = async (romPath: string): Promise<string[]> => {
+  // A PS4 dump is a game folder; ports also take its eboot.bin for the folder.
+  const gameFolder =
+    path.basename(romPath).toLowerCase() === "eboot.bin"
+      ? path.dirname(romPath)
+      : romPath;
+  if ((await fs.promises.stat(gameFolder).catch(() => null))?.isDirectory()) {
+    return [gameFolder];
+  }
+
   const folder = path.dirname(romPath);
   const realFolder = await fs.promises.realpath(folder).catch(() => null);
   const entries = await fs.promises
@@ -114,9 +155,15 @@ export const getRecompilationSandboxPaths = (
   setupFiles: string[],
   romFiles: string[]
 ) => {
-  const binds = [
+  const folders = [
     ...new Set(setupFiles.map((file) => path.dirname(file))),
   ].filter((directory) => !within(installDirectory, directory));
+  // A folder inside another bind is already covered; nested binds would only
+  // add mount points the port could move around.
+  const binds = folders.filter(
+    (directory) =>
+      !folders.some((other) => other !== directory && within(other, directory))
+  );
 
   const roBinds = romFiles.filter(
     (file) => ![installDirectory, ...binds].some((root) => within(root, file))
