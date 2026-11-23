@@ -61,6 +61,7 @@ import {
   parseSteamOpenIdReturn,
 } from "./services/steam-integration/steam-openid-return";
 import { steamSyncOrchestrator } from "./services/steam-integration/steam-sync-orchestrator";
+import { achievementNotificationPresenter } from "./services/achievement-notification-presenter-electron";
 import {
   initializeEpicIntegration,
   shutdownEpicIntegration,
@@ -590,6 +591,7 @@ app.on("before-quit", async (e) => {
         logger.error("Application shutdown cleanup failed", result.reason);
       }
     }
+    achievementNotificationPresenter.shutdown();
     canAppBeClosed = true;
     app.quit();
   }

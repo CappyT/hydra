@@ -41,6 +41,7 @@ import { ControllerSupportSection } from "./controller-support-section";
 import { ACCOUNTLESS } from "@shared";
 import { GameScreenshots } from "../game-screenshots/game-screenshots";
 import { LeaderboardSection } from "../leaderboard/leaderboard-section";
+import { AchievementsSkeletonList } from "./achievements-skeleton-list";
 
 const ProtonDBSection = lazy(async () => {
   const mod = await import("./protondb-section");
@@ -163,6 +164,20 @@ export function Sidebar() {
       !!shopDetails?.retroAchievementsGameId &&
       !userPreferences?.retroAchievementsWebApiKey);
 
+  // Steam's store data says up front whether the game has achievements
+  // (category 22). While the list loads, keep its section in place so the
+  // rail doesn't drop by a whole section when it arrives.
+  const STEAM_ACHIEVEMENTS_CATEGORY_ID = 22;
+  const isAchievementsSectionPending =
+    !shouldRenderAchievementsSection &&
+    !!userDetails &&
+    achievements === null &&
+    ((shop === "steam" &&
+      !!shopDetails?.categories?.some(
+        (category) => category.id === STEAM_ACHIEVEMENTS_CATEGORY_ID
+      )) ||
+      (shop === "launchbox" && !!shopDetails?.retroAchievementsGameId));
+
   useEffect(() => {
     if (objectId) {
       setHowLongToBeat({ isLoading: true, data: null });
@@ -259,6 +274,12 @@ export function Sidebar() {
             </ul>
           </SidebarSection>
         )}
+
+      {isAchievementsSectionPending && (
+        <SidebarSection title={t("achievements")}>
+          <AchievementsSkeletonList />
+        </SidebarSection>
+      )}
 
       {shouldRenderAchievementsSection && (
         <SidebarSection

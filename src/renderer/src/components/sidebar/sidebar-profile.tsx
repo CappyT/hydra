@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import {
   BellIcon,
   ChevronDownIcon,
+  CommentDiscussionIcon,
   PeopleIcon,
   PersonIcon,
   SignOutIcon,
@@ -119,7 +120,7 @@ function SidebarProfileInner() {
 
   const { t } = useTranslation(["sidebar", "user_profile"]);
 
-  const { userDetails, signOut } = useUserDetails();
+  const { userDetails, hasActiveSubscription, signOut } = useUserDetails();
   const { showSuccessToast } = useToast();
 
   const { gameRunning } = useAppSelector((state) => state.gameRunning);
@@ -506,6 +507,18 @@ function SidebarProfileInner() {
               </small>
             )}
           </button>
+
+          {hasActiveSubscription && (
+            <button
+              type="button"
+              className="sidebar-profile__dropdown-item"
+              data-open-support-chat
+              onClick={closeDropdown}
+            >
+              <CommentDiscussionIcon size={16} />
+              <span>{t("need_help")}</span>
+            </button>
+          )}
 
           <div className="sidebar-profile__dropdown-separator" />
 

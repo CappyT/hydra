@@ -5,9 +5,11 @@ import {
   loadEnv,
   swcPlugin,
 } from "electron-vite";
+import { randomInt } from "node:crypto";
 import { resolve } from "path";
 import { transformWithEsbuild, type Plugin } from "vite";
 import svgr from "vite-plugin-svgr";
+import { contentSecurityPolicy } from "./src/big-picture/vite-content-security-policy";
 import { scopeBigPictureCss } from "./src/big-picture/vite-scope-big-picture-css";
 
 const mangleIdentifiers = (): Plugin => ({
@@ -25,7 +27,7 @@ const mangleIdentifiers = (): Plugin => ({
   },
 });
 
-const buildSeed = Math.floor(Math.random() * 2 ** 31);
+const buildSeed = randomInt(2 ** 31);
 
 // Fork: ship readable bundles so the AppImage can be audited against the
 // source. The obfuscator is only loaded when this is turned on.
@@ -68,7 +70,8 @@ const obfuscate = (): Plugin => ({
 });
 
 export default defineConfig(({ mode }) => {
-  loadEnv(mode);
+  const env = loadEnv(mode);
+  const csp = contentSecurityPolicy(env.RENDERER_VITE_EXTERNAL_RESOURCES_URL);
 
   const isProduction = mode === "production";
   const minify = isProduction ? "esbuild" : false;
@@ -123,7 +126,7 @@ export default defineConfig(({ mode }) => {
           "@shared": resolve("src/shared"),
         },
       },
-      plugins: [svgr(), react()],
+      plugins: [svgr(), react(), csp],
     },
     renderer: {
       build: {
@@ -150,7 +153,7 @@ export default defineConfig(({ mode }) => {
           "@shared": resolve("src/shared"),
         },
       },
-      plugins: [svgr(), react()],
+      plugins: [svgr(), react(), csp],
     },
   };
 });

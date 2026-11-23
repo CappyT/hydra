@@ -62,7 +62,9 @@ export const prepareRecompilationSandbox = async (
   const { binds, roBinds } = getRecompilationSandboxPaths(
     installDirectory,
     getRomSetupTemplates(
-      (recompilationMeta as Record<string, { rom?: PortRomMeta }>)[slug]?.rom
+      (recompilationMeta as unknown as Record<string, { rom?: PortRomMeta }>)[
+        slug
+      ]?.rom
     ).map((template) => resolveRecompilationPath(template, baseDirectory)),
     romPath ? await listRomFiles(romPath) : []
   );

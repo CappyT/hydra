@@ -168,6 +168,7 @@ const SYSTEM_DEFAULT_PLATFORM: Record<EmulatorSystem, string | null> = {
   ps1: "PlayStation",
   ps2: "PlayStation 2",
   ps3: "PlayStation 3",
+  ps4: "PlayStation 4",
   psp: "PlayStation Portable",
   dolphin: null,
 };
@@ -347,7 +348,7 @@ export type UnmatchedReason = "wrong_platform" | "unmatched";
 
 export interface UnmatchedFile {
   name: string;
-  reason: UnmatchedReason;
+  reason: UnmatchedReason | "unsupported_package";
 }
 
 export type LaunchboxImportProgress = {
@@ -370,6 +371,7 @@ const SYSTEM_CATALOGUE_PLATFORMS: Record<EmulatorSystem, string[]> = {
   ps1: ["Sony Playstation"],
   ps2: ["Sony Playstation 2"],
   ps3: ["Sony Playstation 3"],
+  ps4: ["Sony Playstation 4"],
   psp: ["Sony PSP"],
   dolphin: ["Nintendo GameCube", "Nintendo Wii"],
 };
@@ -395,6 +397,7 @@ export interface LaunchboxImportResult {
   matched: number;
   unmatched: number;
   unmatchedFiles: UnmatchedFile[];
+  unsupportedPackages: number;
   cancelled: boolean;
 }
 
@@ -439,6 +442,7 @@ const cancelledResult = (
   matched,
   unmatched,
   unmatchedFiles,
+  unsupportedPackages: 0,
   cancelled: true,
 });
 
@@ -454,7 +458,7 @@ const scanFolders = async (
   folders: FolderInput[],
   signal: CancelSignal,
   onScan?: ScanReporter
-): Promise<ScannedGameInfo[]> => {
+): Promise<{ collected: ScannedGameInfo[]; unsupportedPackages: string[] }> => {
   const binary = emulators.KNOWN_BINARIES[system];
 
   const folderTotals: number[] = [];
@@ -476,6 +480,7 @@ const scanFolders = async (
 
   let scanBase = 0;
   let keptTotal = 0;
+  const unsupportedPackages: string[] = [];
   const collected: ScannedGameInfo[] = [];
 
   for (let fi = 0; fi < folders.length; fi++) {
@@ -501,12 +506,13 @@ const scanFolders = async (
 
     scanBase += folderTotals[fi] ?? partial.games.length;
     keptTotal += partial.games.length;
+    unsupportedPackages.push(...partial.unsupportedPackages);
     for (const game of partial.games) {
       collected.push({ folderPath: folder.path, ...game });
     }
   }
 
-  return collected;
+  return { collected, unsupportedPackages };
 };
 
 const resolveSkus = async (
@@ -574,7 +580,7 @@ const buildEnriched = (
 } => {
   const enriched: EnrichedGame[] = gameSkus.map(({ game, sku }) => {
     const groupKey =
-      system === "ps3"
+      system === "ps3" || system === "ps4"
         ? game.primaryPath
         : `${game.folderPath}::${stripDiscMarker(game.name)}`;
 
@@ -743,8 +749,10 @@ const persistMatchedEntries = async (
 ) => {
   for (const entry of matchedEntries.values()) {
     if (signal.cancelled) break;
-    const titleDiscs = discsByTitle.get(entry.objectId) ?? [];
-    const discs = buildDiscList(titleDiscs);
+    const discs = await emulators.attachDiscRegions(
+      buildDiscList(discsByTitle.get(entry.objectId) ?? []),
+      system
+    );
     const romSizeBytes = titleByFolder.get(entry.objectId)?.sizeBytes ?? null;
     await persistEntryLocally(
       entry,
@@ -824,7 +832,7 @@ export async function runLaunchboxImport(
     await ensureRomFolderRegistered(system, folder.path, folder.scanSubfolders);
   }
 
-  const collected = await scanFolders(
+  const { collected, unsupportedPackages } = await scanFolders(
     system,
     folders,
     signal,
@@ -987,7 +995,14 @@ export async function runLaunchboxImport(
     sizeBytes: totalSizeBytes,
     matched,
     unmatched,
-    unmatchedFiles,
+    unmatchedFiles: [
+      ...unmatchedFiles,
+      ...unsupportedPackages.map((packagePath) => ({
+        name: path.basename(packagePath),
+        reason: "unsupported_package" as const,
+      })),
+    ],
+    unsupportedPackages: unsupportedPackages.length,
     cancelled: signal.cancelled,
   };
 }
@@ -1058,6 +1073,7 @@ const importLaunchboxRoms = async (
         matched: result.matched,
         unmatched: result.unmatched,
         unmatchedFiles: result.unmatchedFiles,
+        unsupportedPackages: result.unsupportedPackages,
       });
     } catch (err) {
       WindowManager.sendToAppWindows(CLASSICS_IMPORT_PROGRESS_CHANNEL, {
