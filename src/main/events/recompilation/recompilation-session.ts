@@ -27,6 +27,11 @@ import { persistGamePlaytime } from "@main/services/process-watcher";
 import { logger } from "@main/services/logger";
 import { WindowManager } from "@main/services/window-manager";
 import { isRecompilationCloudSaveEnabled } from "./recompilation-features";
+import { getRecompilationInstallDirectory } from "./recompilation-paths";
+import {
+  isSandboxWrapperProcess,
+  terminateSandboxedRecompilation,
+} from "./recompilation-sandbox";
 
 const SHOP = "launchbox";
 const PRESENCE_HEARTBEAT_INTERVAL_MS = 60_000;
@@ -286,6 +291,16 @@ export const closeRecompilation = (ref: RecompilationRef) => {
 
   const { pid } = session.child;
   if (!pid || process.platform === "win32") return session.child.kill();
+  // Fork: a sandboxed port runs in bwrap's pid namespace, which a group signal
+  // to the wrapper does not reach.
+  if (isSandboxWrapperProcess(pid)) {
+    void terminateSandboxedRecompilation(
+      Object.assign(session.child, { pid }),
+      getRecompilationInstallDirectory(session.ref.slug),
+      CLOSE_GRACE_PERIOD_MS
+    );
+    return true;
+  }
   if (!signalProcessGroup(pid, "SIGTERM")) return session.child.kill();
 
   setTimeout(

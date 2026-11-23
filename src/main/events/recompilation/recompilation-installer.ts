@@ -38,12 +38,21 @@ import {
   saveRecompilationInstallDirectory,
 } from "./recompilation-paths";
 import {
+  forgetRecompilationRomChoice,
   getRecompilationExecutableOverride,
+  getRecompilationRomState,
   markRecompilationRomLaunched,
   prepareRecompilationRom,
   shouldHideRecompilationConsole,
   shouldPrepareAfterUpdate,
 } from "./recompilation-rom";
+import {
+  prepareRecompilationSandbox,
+  reportRecompilationSandboxError,
+  sanitizeRecompilationInstall,
+  spawnSandboxedRecompilation,
+  type RecompilationSandbox,
+} from "./recompilation-sandbox";
 import recompilationSaves from "./recompilation-saves.json";
 import {
   addRecompilationDisc,
@@ -378,6 +387,7 @@ export const installRecompilation = async (
       rawParentDirectory,
       current?.installed === true
     );
+    await sanitizeRecompilationInstall(installDirectory);
     await downloadAndInstall(ref, installDirectory, (downloadPath) => {
       archivePath = downloadPath;
     });
@@ -440,6 +450,7 @@ export const uninstallRecompilation = async (
     return { ok: false, reason: "uninstall_failed" };
   }
   await forgetRecompilationInstallDirectory(ref.slug);
+  await forgetRecompilationRomChoice(installDirectory);
   await removeRecompilationDisc(ref);
   return { ok: true };
 };
@@ -465,19 +476,31 @@ const getPortEnv = (launchEnv: Record<string, string>) => {
 
 const spawnPort = (
   executablePath: string,
-  launch: { args: string[]; env: Record<string, string> }
+  launch: { args: string[]; env: Record<string, string> },
+  sandbox: RecompilationSandbox
 ) =>
   new Promise<
     | { ok: true; child: ReturnType<typeof spawn> }
     | { ok: false; error: unknown }
   >((resolve) => {
-    const child = spawn(executablePath, launch.args, {
-      cwd: path.dirname(executablePath),
-      env: getPortEnv(launch.env),
-      detached: true,
-      stdio: "ignore",
-      shell: false,
-    });
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawnSandboxedRecompilation(
+        sandbox,
+        executablePath,
+        launch.args,
+        {
+          cwd: path.dirname(executablePath),
+          baseEnv: getPortEnv({}),
+          launchEnv: launch.env,
+          detached: true,
+          stdio: ["ignore", "ignore", "ignore"],
+        }
+      );
+    } catch (error) {
+      resolve({ ok: false, error });
+      return;
+    }
     child.once("spawn", () => {
       child.unref();
       resolve({ ok: true, child });
@@ -510,6 +533,7 @@ const launchRecompilation = async (
 ): Promise<RecompilationActionResult> => {
   const state = await getRecompilationInstallState(ref);
   if (!state?.installPath) return { ok: false, reason: "not_installed" };
+  await sanitizeRecompilationInstall(state.installPath);
   if (!state.executablePath) return { ok: false, reason: "no_executable" };
 
   const executablePath = await refreshDeclaredEntry(
@@ -552,6 +576,19 @@ const launchRecompilation = async (
   }
   if (!launch.ok) return { ok: false, reason: launch.reason };
 
+  let sandbox: RecompilationSandbox;
+  try {
+    sandbox = await prepareRecompilationSandbox(
+      ref.slug,
+      state.installPath,
+      (await getRecompilationRomState(ref))?.romPath
+    );
+  } catch (error) {
+    logger.error("Failed to prepare the recompilation sandbox", error);
+    reportRecompilationSandboxError(error);
+    return { ok: false, reason: "launch_failed" };
+  }
+
   if (!(await prepareRecompilationCloudSave(ref))) {
     return { ok: false, reason: "cloud_save_conflict" };
   }
@@ -559,7 +596,7 @@ const launchRecompilation = async (
   const consoleHider = shouldHideRecompilationConsole(ref.slug)
     ? startConsoleHider()
     : null;
-  const spawned = await spawnPort(executablePath, launch);
+  const spawned = await spawnPort(executablePath, launch, sandbox);
   if (spawned.ok && spawned.child.pid) {
     consoleHider?.stdin?.end(`${spawned.child.pid}\n`);
   } else {
@@ -567,6 +604,7 @@ const launchRecompilation = async (
   }
   if (!spawned.ok) {
     logger.error("Failed to launch recompilation", spawned.error);
+    reportRecompilationSandboxError(spawned.error);
     clearRecompilationCloudSaveGuard(ref);
     return { ok: false, reason: "launch_failed" };
   }

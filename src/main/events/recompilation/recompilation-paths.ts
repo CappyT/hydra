@@ -51,10 +51,11 @@ export const readInstallMarker = async (
   installDirectory: string
 ): Promise<InstallMarker | null> => {
   try {
-    const raw = await fs.promises.readFile(
-      path.join(installDirectory, INSTALL_MARKER_FILE),
-      "utf-8"
-    );
+    const markerPath = path.join(installDirectory, INSTALL_MARKER_FILE);
+    // Fork: the sandboxed port can write this folder; a FIFO or link here would
+    // stall or redirect the read.
+    if (!(await fs.promises.lstat(markerPath)).isFile()) return null;
+    const raw = await fs.promises.readFile(markerPath, "utf-8");
     return JSON.parse(raw) as InstallMarker;
   } catch {
     return null;

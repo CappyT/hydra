@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { SandboxUnavailableError } from "../services/sandbox-command-builder";
 
-const within = (parent: string, child: string): boolean => {
+export const within = (parent: string, child: string): boolean => {
   const relative = path.relative(parent, child);
   return (
     relative === "" ||

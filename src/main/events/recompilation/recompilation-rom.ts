@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -14,7 +13,12 @@ import type {
   RecompilationRomState,
 } from "@types";
 import { isCompletedLikeDownload } from "../../../types";
-import { downloadsSublevel, gamesSublevel, levelKeys } from "@main/level";
+import {
+  downloadsSublevel,
+  gamesSublevel,
+  levelKeys,
+  recompilationRomChoicesSublevel,
+} from "@main/level";
 import { t } from "i18next";
 import { logger, SevenZip, WindowManager } from "@main/services";
 import {
@@ -26,6 +30,14 @@ import {
 } from "./recompilation-paths";
 import recompilationMeta from "./recompilation-meta.json";
 import { toZ64 } from "./n64-rom";
+import {
+  prepareRecompilationSandbox,
+  reportRecompilationSandboxError,
+  sanitizeRecompilationFolders,
+  sanitizeRecompilationInstall,
+  spawnSandboxedRecompilation,
+  type RecompilationSandbox,
+} from "./recompilation-sandbox";
 import {
   isPreparedForVersion,
   readInstallerEvent,
@@ -57,7 +69,6 @@ export const getRecompilationExecutableOverride = (slug: string) =>
 const getLibraryRomExtensions = (slug: string) =>
   getRecompilationRomMeta(slug)?.extensions ?? [];
 
-const ROM_CHOICE_FILE = ".hydra-recompilation-rom.json";
 const EXTRACTED_ROM_FOLDER = ".hydra-rom";
 const ARCHIVE_EXTENSIONS = new Set([".zip", ".7z", ".rar"]);
 const ROM_SCAN_DEPTH = 2;
@@ -85,16 +96,16 @@ const fileExists = async (filePath: string | null | undefined) => {
   }
 };
 
+// Fork: the choice lives in the launcher database, never in the port folder the
+// sandboxed port can write (see recompilation-rom-choices.ts).
 const readRomChoice = async (
   installDirectory: string
 ): Promise<RomChoice | null> => {
   try {
-    const raw = await fs.promises.readFile(
-      path.join(installDirectory, ROM_CHOICE_FILE),
-      "utf-8"
-    );
-    const parsed = JSON.parse(raw) as RomChoice;
-    return parsed.source === "library" || parsed.source === "file"
+    const parsed = (await recompilationRomChoicesSublevel.get(
+      path.resolve(installDirectory)
+    )) as RomChoice | undefined;
+    return parsed?.source === "library" || parsed?.source === "file"
       ? parsed
       : null;
   } catch {
@@ -104,11 +115,16 @@ const readRomChoice = async (
 
 const writeRomChoice = async (installDirectory: string, choice: RomChoice) => {
   await fs.promises.mkdir(installDirectory, { recursive: true });
-  await fs.promises.writeFile(
-    path.join(installDirectory, ROM_CHOICE_FILE),
-    JSON.stringify(choice, null, 2)
+  await recompilationRomChoicesSublevel.put(
+    path.resolve(installDirectory),
+    choice
   );
 };
+
+export const forgetRecompilationRomChoice = (installDirectory: string) =>
+  recompilationRomChoicesSublevel
+    .del(path.resolve(installDirectory))
+    .catch(() => undefined);
 
 const findRomInFolder = async (
   directory: string,
@@ -380,11 +396,13 @@ const writeRomFile = async (
     }
   }
 
-  try {
-    await fs.promises.link(source, destination);
-  } catch {
-    await fs.promises.copyFile(source, destination);
-  }
+  // Fork: a hard link would let the sandboxed port write the user's ROM through
+  // the shared inode. A reflink copy shares no inode and is free on btrfs.
+  await fs.promises.copyFile(
+    source,
+    destination,
+    fs.constants.COPYFILE_FICLONE
+  );
 };
 
 const removeStaleRomTarget = async (
@@ -466,6 +484,7 @@ const runRomInstaller = async (
   command: string[],
   installDirectory: string,
   romPath: string,
+  sandbox: RecompilationSandbox,
   onStep?: (step: RecompilationPrepareStep) => void
 ) => {
   const [name, ...args] = command;
@@ -477,17 +496,20 @@ const runRomInstaller = async (
       return;
     }
 
-    const child = spawn(
+    const child = spawnSandboxedRecompilation(
+      sandbox,
       executable,
       args.map((arg) => fillRomPlaceholders(arg, romPath)),
       {
         cwd: installDirectory,
+        baseEnv: process.env,
         stdio: ["ignore", "pipe", "ignore"],
-        shell: false,
       }
     );
+    // stdio[1] is "pipe", so stdout is always set.
+    const stdout = child.stdout!;
     let current: RecompilationPrepareStep = {};
-    readline.createInterface({ input: child.stdout }).on("line", (line) => {
+    readline.createInterface({ input: stdout }).on("line", (line) => {
       const next = readInstallerEvent(line.trim(), current);
       if (!next) return;
       current = next;
@@ -579,6 +601,14 @@ export const prepareRecompilationRom = async (
   let romPath = state.romPath;
 
   try {
+    await sanitizeRecompilationInstall(installDirectory);
+    const sandbox = await prepareRecompilationSandbox(
+      ref.slug,
+      installDirectory,
+      state.romPath
+    );
+    await sanitizeRecompilationFolders(sandbox);
+
     if (!isPrepared || !(await fileExists(romPath))) {
       romPath = await unpackRom(
         state.romPath,
@@ -617,8 +647,11 @@ export const prepareRecompilationRom = async (
         meta.path.installer,
         installDirectory,
         romPath,
+        sandbox,
         onStep
       );
+      // The tool ran sandboxed with write access; check again before the config write.
+      await sanitizeRecompilationFolders(sandbox);
     }
     if (meta.path?.config) {
       await writeRomConfig(meta.path.config, baseDirectory, romPath);
@@ -649,6 +682,7 @@ export const prepareRecompilationRom = async (
     }
   } catch (error) {
     logger.error(`Failed to prepare the ROM for ${ref.slug}`, error);
+    reportRecompilationSandboxError(error);
     return { ok: false, reason: "rom_prepare_failed" };
   }
 

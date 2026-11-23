@@ -51,7 +51,7 @@ export interface SandboxedLaunchCommand extends ResolvedLaunchCommand {
 }
 
 /** Anything a sandboxed spawn's stdio array may hold at index 0..3. */
-type SeccompStdioEntry = "ignore" | "inherit" | "pipe" | number | null;
+export type SeccompStdioEntry = "ignore" | "inherit" | "pipe" | number | null;
 
 type SandboxGame = Pick<
   Game,
