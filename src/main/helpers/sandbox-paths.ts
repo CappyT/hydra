@@ -26,6 +26,30 @@ const canonical = (value: string): string => {
 /** Removable media mounts (udisks, Steam Deck SD card) are game locations. */
 const RUN_MEDIA = "/run/media";
 
+const LAUNCHER_GAME_DIRS = [
+  "sandbox-homes",
+  "wine-prefixes",
+  "wine-prefix",
+  "Downloads",
+];
+
+/**
+ * The only hidden home locations a game may get: the folders where the stores
+ * keep games and prefixes. Their client trees stay out: the Steam root holds
+ * the client binaries and `steam.pipe`, a command channel to the unsandboxed
+ * client.
+ */
+const HIDDEN_HOME_GAME_DIRS = [
+  ".wine",
+  ".steam/steam/steamapps",
+  ".steam/root/steamapps",
+  ".local/share/Steam/steamapps",
+  ".local/share/lutris",
+  ".local/share/bottles/bottles",
+  ".var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps",
+  ".var/app/com.valvesoftware.Steam/data/Steam/steamapps",
+];
+
 /** Reject broad mounts and credential/tool roots, including symlink aliases. */
 export const assertSafeSandboxPath = (
   target: string,
@@ -88,7 +112,10 @@ export const assertSafeSandboxPath = (
     ".profile",
     ".zshrc",
     ".local/bin",
+    "bin",
     ".local/share/umu",
+    ".local/share/lutris/runners",
+    ".local/share/lutris/runtime",
     ".config/systemd",
     ".config/autostart",
     ".config/gh",
@@ -103,14 +130,31 @@ export const assertSafeSandboxPath = (
     throw new SandboxUnavailableError(
       `Sandbox refuses sensitive host path: ${target}`
     );
+  const launcherGameDirs = LAUNCHER_GAME_DIRS.map((item) =>
+    path.join(data, item)
+  );
   if (
     within(data, candidate) &&
-    !["sandbox-homes", "wine-prefixes", "wine-prefix", "Downloads"].some(
-      (item) => within(path.join(data, item), candidate)
-    )
+    !launcherGameDirs.some((dir) => within(dir, candidate))
   ) {
     throw new SandboxUnavailableError(
       `Sandbox refuses launcher state: ${target}`
+    );
+  }
+  // Hidden home entries hold shell, session and tool config a writable bind
+  // could plant code in; a denylist cannot list them all.
+  if (
+    within(hostHome, candidate) &&
+    path.relative(hostHome, candidate).startsWith(".") &&
+    ![
+      ...launcherGameDirs,
+      ...HIDDEN_HOME_GAME_DIRS.map((item) =>
+        canonical(path.join(hostHome, item))
+      ),
+    ].some((dir) => within(dir, candidate))
+  ) {
+    throw new SandboxUnavailableError(
+      `Sandbox refuses hidden home path: ${target}`
     );
   }
 };
