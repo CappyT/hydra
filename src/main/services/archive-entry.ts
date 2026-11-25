@@ -1,10 +1,31 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs";
+import path from "node:path";
 import { promisify } from "node:util";
+import {
+  buildExtractionSandboxArgs,
+  listArchiveVolumes,
+} from "./extraction-sandbox";
 
 const execFileAsync = promisify(execFile);
 const ARCHIVE_LIST_MAX_BYTES = 8 * 1024 * 1024;
 const ARCHIVE_OPERATION_TIMEOUT_MS = 30_000;
+
+/**
+ * Listing and reading parse the same hostile bytes as extraction, so on Linux
+ * they run in the same bwrap profile, with the archive volumes read-only and
+ * nothing writable. A missing bwrap fails the spawn.
+ */
+const sandboxed = (binaryPath: string, args: string[], archivePath: string) =>
+  process.platform === "linux"
+    ? buildExtractionSandboxArgs(binaryPath, args, {
+        binds: listArchiveVolumes(archivePath).map((volume) => ({
+          path: volume,
+          writable: false,
+        })),
+        chdir: path.dirname(archivePath),
+      })
+    : { command: binaryPath, args };
 
 export interface ArchiveEntry {
   name: string;
@@ -34,17 +55,19 @@ export const listArchiveEntries = async (
   archivePath: string,
   signal?: AbortSignal
 ): Promise<ArchiveEntry[]> => {
-  const { stdout } = await execFileAsync(
+  const resolved = path.resolve(archivePath);
+  const { command, args } = sandboxed(
     binaryPath,
-    ["l", "-slt", "-ba", "-sccUTF-8", "-p-", "--", archivePath],
-    {
-      encoding: "utf8",
-      maxBuffer: ARCHIVE_LIST_MAX_BYTES,
-      timeout: ARCHIVE_OPERATION_TIMEOUT_MS,
-      signal,
-      windowsHide: true,
-    }
+    ["l", "-slt", "-ba", "-sccUTF-8", "-p-", "--", resolved],
+    resolved
   );
+  const { stdout } = await execFileAsync(command, args, {
+    encoding: "utf8",
+    maxBuffer: ARCHIVE_LIST_MAX_BYTES,
+    timeout: ARCHIVE_OPERATION_TIMEOUT_MS,
+    signal,
+    windowsHide: true,
+  });
   return stdout.split(/\r?\n\r?\n/).flatMap((block) => {
     const fields = new Map(
       block.split(/\r?\n/).map((line) => {
@@ -80,16 +103,18 @@ export const readArchiveEntry = async (
   maxBytes: number,
   signal?: AbortSignal
 ): Promise<Buffer> => {
-  const { stdout } = await execFileAsync(
+  const resolved = path.resolve(archivePath);
+  const { command, args } = sandboxed(
     binaryPath,
-    ["x", "-so", "-spd", "-p-", `-i!${entryName}`, "--", archivePath],
-    {
-      encoding: "buffer",
-      maxBuffer: maxBytes,
-      timeout: ARCHIVE_OPERATION_TIMEOUT_MS,
-      signal,
-      windowsHide: true,
-    }
+    ["x", "-so", "-spd", "-p-", `-i!${entryName}`, "--", resolved],
+    resolved
   );
+  const { stdout } = await execFileAsync(command, args, {
+    encoding: "buffer",
+    maxBuffer: maxBytes,
+    timeout: ARCHIVE_OPERATION_TIMEOUT_MS,
+    signal,
+    windowsHide: true,
+  });
   return stdout;
 };

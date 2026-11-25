@@ -6,6 +6,11 @@ import path from "node:path";
 import { logger } from "./logger";
 import { resolveSystemBinary } from "@main/helpers/resolve-system-binary";
 import { listArchiveEntries, readArchiveEntry } from "./archive-entry";
+import {
+  createSevenZipSandbox,
+  removeEscapingSymlinksLogged,
+} from "./extraction-hardening";
+import { listArchiveVolumes } from "./extraction-sandbox";
 
 export const binaryName = {
   linux: "7zzs",
@@ -94,7 +99,18 @@ export class SevenZip {
 
     await fs.promises.mkdir(destination, { recursive: true });
 
-    return new Promise((resolve, reject) => {
+    const sandbox = createSevenZipSandbox({
+      binds: [
+        ...listArchiveVolumes(path.resolve(destination, filePath)).map(
+          (volume) => ({ path: volume, writable: false })
+        ),
+        { path: destination, writable: true },
+      ],
+      chdir: destination,
+    });
+    await removeEscapingSymlinksLogged(destination);
+
+    return new Promise<ExtractionResult>((resolve, reject) => {
       let settled = false;
       let activeAttempt = 0;
 
@@ -118,8 +134,9 @@ export class SevenZip {
         };
 
         const stream = Seven.extractFull(filePath, ".", options);
+        const command = sandbox(stream._bin, stream._args);
 
-        stream._childProcess = spawn(stream._bin, stream._args, {
+        stream._childProcess = spawn(command.command, command.args, {
           cwd: destination,
           detached: true,
           windowsHide: true,
@@ -171,7 +188,13 @@ export class SevenZip {
             logger.info(
               `Failed to extract file: ${filePath} with password: "${password}". Trying next password...`
             );
-            tryPassword(index + 1);
+            removeEscapingSymlinksLogged(destination).then(
+              () => tryPassword(index + 1),
+              (error) => {
+                settled = true;
+                reject(error);
+              }
+            );
           } else {
             settled = true;
             logger.error(
@@ -185,7 +208,7 @@ export class SevenZip {
       };
 
       tryPassword(0);
-    });
+    }).finally(() => removeEscapingSymlinksLogged(destination));
   }
 
   public static async createZip({
@@ -201,6 +224,17 @@ export class SevenZip {
     await fs.promises.mkdir(path.dirname(destinationPath), { recursive: true });
     signal?.throwIfAborted();
 
+    const sandbox = createSevenZipSandbox({
+      binds: [
+        {
+          path: path.dirname(path.resolve(sourcePath, destinationPath)),
+          writable: true,
+        },
+        { path: sourcePath, writable: false },
+      ],
+      chdir: sourcePath,
+    });
+
     return new Promise((resolve, reject) => {
       const options: CommandLineSwitches = {
         $bin: this.binaryPath,
@@ -211,8 +245,9 @@ export class SevenZip {
       };
 
       const stream = Seven.add(destinationPath, ".", options);
+      const command = sandbox(stream._bin, stream._args);
 
-      const childProcess = spawn(stream._bin, stream._args, {
+      const childProcess = spawn(command.command, command.args, {
         cwd: sourcePath,
         windowsHide: true,
       });
@@ -270,11 +305,24 @@ export class SevenZip {
 
       const options: CommandLineSwitches = {
         $bin: this.binaryPath,
+        $defer: true,
         noWildcards: true,
         password: password || undefined,
       };
 
-      const stream = Seven.list(filePath, options);
+      const archivePath = path.resolve(filePath);
+      const stream = Seven.list(archivePath, options);
+      const command = createSevenZipSandbox({
+        binds: listArchiveVolumes(archivePath).map((volume) => ({
+          path: volume,
+          writable: false,
+        })),
+        chdir: path.dirname(archivePath),
+      })(stream._bin, stream._args);
+
+      stream._childProcess = spawn(command.command, command.args, {
+        windowsHide: true,
+      });
 
       stream.on("data", (data) => {
         if (data.file) {
@@ -289,6 +337,8 @@ export class SevenZip {
       stream.on("error", (err) => {
         reject(err);
       });
+
+      Seven.listen(stream);
     });
   }
 }

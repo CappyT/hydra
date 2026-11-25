@@ -34,6 +34,7 @@ import pngToIco from "png-to-ico";
 import sharp from "sharp";
 import { ExtractionProgress, SevenZip } from "./7zip";
 import { type ArchiveExtractors, extractArchive } from "./archive-extraction";
+import { extractInPlaceWithoutEscapingSymlinks } from "./extraction-hardening";
 import { NativeAddon } from "./native-addon";
 import { HydraApi } from "./hydra-api";
 import * as emulators from "./emulators";
@@ -134,7 +135,9 @@ const isInPlaceExtractionEnabled = () =>
 
 const archiveExtractors: Omit<ArchiveExtractors, "inPlaceEnabled"> = {
   inPlace: (options, onProgress) =>
-    NativeAddon.extractArchiveInPlace(options, onProgress),
+    extractInPlaceWithoutEscapingSymlinks(options.outputPath, () =>
+      NativeAddon.extractArchiveInPlace(options, onProgress)
+    ),
   hasInPlaceJournal: (archivePath) => {
     try {
       return NativeAddon.inPlaceJournalExists(archivePath);
