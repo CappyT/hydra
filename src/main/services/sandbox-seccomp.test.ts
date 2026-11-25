@@ -5,9 +5,15 @@ import { describe, it } from "node:test";
 import {
   AUDIT_ARCH_I386,
   AUDIT_ARCH_X86_64,
+  ALLOWED_NETLINK_PROTOCOLS,
+  ALLOWED_SOCKET_FAMILIES,
   BLOCKED_SYSCALLS,
+  EAFNOSUPPORT,
   ENOSYS,
   EPERM,
+  EPROTONOSUPPORT,
+  I386_SOCKETCALL,
+  SOCKETCALL_SYS_SOCKET,
   PROTECTION_LEVELS,
   SECCOMP_RET_ALLOW,
   SECCOMP_RET_ERRNO_ENOSYS,
@@ -32,6 +38,7 @@ const OP_JA = 0x05;
 const OP_RET_K = 0x06;
 
 const MODES = ["enforce", "audit"] as const;
+const SECCOMP_RET_ERRNO = 0x00050000;
 
 type Cell = { code: number; jt: number; jf: number; k: number };
 type Instr = {
@@ -62,6 +69,7 @@ const runFilter = (filter, data) => {
       else if (k === 4) a = data.arch >>> 0;
       else if (k === 16) a = (data.arg0Low ?? 0) >>> 0;
       else if (k === 20) a = (data.arg0High ?? 0) >>> 0;
+      else if (k === 32) a = (data.arg2Low ?? 0) >>> 0;
       else throw new Error(`unexpected LD offset ${k}`);
       pc += 1;
     } else if (code === OP_JEQ_K) {
@@ -134,6 +142,8 @@ const MEDIUM_ADDS = [
   "io_uring_setup",
   "io_uring_enter",
   "io_uring_register",
+  "socket",
+  "socketpair",
 ];
 const HIGH_ADDS = [
   "ptrace",
@@ -566,6 +576,130 @@ describe("personality argument filter (high level)", () => {
   });
 });
 
+describe("socket family argument filter (medium level)", () => {
+  const AF_ALG = 38;
+  const AF_VSOCK = 40;
+  const AF_PACKET = 17;
+  const AF_NETLINK = 16;
+  const NETLINK_NETFILTER = 12;
+  const errnoAction = (errno: number) => (SECCOMP_RET_ERRNO | errno) >>> 0;
+  const calls = [
+    { name: "socket", ...BLOCKED_SYSCALLS.socket },
+    { name: "socketpair", ...BLOCKED_SYSCALLS.socketpair },
+  ].flatMap((entry) => [
+    {
+      label: `${entry.name} x86_64`,
+      arch: AUDIT_ARCH_X86_64,
+      nr: entry.x86_64,
+    },
+    { label: `${entry.name} i386`, arch: AUDIT_ARCH_I386, nr: entry.i386 },
+  ]);
+
+  it("passes the game families and denies every other one", () => {
+    for (const level of ["medium", "high"] as const) {
+      const filter = buildSeccompFilter(level);
+      for (const call of calls) {
+        for (const family of ALLOWED_SOCKET_FAMILIES) {
+          assert.equal(
+            runFilter(filter, { ...call, arg0Low: family }),
+            SECCOMP_RET_ALLOW,
+            `${call.label} family ${family} at ${level}`
+          );
+        }
+        for (const family of [0, AF_ALG, AF_VSOCK, AF_PACKET, 41, 43, 0xffff]) {
+          assert.equal(
+            runFilter(filter, { ...call, arg0Low: family }),
+            errnoAction(EAFNOSUPPORT),
+            `${call.label} family ${family} at ${level}`
+          );
+        }
+      }
+    }
+  });
+
+  it("passes netlink only for the allowed protocols", () => {
+    const filter = buildSeccompFilter("medium");
+    for (const call of calls) {
+      for (const protocol of ALLOWED_NETLINK_PROTOCOLS) {
+        assert.equal(
+          runFilter(filter, {
+            ...call,
+            arg0Low: AF_NETLINK,
+            arg2Low: protocol,
+          }),
+          SECCOMP_RET_ALLOW,
+          `${call.label} netlink ${protocol}`
+        );
+      }
+      for (const protocol of [4, 6, 9, NETLINK_NETFILTER, 16, 21]) {
+        assert.equal(
+          runFilter(filter, {
+            ...call,
+            arg0Low: AF_NETLINK,
+            arg2Low: protocol,
+          }),
+          errnoAction(EPROTONOSUPPORT),
+          `${call.label} netlink ${protocol}`
+        );
+      }
+    }
+  });
+
+  it("does not filter sockets at low, and logs in audit mode", () => {
+    const low = buildSeccompFilter("low");
+    const audit = buildSeccompFilter("medium", "audit");
+    for (const call of calls) {
+      assert.equal(
+        runFilter(low, { ...call, arg0Low: AF_ALG }),
+        SECCOMP_RET_ALLOW
+      );
+      assert.equal(
+        runFilter(audit, { ...call, arg0Low: AF_ALG }),
+        SECCOMP_RET_LOG
+      );
+      assert.equal(
+        runFilter(audit, { ...call, arg0Low: 2 }),
+        SECCOMP_RET_ALLOW
+      );
+    }
+  });
+
+  it("leaves i386 socketcall open below high and rejects its SYS_SOCKET at high", () => {
+    const socketcall = { arch: AUDIT_ARCH_I386, nr: I386_SOCKETCALL };
+    for (const level of ["low", "medium"] as const) {
+      assert.equal(
+        runFilter(buildSeccompFilter(level), {
+          ...socketcall,
+          arg0Low: SOCKETCALL_SYS_SOCKET,
+        }),
+        SECCOMP_RET_ALLOW,
+        `socketcall(SYS_SOCKET) at ${level}`
+      );
+    }
+    const high = buildSeccompFilter("high");
+    assert.equal(
+      runFilter(high, { ...socketcall, arg0Low: SOCKETCALL_SYS_SOCKET }),
+      errnoAction(EAFNOSUPPORT)
+    );
+    // connect (3), send (9) and the rest of the multiplexer keep working.
+    for (const call of [2, 3, 9, 10, 18]) {
+      assert.equal(
+        runFilter(high, { ...socketcall, arg0Low: call }),
+        SECCOMP_RET_ALLOW
+      );
+    }
+    // The same number on x86_64 is another syscall and is not touched.
+    assert.equal(
+      runFilter(high, {
+        arch: AUDIT_ARCH_X86_64,
+        nr: I386_SOCKETCALL,
+        arg0Low: SOCKETCALL_SYS_SOCKET,
+      }),
+      SECCOMP_RET_ALLOW
+    );
+  });
+});
+
 describe("audit mode", () => {
   it("differs from enforce ONLY in the deny return constants", () => {
     for (const level of PROTECTION_LEVELS) {
@@ -585,8 +719,9 @@ describe("audit mode", () => {
           i !== enforce.length - 2
         ) {
           // Deny slot: enforce carries an errno, audit carries RET_LOG.
-          assert.ok(
-            e.k === SECCOMP_RET_ERRNO_ENOSYS || e.k === SECCOMP_RET_ERRNO_EPERM,
+          assert.equal(
+            e.k & 0xffff0000,
+            SECCOMP_RET_ERRNO,
             `enforce deny slot[${i}]`
           );
           assert.equal(a.k, SECCOMP_RET_LOG, `audit deny slot[${i}]`);

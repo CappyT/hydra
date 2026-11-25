@@ -20,11 +20,15 @@
  * ⊂ high):
  *   low    — the Tier-A kernel-LPE / escape primitives only (all ENOSYS).
  *   medium — low + the NUMA memory-policy family, userfaultfd, perf_event_open
- *            (EPERM) and the io_uring trio (ENOSYS). This is the DEFAULT.
+ *            (EPERM), the io_uring trio (ENOSYS) and an argument-filtered
+ *            socket/socketpair (only unix, inet, inet6 and two netlink
+ *            protocols pass). This is the DEFAULT.
  *   high   — medium + calls that may genuinely break some titles: ptrace,
  *            name_to_handle_at, pidfd_getfd, process_madvise and
  *            set_mempolicy_home_node (EPERM); clone3 and memfd_secret (ENOSYS);
- *            plus an argument-filtered personality (only benign personas pass).
+ *            an argument-filtered personality (only benign personas pass); and
+ *            the SYS_SOCKET call of i386 socketcall, so 32-bit programs get no
+ *            socket.
  */
 
 import type { Game, UserPreferences } from "@types";
@@ -52,6 +56,7 @@ const SECCOMP_DATA_ARCH_OFFSET = 4;
 // high halves are read separately when a syscall needs argument filtering.
 const SECCOMP_DATA_ARG0_LOW_OFFSET = 16;
 const SECCOMP_DATA_ARG0_HIGH_OFFSET = 20;
+const SECCOMP_DATA_ARG2_LOW_OFFSET = 32;
 
 // --- Audit arch tokens (uapi/linux/audit.h). ---
 export const AUDIT_ARCH_X86_64 = 0xc000003e;
@@ -68,6 +73,8 @@ const SECCOMP_RET_DATA = 0x0000ffff;
 // expected failure.
 export const ENOSYS = 38;
 export const EPERM = 1;
+export const EAFNOSUPPORT = 97;
+export const EPROTONOSUPPORT = 93;
 
 /** SECCOMP_RET_ERRNO | (ENOSYS & SECCOMP_RET_DATA) = 0x00050026. */
 export const SECCOMP_RET_ERRNO_ENOSYS =
@@ -178,10 +185,11 @@ export interface SyscallNumbers {
   errno?: number;
   /**
    * When set, matching this syscall number does not deny outright but jumps to
-   * a dedicated argument-filter block; only "personality" exists today (see the
-   * PERSONALITY_* values). `errno` is then the fallback for rejected arguments.
+   * a dedicated argument-filter block: "personality" (see the PERSONALITY_*
+   * values) or "socket" (see ALLOWED_SOCKET_FAMILIES). `errno` is then the
+   * fallback for rejected arguments.
    */
-  argFilter?: "personality";
+  argFilter?: "personality" | "socket";
 }
 
 /**
@@ -239,6 +247,11 @@ export const BLOCKED_SYSCALLS: Record<string, SyscallNumbers> = {
   fsopen: { x86_64: 430, i386: 430 },
   fsconfig: { x86_64: 431, i386: 431 },
   fsmount: { x86_64: 432, i386: 432 },
+  fspick: { x86_64: 433, i386: 433 },
+  mount_setattr: { x86_64: 442, i386: 442 },
+  open_tree_attr: { x86_64: 467, i386: 467 },
+  // Disk quota control by file descriptor; same surface as quotactl.
+  quotactl_fd: { x86_64: 443, i386: 443 },
   // Legacy / obscure admin syscalls.
   uselib: { x86_64: 134, i386: 86 },
   ustat: { x86_64: 136, i386: 62 },
@@ -266,6 +279,27 @@ export const BLOCKED_SYSCALLS: Record<string, SyscallNumbers> = {
   io_uring_setup: { x86_64: 425, i386: 425, level: "medium" },
   io_uring_enter: { x86_64: 426, i386: 426, level: "medium" },
   io_uring_register: { x86_64: 427, i386: 427, level: "medium" },
+  // socket/socketpair (EAFNOSUPPORT) — ARGUMENT-FILTERED: only the families in
+  // ALLOWED_SOCKET_FAMILIES pass, and netlink only with a protocol in
+  // ALLOWED_NETLINK_PROTOCOLS. The rest (AF_ALG, AF_VSOCK, AF_PACKET, AF_KCM,
+  // netfilter and xfrm netlink, ...) is kernel attack surface no game needs;
+  // flatpak applies the same family list. The i386 socketcall(2) multiplexer
+  // takes the family behind a pointer, which seccomp cannot read, and 32-bit
+  // glibc creates every socket through it: that route stays open below "high".
+  socket: {
+    x86_64: 41,
+    i386: 359,
+    level: "medium",
+    errno: EAFNOSUPPORT,
+    argFilter: "socket",
+  },
+  socketpair: {
+    x86_64: 53,
+    i386: 360,
+    level: "medium",
+    errno: EAFNOSUPPORT,
+    argFilter: "socket",
+  },
 
   // --- Tier B, level "high" (may genuinely break some titles). ---
   // ptrace (EPERM) — anti-cheat/overlays sometimes trace; denying can break a
@@ -451,6 +485,24 @@ const LABEL_ALLOW = "allow";
 const LABEL_UNSUPPORTED = "unsupported_abi";
 const LABEL_PERSONALITY = "personality_block";
 const LABEL_PERSONALITY_HIGH = "personality_high";
+const LABEL_SOCKET = "socket_block";
+const LABEL_SOCKET_NETLINK = "socket_netlink";
+const LABEL_SOCKETCALL = "socketcall_block";
+
+// socket(2) families the "medium" arg-filter lets through: AF_UNIX, AF_INET,
+// AF_INET6 and AF_NETLINK. Netlink passes only for NETLINK_ROUTE (interface
+// and address queries) and NETLINK_KOBJECT_UEVENT (udev hotplug).
+const AF_NETLINK = 16;
+export const ALLOWED_SOCKET_FAMILIES = [1, 2, 10, AF_NETLINK];
+export const ALLOWED_NETLINK_PROTOCOLS = [0, 15];
+
+/**
+ * i386 socketcall(2): one syscall for every socket operation, with the call
+ * number in args[0]. "high" rejects its SYS_SOCKET call, which closes the
+ * family filter's 32-bit bypass and leaves 32-bit programs without sockets.
+ */
+export const I386_SOCKETCALL = 102;
+export const SOCKETCALL_SYS_SOCKET = 1;
 
 // personality(2) personas the "high" arg-filter lets through; every other value
 // falls to EPERM. PER_LINUX(0x0) is the default persona; ADDR_NO_RANDOMIZE
@@ -462,16 +514,21 @@ const PERSONALITY_ADDR_NO_RANDOMIZE = 0x00040000;
 const PERSONALITY_QUERY = 0xffffffff;
 
 /** Deny label an entry's errno routes to. Unset errno → the Tier-A ENOSYS. */
-const denyLabelFor = (errno: number | undefined): string =>
-  (errno ?? ENOSYS) === EPERM ? LABEL_DENY_EPERM : LABEL_DENY_ENOSYS;
+const denyLabelFor = (errno: number | undefined): string => {
+  const value = errno ?? ENOSYS;
+  if (value === ENOSYS) return LABEL_DENY_ENOSYS;
+  if (value === EPERM) return LABEL_DENY_EPERM;
+  return `deny_errno_${value}`;
+};
 
 /** Jump target for a matched syscall number: the personality argument-filter
  *  sub-block for arg-filtered entries, otherwise the deny return for its errno.
  *  (In audit mode the deny returns are RET_LOG, so this routing is unchanged.) */
-const matchTargetFor = (entry: SyscallNumbers): string =>
-  entry.argFilter === "personality"
-    ? LABEL_PERSONALITY
-    : denyLabelFor(entry.errno);
+const matchTargetFor = (entry: SyscallNumbers): string => {
+  if (entry.argFilter === "personality") return LABEL_PERSONALITY;
+  if (entry.argFilter === "socket") return LABEL_SOCKET;
+  return denyLabelFor(entry.errno);
+};
 
 /**
  * Builds the compiled seccomp cBPF filter for `level` as a Buffer ready to hand
@@ -507,6 +564,8 @@ export const buildSeccompFilter = (
   const usesPersonality = entries.some(
     (entry) => entry.argFilter === "personality"
   );
+  const usesSocket = entries.some((entry) => entry.argFilter === "socket");
+  const blocksSocketcall = usesSocket && level === "high";
   // Audit mode keeps the exact same structure but turns every block action into
   // RET_LOG: the call is allowed and logged, never errored. Only the two deny
   // return constants change, so audit vs enforce differ solely in those slots.
@@ -536,6 +595,9 @@ export const buildSeccompFilter = (
     if (entry.i386 === null) continue;
     program.push(jeq(entry.i386, matchTargetFor(entry), 0));
   }
+  if (blocksSocketcall) {
+    program.push(jeq(I386_SOCKETCALL, LABEL_SOCKETCALL, 0));
+  }
   program.push(ja(LABEL_ALLOW));
 
   // Argument-filtered personality handler, shared by both arches (args[0] offset
@@ -560,6 +622,29 @@ export const buildSeccompFilter = (
     program.push(jeq(0x00000000, LABEL_ALLOW, LABEL_DENY_EPERM));
   }
 
+  // Argument-filtered socket/socketpair handler, shared by both arches. The
+  // kernel reads the family and the protocol as 32-bit ints, so only the low
+  // words count.
+  const denyFamily = denyLabelFor(EAFNOSUPPORT);
+  const denyProtocol = denyLabelFor(EPROTONOSUPPORT);
+  if (usesSocket) {
+    program.push(load(SECCOMP_DATA_ARG0_LOW_OFFSET, LABEL_SOCKET));
+    for (const family of ALLOWED_SOCKET_FAMILIES) {
+      if (family === AF_NETLINK) continue;
+      program.push(jeq(family, LABEL_ALLOW, 0));
+    }
+    program.push(jeq(AF_NETLINK, LABEL_SOCKET_NETLINK, denyFamily));
+    program.push(load(SECCOMP_DATA_ARG2_LOW_OFFSET, LABEL_SOCKET_NETLINK));
+    ALLOWED_NETLINK_PROTOCOLS.forEach((protocol, index, all) => {
+      const last = index === all.length - 1;
+      program.push(jeq(protocol, LABEL_ALLOW, last ? denyProtocol : 0));
+    });
+  }
+  if (blocksSocketcall) {
+    program.push(load(SECCOMP_DATA_ARG0_LOW_OFFSET, LABEL_SOCKETCALL));
+    program.push(jeq(SOCKETCALL_SYS_SOCKET, denyFamily, LABEL_ALLOW));
+  }
+
   // Shared returns. The ENOSYS deny is always present (Tier-A is in every
   // level); the EPERM deny is emitted only when a selected entry routes to it
   // (an EPERM syscall or the personality fallback), so a level with no EPERM
@@ -567,6 +652,15 @@ export const buildSeccompFilter = (
   program.push(ret(denyEnosysAction, LABEL_DENY_ENOSYS));
   if (usesEperm) {
     program.push(ret(denyEpermAction, LABEL_DENY_EPERM));
+  }
+  if (usesSocket) {
+    for (const errno of [EAFNOSUPPORT, EPROTONOSUPPORT]) {
+      const action =
+        mode === "audit"
+          ? SECCOMP_RET_LOG
+          : (SECCOMP_RET_ERRNO | (errno & SECCOMP_RET_DATA)) >>> 0;
+      program.push(ret(action, denyLabelFor(errno)));
+    }
   }
   // Unsupported ABIs are never enabled by diagnostic audit mode.
   program.push(ret(SECCOMP_RET_ERRNO_ENOSYS, LABEL_UNSUPPORTED));
