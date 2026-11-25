@@ -122,7 +122,10 @@ const isWindowsExecutable = (executablePath: string) =>
 
 const ensureExecutablePermission = (executablePath: string) => {
   try {
-    const currentMode = fs.statSync(executablePath).mode;
+    // The game can replace its executable with a link to any file of the user.
+    const stat = fs.lstatSync(executablePath);
+    if (stat.isSymbolicLink()) return;
+    const currentMode = stat.mode;
     const hasOwnerExecuteBit = (currentMode & 0o100) !== 0;
 
     if (!hasOwnerExecuteBit) {
