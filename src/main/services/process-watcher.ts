@@ -218,9 +218,10 @@ const logPlaytimeTrace = (
 
 void GameExecutables.ensureLoaded();
 
+// Fork: never take the wine prefix from a process environment here; a game
+// could point another game's prefix at a host path the next launch binds.
 const findGamePathByProcess = async (
   processMap: Map<string, Set<string>>,
-  winePrefixMap: Map<string, string>,
   gameId: string
 ) => {
   const executables = GameExecutables.getExecutablesForGame(gameId);
@@ -247,10 +248,6 @@ const findGamePathByProcess = async (
               ...updateGameExecutablePath(game, path),
             };
 
-            if (process.platform === "linux" && winePrefixMap.has(path)) {
-              updatedGame.winePrefixPath = winePrefixMap.get(path)!;
-            }
-
             await gamesSublevel.put(gameKey, updatedGame);
             logger.info("Set game path", gameKey, path);
           }
@@ -266,7 +263,7 @@ const getSystemProcessMap = async () => {
 
   const {
     processMap: rawMap,
-    winePrefixMap: rawWineMap,
+    autoDetectProcessMap: rawAutoDetectMap,
     linuxProcesses,
     processTree,
   } = result;
@@ -275,9 +272,11 @@ const getSystemProcessMap = async () => {
     Object.entries(rawMap).map(([k, v]) => [k, new Set(v)])
   );
 
-  const winePrefixMap = new Map<string, string>(Object.entries(rawWineMap));
+  const autoDetectProcessMap = new Map<string, Set<string>>(
+    Object.entries(rawAutoDetectMap).map(([k, v]) => [k, new Set(v)])
+  );
 
-  return { processMap, winePrefixMap, linuxProcesses, processTree };
+  return { processMap, autoDetectProcessMap, linuxProcesses, processTree };
 };
 
 // Do not restore an old import flag or executable after an asynchronous sync.
@@ -390,7 +389,7 @@ export const watchProcesses = async () => {
     logger.warn("Process enumeration failed; skipping process watcher tick");
     return;
   }
-  const { processMap, winePrefixMap, linuxProcesses } = systemProcessMap;
+  const { processMap, autoDetectProcessMap, linuxProcesses } = systemProcessMap;
 
   const pidToProcess = new Map<number, LinuxProcessInfo>(
     linuxProcesses.map((process) => [process.pid, process])
@@ -401,7 +400,7 @@ export const watchProcesses = async () => {
     const executablePath = game.executablePath;
     if (!executablePath) {
       if (GameExecutables.getExecutablesForGame(game.objectId)) {
-        await findGamePathByProcess(processMap, winePrefixMap, game.objectId);
+        await findGamePathByProcess(autoDetectProcessMap, game.objectId);
       }
 
       continue;

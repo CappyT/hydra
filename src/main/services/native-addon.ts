@@ -237,6 +237,8 @@ type HydraNativeModule = {
 
 export type SystemProcessMap = {
   processMap: Record<string, string[]>;
+  /** processMap without processes outside the launcher's pid namespace. */
+  autoDetectProcessMap: Record<string, string[]>;
   winePrefixMap: Record<string, string>;
   processTree?: EpicProcessNode[];
   linuxProcesses: Array<{
@@ -254,15 +256,30 @@ export type SystemProcessMap = {
 // "map"   → posts back compact pre-built maps (used by the main loop's watchProcesses)
 const WORKER_CODE = `
 const { workerData, parentPort } = require('worker_threads');
+const fs = require('fs');
 const path = require('path');
 const addon = require(workerData.addonPath);
 const platform = process.platform;
+const procRoot = workerData.procRoot || '/proc';
+
+function readPidNamespace(pid) {
+  try {
+    return fs.readlinkSync(path.join(procRoot, String(pid), 'ns', 'pid'));
+  } catch (_) {
+    return null;
+  }
+}
 
 function buildMaps(processes) {
   const processMap = Object.create(null);
+  // Fork: a sandboxed game runs in its own pid namespace and controls its cwd,
+  // name and environment; only launcher-namespace processes may set a path.
+  const autoDetectProcessMap = Object.create(null);
   const winePrefixMap = Object.create(null);
   const linuxProcesses = [];
   const processTree = [];
+  const launcherPidNamespace =
+    platform === 'linux' ? readPidNamespace('self') : null;
 
   for (const proc of processes) {
     processTree.push({
@@ -283,8 +300,13 @@ function buildMaps(processes) {
 
     if (!key || !value) continue;
 
+    const autoDetectable =
+      platform !== 'linux' ||
+      (launcherPidNamespace !== null &&
+        readPidNamespace(proc.pid) === launcherPidNamespace);
+
     const steamCompatDataPath = proc.environ && proc.environ.STEAM_COMPAT_DATA_PATH;
-    if (steamCompatDataPath) winePrefixMap[value] = steamCompatDataPath;
+    if (steamCompatDataPath && autoDetectable) winePrefixMap[value] = steamCompatDataPath;
 
     if (platform === 'linux') {
       const appImagePath = proc.environ && proc.environ.APPIMAGE;
@@ -300,9 +322,20 @@ function buildMaps(processes) {
 
     if (!processMap[key]) processMap[key] = [];
     processMap[key].push(value);
+
+    if (autoDetectable) {
+      if (!autoDetectProcessMap[key]) autoDetectProcessMap[key] = [];
+      autoDetectProcessMap[key].push(value);
+    }
   }
 
-  return { processMap, winePrefixMap, linuxProcesses, processTree };
+  return {
+    processMap,
+    autoDetectProcessMap,
+    winePrefixMap,
+    linuxProcesses,
+    processTree,
+  };
 }
 
 parentPort.on('message', (type) => {
