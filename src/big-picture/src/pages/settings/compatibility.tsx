@@ -9,6 +9,12 @@ import {
   useState,
 } from "react";
 import { GAMEMODE_SITE_URL, MANGOHUD_SITE_URL } from "@shared";
+import {
+  SANDBOX_PERMISSIONS,
+  SANDBOX_PERMISSION_SETTINGS_KEYS,
+  getSandboxPermissionDefaults,
+  type SandboxPermission,
+} from "@renderer/helpers/sandbox-permissions";
 
 import { useTranslation } from "react-i18next";
 
@@ -22,6 +28,9 @@ import {
 import { useUserPreferences, useBigPictureToast } from "../../hooks";
 import type { FocusOverrides } from "../../services";
 import {
+  COMPATIBILITY_ALLOW_CAMERA_FOCUS_ID,
+  COMPATIBILITY_ALLOW_LOCAL_NETWORK_FOCUS_ID,
+  COMPATIBILITY_ALLOW_MICROPHONE_FOCUS_ID,
   COMPATIBILITY_COMMON_REDIST_BUTTON_ID,
   COMPATIBILITY_GAMEMODE_FOCUS_ID,
   COMPATIBILITY_MANGOHUD_FOCUS_ID,
@@ -38,6 +47,12 @@ import { SettingsSection } from "./settings-section";
 
 type SeccompLevel = "low" | "medium" | "high";
 
+const SANDBOX_PERMISSION_FOCUS_IDS: Record<SandboxPermission, string> = {
+  allowLocalNetwork: COMPATIBILITY_ALLOW_LOCAL_NETWORK_FOCUS_ID,
+  allowMicrophone: COMPATIBILITY_ALLOW_MICROPHONE_FOCUS_ID,
+  allowCamera: COMPATIBILITY_ALLOW_CAMERA_FOCUS_ID,
+};
+
 interface SettingsSectionProps {
   className?: string;
 }
@@ -50,6 +65,9 @@ interface CompatibilityForm {
   disableSeccomp: boolean;
   seccompLevel: SeccompLevel;
   disableNetworkIsolation: boolean;
+  allowLocalNetwork: boolean;
+  allowMicrophone: boolean;
+  allowCamera: boolean;
 }
 
 interface CompatibilityPreferenceValues {
@@ -60,6 +78,9 @@ interface CompatibilityPreferenceValues {
   disableSeccomp?: boolean;
   seccompLevel?: SeccompLevel;
   disableNetworkIsolation?: boolean;
+  allowLocalNetwork?: boolean;
+  allowMicrophone?: boolean;
+  allowCamera?: boolean;
 }
 
 interface CompatibilityItem {
@@ -84,6 +105,7 @@ const DEFAULT_FORM: CompatibilityForm = {
   disableSeccomp: false,
   seccompLevel: "medium",
   disableNetworkIsolation: false,
+  ...getSandboxPermissionDefaults(null),
 };
 
 const buildForm = (preferences: UserPreferences | null): CompatibilityForm =>
@@ -96,6 +118,7 @@ const buildForm = (preferences: UserPreferences | null): CompatibilityForm =>
         disableSeccomp: preferences.disableSeccomp ?? false,
         seccompLevel: preferences.seccompLevel ?? "medium",
         disableNetworkIsolation: preferences.disableNetworkIsolation ?? false,
+        ...getSandboxPermissionDefaults(preferences),
       }
     : DEFAULT_FORM;
 
@@ -449,6 +472,11 @@ export function CompatibilitySettingsSection({
     if (shouldRenderSandboxSection) {
       const sandboxEnabled = !form.disableSandbox;
       const seccompEnabled = !form.disableSeccomp && sandboxEnabled;
+      const sandboxPermissionValues: Record<SandboxPermission, boolean> = {
+        allowLocalNetwork: form.allowLocalNetwork,
+        allowMicrophone: form.allowMicrophone,
+        allowCamera: form.allowCamera,
+      };
 
       nextItems.push(
         {
@@ -595,7 +623,52 @@ export function CompatibilitySettingsSection({
               ) : null}
             </div>
           ),
-        }
+        },
+        ...SANDBOX_PERMISSIONS.map((permission) => {
+          const focusId = SANDBOX_PERMISSION_FOCUS_IDS[permission];
+          const key = SANDBOX_PERMISSION_SETTINGS_KEYS[permission];
+          // Without network isolation games share the host network, so the
+          // local network permission has nothing to filter.
+          const noNetworkIsolation =
+            permission === "allowLocalNetwork" &&
+            (form.disableNetworkIsolation || !networkIsolationAvailable);
+          const disabled =
+            !canUseSandboxSection ||
+            !sandboxAvailable ||
+            !sandboxEnabled ||
+            noNetworkIsolation;
+
+          return {
+            focusId,
+            disabled,
+            render: (navigationOverrides: FocusOverrides) => (
+              <div
+                key={focusId}
+                className="compatibility-settings-section__behavior-item"
+              >
+                <Checkbox
+                  id={focusId}
+                  label={t(key)}
+                  secondaryText={
+                    noNetworkIsolation
+                      ? t("allow_local_network_no_isolation")
+                      : t(`${key}_description`)
+                  }
+                  checked={sandboxPermissionValues[permission]}
+                  disabled={disabled}
+                  focusId={focusId}
+                  navigationOverrides={navigationOverrides}
+                  block
+                  onChange={(checked) => {
+                    void updateCompatibilityPreferences({
+                      [permission]: checked,
+                    });
+                  }}
+                />
+              </div>
+            ),
+          };
+        })
       );
     }
 
@@ -636,6 +709,9 @@ export function CompatibilitySettingsSection({
     form.disableSeccomp,
     form.seccompLevel,
     form.disableNetworkIsolation,
+    form.allowLocalNetwork,
+    form.allowMicrophone,
+    form.allowCamera,
     gamemodeAvailable,
     handleInstallCommonRedist,
     installingCommonRedist,
@@ -749,6 +825,23 @@ export function CompatibilitySettingsSection({
               .map((item) =>
                 item.render(navigationOverridesByFocusId[item.focusId] ?? {})
               )}
+          </div>
+        </SettingsSection>
+      ) : null}
+
+      {shouldRenderSandboxSection ? (
+        <SettingsSection
+          title={t("sandbox_permissions")}
+          description={t("sandbox_permissions_description")}
+        >
+          <div className="compatibility-settings-section__content">
+            {SANDBOX_PERMISSIONS.map((permission) => {
+              const focusId = SANDBOX_PERMISSION_FOCUS_IDS[permission];
+
+              return items
+                .find((item) => item.focusId === focusId)
+                ?.render(navigationOverridesByFocusId[focusId] ?? {});
+            })}
           </div>
         </SettingsSection>
       ) : null}

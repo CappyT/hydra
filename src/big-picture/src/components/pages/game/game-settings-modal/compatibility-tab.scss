@@ -46,13 +46,21 @@
   color: var(--text-secondary);
 }
 
-.game-compatibility-settings-tab__seccomp {
+.game-compatibility-settings-tab__permissions {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing-unit) * 4);
+}
+
+.game-compatibility-settings-tab__seccomp,
+.game-compatibility-settings-tab__permission {
   display: flex;
   flex-direction: column;
   gap: calc(var(--spacing-unit) * 2);
 }
 
 .game-compatibility-settings-tab__seccomp-description,
+.game-compatibility-settings-tab__permission-description,
 .game-compatibility-settings-tab__sandbox-paths-description {
   font-size: 12px;
   color: var(--text-secondary);

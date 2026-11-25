@@ -66,6 +66,10 @@ import { GameAssetsSettings } from "./game-assets-settings";
 import { debounce } from "lodash-es";
 import { levelDBService } from "@renderer/services/leveldb.service";
 import { getGameKey, getGameTitleFromExecutablePath } from "@renderer/helpers";
+import {
+  getSandboxPermissionDefaults,
+  type SandboxPermission,
+} from "@renderer/helpers/sandbox-permissions";
 import "./game-options-modal.scss";
 import { logger } from "@renderer/logger";
 import { GameOptionsSidebar } from "./game-options-modal/sidebar";
@@ -932,6 +936,19 @@ export function GameOptionsModal({
     updateGame();
   };
 
+  const handleChangeSandboxPermission = async (
+    permission: SandboxPermission,
+    value: boolean | null
+  ) => {
+    await globalThis.window.electron.updateGameSandboxPermission(
+      game.shop,
+      game.objectId,
+      permission,
+      value
+    );
+    updateGame();
+  };
+
   const handleAddSandboxPath = async () => {
     const { filePaths } = await globalThis.window.electron.showOpenDialog({
       properties: ["openDirectory"],
@@ -1643,6 +1660,9 @@ export function GameOptionsModal({
                   networkIsolationEnabled={networkIsolationEnabled}
                   seccompLevel={game.seccompLevel}
                   seccompAudit={game.seccompAudit === true}
+                  sandboxPermissionDefaults={getSandboxPermissionDefaults(
+                    userPreferences
+                  )}
                   sandboxExtraPaths={sandboxExtraPaths}
                   gamemodeSiteUrl={GAMEMODE_SITE_URL}
                   mangohudSiteUrl={MANGOHUD_SITE_URL}
@@ -1657,6 +1677,7 @@ export function GameOptionsModal({
                   onChangeNetworkIsolation={handleChangeNetworkIsolation}
                   onChangeSeccompLevel={handleChangeSeccompLevel}
                   onChangeSeccompAudit={handleChangeSeccompAudit}
+                  onChangeSandboxPermission={handleChangeSandboxPermission}
                   onAddSandboxPath={handleAddSandboxPath}
                   onRemoveSandboxPath={handleRemoveSandboxPath}
                   onChangeProtonVersion={handleChangeProtonVersion}

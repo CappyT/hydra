@@ -9,6 +9,14 @@ import {
   TextField,
 } from "@renderer/components";
 import type { Game, LibraryGame, ProtonVersion } from "@types";
+import {
+  SANDBOX_PERMISSIONS,
+  SANDBOX_PERMISSION_KEYS,
+  fromSandboxPermissionChoice,
+  toSandboxPermissionChoice,
+  type SandboxPermission,
+  type SandboxPermissionChoice,
+} from "@renderer/helpers/sandbox-permissions";
 import { FileDirectoryIcon, LinkExternalIcon } from "@primer/octicons-react";
 import { Tooltip } from "react-tooltip";
 
@@ -35,6 +43,7 @@ interface CompatibilitySettingsSectionProps {
   networkIsolationEnabled: boolean;
   seccompLevel: Game["seccompLevel"];
   seccompAudit: boolean;
+  sandboxPermissionDefaults: Record<SandboxPermission, boolean>;
   sandboxExtraPaths: string[];
   mangohudSiteUrl: string;
   gamemodeSiteUrl: string;
@@ -51,6 +60,10 @@ interface CompatibilitySettingsSectionProps {
     value: "off" | "low" | "medium" | "high" | null
   ) => Promise<void>;
   onChangeSeccompAudit: (value: boolean) => Promise<void>;
+  onChangeSandboxPermission: (
+    permission: SandboxPermission,
+    value: boolean | null
+  ) => Promise<void>;
   onAddSandboxPath: () => Promise<void>;
   onRemoveSandboxPath: (path: string) => Promise<void>;
   onChangeProtonVersion: (value: string) => void;
@@ -79,6 +92,7 @@ export function CompatibilitySettingsSection({
   networkIsolationEnabled,
   seccompLevel,
   seccompAudit,
+  sandboxPermissionDefaults,
   sandboxExtraPaths,
   mangohudSiteUrl,
   gamemodeSiteUrl,
@@ -93,6 +107,7 @@ export function CompatibilitySettingsSection({
   onChangeNetworkIsolation,
   onChangeSeccompLevel,
   onChangeSeccompAudit,
+  onChangeSandboxPermission,
   onAddSandboxPath,
   onRemoveSandboxPath,
   onChangeProtonVersion,
@@ -103,6 +118,11 @@ export function CompatibilitySettingsSection({
   // Emulator games (shop "launchbox") are launched unsandboxed by design, so
   // the sandbox/seccomp/network-isolation controls are hidden for them.
   const showSandboxSettings = game.shop !== "launchbox";
+  const sandboxActive = sandboxEnabled && sandboxAvailable;
+  // Without network isolation the game shares the host network, so the local
+  // network permission has nothing to filter.
+  const networkIsolationActive =
+    networkIsolationEnabled && networkIsolationAvailable;
   const gamemodeToggleDisabled = !gamemodeAvailable || globalAutoRunGamemode;
   const mangohudToggleDisabled = !mangohudAvailable || globalAutoRunMangohud;
 
@@ -533,6 +553,67 @@ export function CompatibilitySettingsSection({
                 </div>
               </>
             )}
+
+            <div className="game-options-modal__header">
+              <h2>{t("sandbox_permissions")}</h2>
+              <h4 className="game-options-modal__header-description">
+                {sandboxActive
+                  ? t("sandbox_permissions_description")
+                  : t("sandbox_permissions_sandbox_off")}
+              </h4>
+            </div>
+
+            {SANDBOX_PERMISSIONS.map((permission) => {
+              const key = SANDBOX_PERMISSION_KEYS[permission];
+              const noNetworkIsolation =
+                permission === "allowLocalNetwork" && !networkIsolationActive;
+
+              return (
+                <div
+                  key={permission}
+                  className="game-options-modal__sandbox-permission"
+                >
+                  <SelectField
+                    label={t(key)}
+                    value={toSandboxPermissionChoice(game[permission])}
+                    disabled={!sandboxActive || noNetworkIsolation}
+                    options={[
+                      {
+                        key: "default",
+                        value: "default",
+                        label: sandboxPermissionDefaults[permission]
+                          ? t("permission_default_allowed")
+                          : t("permission_default_blocked"),
+                      },
+                      {
+                        key: "allow",
+                        value: "allow",
+                        label: t("permission_allow"),
+                      },
+                      {
+                        key: "block",
+                        value: "block",
+                        label: t("permission_block"),
+                      },
+                    ]}
+                    onChange={(event) =>
+                      onChangeSandboxPermission(
+                        permission,
+                        fromSandboxPermissionChoice(
+                          event.target.value as SandboxPermissionChoice
+                        )
+                      )
+                    }
+                  />
+
+                  <h4 className="game-options-modal__header-description">
+                    {sandboxActive && noNetworkIsolation
+                      ? t("permission_local_network_no_isolation")
+                      : t(`${key}_description`)}
+                  </h4>
+                </div>
+              );
+            })}
           </>
         )}
       </div>

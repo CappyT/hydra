@@ -453,6 +453,9 @@ describe("Epic managed UI lifecycle", () => {
       "../../../big-picture/src/components/pages/game/game-settings-modal/compatibility-tab.tsx",
       {
         "@renderer/hooks/use-game-linux-compatibility": hook,
+        "@renderer/helpers/sandbox-permissions": loadModule(
+          "../helpers/sandbox-permissions.ts"
+        ),
         "react-i18next": {
           useTranslation: () => ({ t: (key: string) => key }),
         },
@@ -487,6 +490,7 @@ describe("Epic managed UI lifecycle", () => {
           Radio: ({ label }: { label: React.ReactNode }) => label,
           Checkbox: () => null,
           DropdownSelect: wrap,
+          SegmentedControl: () => null,
           FileExplorerModal: () => null,
         },
         "./compatibility-tab.scss": {},

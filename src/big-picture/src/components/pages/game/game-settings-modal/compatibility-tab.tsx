@@ -10,11 +10,23 @@ import {
   HorizontalFocusGroup,
   Input,
   Radio,
+  SegmentedControl,
   VerticalFocusGroup,
 } from "../../../common";
 import { useUserPreferences } from "../../../../hooks/use-user-preferences.hook";
 import { SettingsSection } from "../../../../pages/settings/settings-section";
 import { useGameLinuxCompatibility } from "@renderer/hooks/use-game-linux-compatibility";
+import {
+  SANDBOX_PERMISSIONS,
+  SANDBOX_PERMISSION_CHOICES,
+  SANDBOX_PERMISSION_KEYS,
+  fromSandboxPermissionChoice,
+  getSandboxPermissionDefaults,
+  getSandboxPermissionValues,
+  toSandboxPermissionChoice,
+  type SandboxPermission,
+  type SandboxPermissionChoice,
+} from "@renderer/helpers/sandbox-permissions";
 
 import "./compatibility-tab.scss";
 
@@ -41,6 +53,15 @@ const GAME_COMPATIBILITY_SETTINGS_SECCOMP_AUDIT_ID =
 
 const GAME_COMPATIBILITY_SETTINGS_SANDBOX_ADD_PATH_ID =
   "game-compatibility-settings-sandbox-add-path";
+
+const GAME_COMPATIBILITY_SETTINGS_PERMISSION_IDS: Record<
+  SandboxPermission,
+  string
+> = {
+  allowLocalNetwork: "game-compatibility-settings-permission-local-network",
+  allowMicrophone: "game-compatibility-settings-permission-microphone",
+  allowCamera: "game-compatibility-settings-permission-camera",
+};
 
 function getSandboxPathRemoveFocusId(path: string) {
   return `game-compatibility-settings-sandbox-path-${path.replaceAll(/[^a-z0-9_-]/gi, "-").toLowerCase()}`;
@@ -98,6 +119,7 @@ type ElectronCompatibilityBridge = Pick<
   | "toggleGameNetworkIsolation"
   | "updateGameSeccompLevel"
   | "toggleGameSeccompAudit"
+  | "updateGameSandboxPermission"
   | "updateGameSandboxPaths"
 >;
 
@@ -146,6 +168,9 @@ export function GameCompatibilitySettingsTab({
     PerGameSeccompLevel | null | undefined
   >(game.seccompLevel);
   const [seccompAudit, setSeccompAudit] = useState(game.seccompAudit ?? false);
+  const [sandboxPermissions, setSandboxPermissions] = useState(() =>
+    getSandboxPermissionValues(game)
+  );
   const [sandboxExtraPaths, setSandboxExtraPaths] = useState<string[]>(
     game.sandboxExtraPaths ?? []
   );
@@ -168,6 +193,7 @@ export function GameCompatibilitySettingsTab({
     setNetworkIsolationDisabled(game.networkIsolationDisabled);
     setSeccompLevel(game.seccompLevel);
     setSeccompAudit(game.seccompAudit ?? false);
+    setSandboxPermissions(getSandboxPermissionValues(game));
     setSandboxExtraPaths(game.sandboxExtraPaths ?? []);
   }, [game]);
 
@@ -355,6 +381,22 @@ export function GameCompatibilitySettingsTab({
     [electron, game.shop, game.objectId]
   );
 
+  const handleChangeSandboxPermission = useCallback(
+    async (permission: SandboxPermission, value: boolean | null) => {
+      setSandboxPermissions((current) => ({
+        ...current,
+        [permission]: value,
+      }));
+      await electron.updateGameSandboxPermission(
+        game.shop,
+        game.objectId,
+        permission,
+        value
+      );
+    },
+    [electron, game.shop, game.objectId]
+  );
+
   const persistSandboxPaths = useCallback(
     async (nextPaths: string[]) => {
       setSandboxExtraPaths(nextPaths);
@@ -409,6 +451,24 @@ export function GameCompatibilitySettingsTab({
   const showSandboxOptions =
     showSandboxSettings && sandboxEnabled && sandboxAvailable;
   const seccompSelectValue: SeccompSelectValue = seccompLevel ?? "";
+  const sandboxPermissionDefaults =
+    getSandboxPermissionDefaults(userPreferences);
+  // Without network isolation the game shares the host network, so the local
+  // network permission has nothing to filter.
+  const networkIsolationActive =
+    networkIsolationEnabled && networkIsolationAvailable;
+
+  const getPermissionChoiceLabel = (
+    choice: SandboxPermissionChoice,
+    defaultAllowed: boolean
+  ) => {
+    if (choice === "allow") return t("permission_allow");
+    if (choice === "block") return t("permission_block");
+
+    return defaultAllowed
+      ? t("permission_default_allowed")
+      : t("permission_default_blocked");
+  };
 
   const gamemodeDisabled = !gamemodeAvailable || globalAutoRunGamemode;
   const mangohudDisabled = !mangohudAvailable || globalAutoRunMangohud;
@@ -731,6 +791,73 @@ export function GameCompatibilitySettingsTab({
               </div>
             </VerticalFocusGroup>
           ) : null}
+        </SettingsSection>
+      ) : null}
+
+      {showSandboxSettings ? (
+        <SettingsSection
+          className="game-compatibility-settings-tab__section"
+          title={t("sandbox_permissions")}
+          description={
+            showSandboxOptions
+              ? t("sandbox_permissions_description")
+              : t("sandbox_permissions_sandbox_off")
+          }
+        >
+          {/* Region children are ordered by registration time. The sandbox
+              options region above mounts late (availability load, or the
+              sandbox being switched on), so a region mounted before it would
+              come first in gamepad navigation. The key remounts this region
+              in the same commit, which registers it after the one above. */}
+          <VerticalFocusGroup
+            key={showSandboxOptions ? "sandbox-on" : "sandbox-off"}
+            className="game-compatibility-settings-tab__permissions"
+            asChild
+          >
+            <div>
+              {SANDBOX_PERMISSIONS.map((permission) => {
+                const key = SANDBOX_PERMISSION_KEYS[permission];
+                const noNetworkIsolation =
+                  permission === "allowLocalNetwork" && !networkIsolationActive;
+
+                return (
+                  <div
+                    key={permission}
+                    className="game-compatibility-settings-tab__permission"
+                  >
+                    <SegmentedControl<SandboxPermissionChoice>
+                      label={t(key)}
+                      value={toSandboxPermissionChoice(
+                        sandboxPermissions[permission]
+                      )}
+                      disabled={!showSandboxOptions || noNetworkIsolation}
+                      focusId={
+                        GAME_COMPATIBILITY_SETTINGS_PERMISSION_IDS[permission]
+                      }
+                      options={SANDBOX_PERMISSION_CHOICES.map((choice) => ({
+                        value: choice,
+                        label: getPermissionChoiceLabel(
+                          choice,
+                          sandboxPermissionDefaults[permission]
+                        ),
+                      }))}
+                      onValueChange={(choice) => {
+                        handleChangeSandboxPermission(
+                          permission,
+                          fromSandboxPermissionChoice(choice)
+                        ).catch(() => {});
+                      }}
+                    />
+                    <p className="game-compatibility-settings-tab__permission-description">
+                      {showSandboxOptions && noNetworkIsolation
+                        ? t("permission_local_network_no_isolation")
+                        : t(`${key}_description`)}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </VerticalFocusGroup>
         </SettingsSection>
       ) : null}
 

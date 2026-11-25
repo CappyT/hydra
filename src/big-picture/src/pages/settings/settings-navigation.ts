@@ -83,6 +83,11 @@ export const COMPATIBILITY_SECCOMP_LEVEL_FOCUS_ID =
   "compatibility-seccomp-level";
 export const COMPATIBILITY_NETWORK_ISOLATION_FOCUS_ID =
   "compatibility-network-isolation";
+export const COMPATIBILITY_ALLOW_LOCAL_NETWORK_FOCUS_ID =
+  "compatibility-allow-local-network";
+export const COMPATIBILITY_ALLOW_MICROPHONE_FOCUS_ID =
+  "compatibility-allow-microphone";
+export const COMPATIBILITY_ALLOW_CAMERA_FOCUS_ID = "compatibility-allow-camera";
 export const COMPATIBILITY_COMMON_REDIST_BUTTON_ID =
   "compatibility-common-redist";
 export const ACCOUNT_PRIVACY_UPDATE_EMAIL_BUTTON_ID =

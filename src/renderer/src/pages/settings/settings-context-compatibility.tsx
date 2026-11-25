@@ -15,6 +15,11 @@ import { useAppSelector } from "@renderer/hooks";
 import type { ProtonVersion } from "@types";
 import { DesktopDownloadIcon, LinkExternalIcon } from "@primer/octicons-react";
 import { logger } from "@renderer/logger";
+import {
+  SANDBOX_PERMISSIONS,
+  SANDBOX_PERMISSION_SETTINGS_KEYS,
+  getSandboxPermissionDefaults,
+} from "@renderer/helpers/sandbox-permissions";
 import { Tooltip } from "react-tooltip";
 
 import "./settings-context-compatibility.scss";
@@ -244,6 +249,9 @@ export function SettingsContextCompatibility() {
 
   const hasCustomDefaultWinePrefixPath =
     userPreferences?.defaultWinePrefixPath != null;
+
+  const sandboxPermissionDefaults =
+    getSandboxPermissionDefaults(userPreferences);
 
   return (
     <div className="settings-context-panel settings-context-compatibility">
@@ -554,6 +562,53 @@ export function SettingsContextCompatibility() {
                   {t("network_isolation_description")}
                 </p>
               </div>
+            </div>
+
+            <div className="settings-context-compatibility__section settings-context-compatibility__global-toggles">
+              <h3 className="settings-context-compatibility__proton-title">
+                {t("sandbox_permissions")}
+              </h3>
+
+              <p className="settings-behavior__proton-description">
+                {t("sandbox_permissions_description")}
+              </p>
+
+              {SANDBOX_PERMISSIONS.map((permission) => {
+                const key = SANDBOX_PERMISSION_SETTINGS_KEYS[permission];
+                // Without network isolation games share the host network, so
+                // the local network permission has nothing to filter.
+                const noNetworkIsolation =
+                  permission === "allowLocalNetwork" &&
+                  (!enableNetworkIsolation || !networkIsolationAvailable);
+
+                return (
+                  <div
+                    key={permission}
+                    className="settings-behavior__sandbox-toggle"
+                  >
+                    <CheckboxField
+                      label={t(key)}
+                      checked={sandboxPermissionDefaults[permission]}
+                      disabled={
+                        !sandboxAvailable ||
+                        !enableSandbox ||
+                        noNetworkIsolation
+                      }
+                      onChange={(event) =>
+                        updateUserPreferences({
+                          [permission]: event.target.checked,
+                        })
+                      }
+                    />
+
+                    <p className="settings-behavior__proton-description">
+                      {noNetworkIsolation
+                        ? t("allow_local_network_no_isolation")
+                        : t(`${key}_description`)}
+                    </p>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

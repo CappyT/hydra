@@ -461,6 +461,12 @@ declare global {
       objectId: string,
       seccompAudit: boolean
     ) => Promise<void>;
+    updateGameSandboxPermission: (
+      shop: GameShop,
+      objectId: string,
+      permission: "allowLocalNetwork" | "allowMicrophone" | "allowCamera",
+      value: boolean | null
+    ) => Promise<void>;
     updateGameSandboxPaths: (
       shop: GameShop,
       objectId: string,
