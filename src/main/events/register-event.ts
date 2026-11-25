@@ -1,4 +1,5 @@
 import { ipcMain } from "electron";
+import { assertAppSender } from "@main/services/navigation-guard";
 
 interface RegisterEventOptions {
   /** Skip the JSON round trip for results that are already plain JSON data. */
@@ -11,6 +12,7 @@ export const registerEvent = (
   { jsonSafeResult = false }: RegisterEventOptions = {}
 ) => {
   ipcMain.handle(name, async (event: Electron.IpcMainInvokeEvent, ...args) => {
+    assertAppSender(event);
     return Promise.resolve(listener(event, ...args)).then((result) => {
       if (!result || jsonSafeResult) return result;
       return JSON.parse(JSON.stringify(result));

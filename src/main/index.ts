@@ -32,6 +32,8 @@ import { GameShop, UserPreferences } from "@types";
 import { ACCOUNTLESS } from "@shared";
 import { launchGame, openClassicsGame } from "./helpers";
 import { logMissingHostToolsOnce } from "./helpers/host-dependencies";
+import { stopFilteredPulse } from "./services/sandbox-audio";
+import { installNavigationGuard } from "./services/navigation-guard";
 import {
   flushScreenshotTelemetry,
   stopWaylandFocusWatch,
@@ -324,6 +326,8 @@ const initializeApp = async () => {
   }
 };
 
+installNavigationGuard();
+
 app.on("browser-window-created", (_, window) => {
   optimizer.watchWindowShortcuts(window);
 });
@@ -600,6 +604,7 @@ app.on("before-quit", async (e) => {
 app.on("will-quit", () => {
   logger.info("Application will quit");
   stopWaylandFocusWatch();
+  stopFilteredPulse();
 });
 
 app.on("activate", () => {
