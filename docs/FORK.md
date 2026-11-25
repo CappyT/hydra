@@ -183,9 +183,59 @@ which host files or runtime sockets are bound.
 writable bind after symlink resolution. It refuses `/`, any ancestor of the
 real home, the launcher state roots, `/tmp` and `/run`, anything inside `/proc`,
 `/dev`, `/sys`, `$XDG_RUNTIME_DIR` or `/run` (except removable media under
-`/run/media`), and credential/tool dirs in the home. A refusal is a
+`/run/media`), and credential/tool dirs in the home (`~/bin` included). It also
+refuses every path under a hidden top-level entry of the home (`~/.config/...`,
+`~/.bashrc.d`, `~/.var/app/...`): those hold shell, session and tool
+configuration, and a list of forbidden names cannot be complete. The
+exceptions are the places where games and prefixes live: the launcher's own
+`sandbox-homes`, `wine-prefixes`, `wine-prefix` and `Downloads`, `~/.wine`, the
+`steamapps` folder of a native or Flatpak Steam, `~/.local/share/lutris`
+(without `runners` and `runtime`) and `~/.local/share/bottles/bottles`. Visible
+folders (`~/Games`) stay the user's choice. A refusal is a
 `SandboxUnavailableError`, which the library, deep link and tray launches show
 in a dialog.
+
+The process watcher learns the executable of a game that the user started
+outside Hydra from the running processes. It ignores every process outside the
+launcher's pid namespace (`/proc/<pid>/ns/pid`), and it never takes a Wine
+prefix from a process environment: a sandboxed game controls its own name,
+working directory and environment, and would otherwise point another game at
+its binary and at a host folder of its choice.
+
+## Archive extraction
+
+A downloaded archive is hostile before any game runs. Two rules apply to every
+extraction (`src/main/services/extraction-hardening.ts`):
+
+- 7-Zip runs in bwrap (`extraction-sandbox.ts`): no network, read-only `/usr`,
+  the archive and the other volumes of its set bound read-only one file each,
+  and only the destination writable. Listing an archive and reading an entry to
+  stdout use the same profile with nothing writable. 7-Zip writes through a
+  symlink that already exists in the destination, and it parses many formats
+  whatever the file extension says; inside the sandbox neither reaches the
+  host. Without bwrap, extraction fails.
+- `removeEscapingSymlinks` (`extraction-symlinks.ts`) deletes every symlink
+  with an absolute target or a target outside the destination. It runs before
+  every 7-Zip run, between password attempts, after the final result, and
+  after every hatchzip (in-place) run. hatchzip creates archive links without
+  checking where they point.
+
+`createZip` runs in the same sandbox with the source read-only, so a link in a
+save folder that points outside it is not followed into the archive.
+
+## Launcher trust rules
+
+`src/main/services/navigation-guard.ts` protects the windows that carry the
+preload bridge. Game descriptions and other remote HTML render inside them.
+
+- A window that shows the app page refuses to navigate to another document; a
+  blocked web link opens in the browser. Routes live in the URL hash, so the
+  app itself never navigates.
+- A window that shows the app page opens no child window (a child would inherit
+  the preload); the link opens in the browser.
+- `registerEvent` serves a call only when the sender is the top frame of the
+  app page: the packaged `renderer/index.html`, or the dev server origin in an
+  unpackaged build. Another local HTML file does not count.
 
 **Emulator launches are intentionally exempt** (owner decision): classics discs
 (`src/main/helpers/launch-classics-game.ts`) and RetroArch ROMs
@@ -203,14 +253,33 @@ See [the security audit](SECURITY-AUDIT-2026-09-10.md) and
 [the subsequent hardening](SECURITY-HARDENING.md) for the threat model and limits.
 The selftest consumes the updated sibling
 [`hydra-sandbox-probe`](https://github.com/CappyT/hydra-sandbox-probe) and the
-app's unmodified `buildSandboxArgs`, with medium seccomp, pasta/DNS, machine-id
-and the production environment scrubber. It requires all hardening checks,
-including SysV IPC isolation and native/i386/NUMA seccomp probes, and verifies
-host-side that game and Wine writes land in the intended directories. Negative
-controls cover missing seccomp and network isolation, shared SysV IPC, an
-exposed runtime, an injected fake secret and gateway loopback remapping.
-Payload sentinels also prove that invalid pasta and a truncated seccomp filter
-refuse execution.
+app's unmodified `buildSandboxArgs`, with medium seccomp, pasta/DNS, the egress
+policy, the filtered audio endpoint, machine-id and the production environment
+scrubber. It requires all hardening checks, including SysV IPC isolation and
+native/i386/NUMA seccomp probes, and verifies host-side that game and Wine
+writes land in the intended directories. The exposure checks require that:
+
+- no address of the host and no LAN service accepts a connection (a listener on
+  every host address and the default gateway are the canaries);
+- a host abstract unix socket is unreachable;
+- only the Wayland socket and the filtered PulseAudio socket accept a
+  connection, and no bus, container or manager socket does;
+- no helper with capabilities, and no process in another network namespace, is
+  readable or traceable from the game;
+- nothing but stdio is inherited, and `/etc/machine-id` is not the host's;
+- only the unix, inet, inet6 and netlink (route, uevent) socket families open,
+  also as root of a nested user namespace and through the i386 `socket` call.
+
+Negative controls cover missing seccomp and network isolation, shared SysV IPC,
+an exposed runtime, an injected fake secret, the session audio sockets, gateway
+loopback remapping and a bwrap reaper left in the host network namespace. More
+runs prove the `ip rule` egress engine, the local-network permission in both
+states, the socket filter at `high` and its known `socketcall` gap at `medium`,
+and that the filtered audio endpoint plays but neither records nor loads
+modules. Payload sentinels also prove that invalid pasta and a truncated
+seccomp filter refuse execution. The selftest needs `ip`, `pipewire-pulse` and
+a session runtime dir; the LAN and audio runs skip themselves, with a message,
+when the gateway offers no open port or `pactl`/`parecord` are missing.
 
 ```bash
 # 1. build the probe once (sibling checkout, next to this repo)
@@ -249,18 +318,30 @@ per-game `off` disables the filter for that game only.
   `swapon` `swapoff`, `acct`, `quotactl`, `reboot`, `syslog`,
   `settimeofday` `clock_settime` `clock_adjtime` `adjtimex`,
   `open_by_handle_at`, the new mount API (`open_tree` `move_mount` `fsopen`
-  `fsconfig` `fsmount`), and legacy admin calls (`uselib` `ustat` `nfsservctl`
+  `fsconfig` `fsmount` `fspick` `mount_setattr` `open_tree_attr`),
+  `quotactl_fd`, and legacy admin calls (`uselib` `ustat` `nfsservctl`
   `_sysctl`).
 - **medium** (default) — low **plus** the NUMA memory-policy family
   (`mbind` `set_mempolicy` `get_mempolicy` `migrate_pages` `move_pages`, `EPERM`),
   `userfaultfd` (`EPERM`), `perf_event_open` (`EPERM`) and the io_uring trio
   (`io_uring_setup` `io_uring_enter` `io_uring_register`, `ENOSYS`). Mirrors
-  flatpak's base filter applied to Steam.
+  flatpak's base filter applied to Steam. It also filters the arguments of
+  `socket` and `socketpair`: only `AF_UNIX`, `AF_INET`, `AF_INET6` and
+  `AF_NETLINK` pass (`EAFNOSUPPORT` otherwise), and netlink only with
+  `NETLINK_ROUTE` or `NETLINK_KOBJECT_UEVENT` (`EPROTONOSUPPORT` otherwise).
+  This removes `AF_ALG`, `AF_VSOCK`, `AF_PACKET`, `AF_KCM`, netfilter and xfrm
+  netlink and the other families behind most recent kernel privilege
+  escalations. **Known gap:** i386 `socketcall` takes the family behind a
+  pointer that seccomp cannot read, and 32-bit glibc creates every socket
+  through it, so that route stays open here. Generic exploits use the native
+  calls; code written for this sandbox can use `int 0x80`.
 - **high** — medium **plus** calls that may genuinely break some titles:
   `ptrace`, `name_to_handle_at`, `pidfd_getfd`, `process_madvise`,
   `set_mempolicy_home_node` (`EPERM`), `clone3` and `memfd_secret` (`ENOSYS`),
   plus an argument-filtered `personality` (only `PER_LINUX` /
-  `ADDR_NO_RANDOMIZE` / the read-only query pass; other personas → `EPERM`).
+  `ADDR_NO_RANDOMIZE` / the read-only query pass; other personas → `EPERM`),
+  and the `SYS_SOCKET` call of i386 `socketcall` (`EAFNOSUPPORT`). That closes
+  the gap of the socket filter and leaves 32-bit programs without sockets.
 
 ### Audit / diagnosis flow
 
@@ -312,8 +393,8 @@ mode (pasta does not exec the game), and (3) runs the game inside that netns wit
 ALL capabilities dropped (`nsenter` + `setpriv --inh-caps=-all
 --ambient-caps=-all`), so the game ends up at `CapEff=0`. All port forwarding is
 disabled both ways (`-t/-u/-T/-U none`) and **`--no-map-gw`** is passed so host
-loopback services stay unreachable via the gateway IP; internet and LAN still
-work through pasta's NAT. DNS is forwarded to the host resolver
+loopback services stay unreachable via the gateway IP; internet works through
+pasta's NAT, and the egress policy below decides the rest. DNS is forwarded to the host resolver
 (`--dns-forward` / `--dns-host`, the first plain IP `nameserver`; scoped
 `fe80::1%iface` entries are skipped) via a generated `resolv.conf` bound into the
 sandbox. bwrap starts the wrapper with `--as-pid-1`: the wrapper, which keeps
@@ -326,12 +407,84 @@ pre-isolation sandbox. See
 `src/main/services/sandbox-network.ts` and the `HYDRA_PASTA_*` env the builder
 sets.
 
+### Egress policy
+
+pasta forwards each connection of the game from the host network namespace. A
+destination that is local to the host therefore reaches the host services that
+listen on a wildcard address: the address of a container bridge (also when the
+bridge is down), a VPN interface, the IPv6 link-local address. Every LAN device
+is one hop away. Before the game starts, the wrapper applies a policy inside
+the game's namespace, where the game holds no capability:
+
+- always: reject every address of the host (`ip -j addr show`; node's
+  `os.networkInterfaces()` omits interfaces that are down);
+- without the local-network permission: also reject the private, CGNAT,
+  link-local and multicast ranges, the subnets the host is attached to and
+  every network it routes apart from the default route (`ip -j route show`).
+  That covers a LAN with global IPv6 addresses, a prefix that DHCPv6 announces
+  only as a route, and networks behind a VPN;
+- the DNS forward address stays reachable on port 53, and IPv6 neighbour
+  discovery is accepted.
+
+`src/main/services/sandbox-egress.ts` renders the policy twice. The wrapper
+loads the nftables ruleset when a trusted `nft` exists (output hook, rejects
+multicast and broadcast too). Without `nft`, or when the load fails, it runs
+the `ip rule ... prohibit` rendering (iproute2). That fallback rejects all
+unicast traffic the same way, but a multicast datagram sent on a socket bound
+to the interface still leaves, so LAN discovery (mDNS) is not stopped. If
+neither applies, or the host addresses and routes cannot be read, the game
+does not start. `ip` is required for isolated launches. The policy is a
+snapshot: an address or route the host gets after the launch (a rotated IPv6
+temporary address, a VPN that comes up, a new container network) is covered
+only by the ranges until the next launch. Other IPv6 prefixes of the site
+(other VLANs) and NAT64 prefixes are not known to the host and stay reachable.
+
 ### Launch logging
 
-Every sandboxed launch logs one concise line each for both hardening layers
+Every sandboxed launch logs one concise line each for the hardening layers
 (via the app's `main` logger, `logs.txt`/`info.txt`): the effective seccomp
-state — `level/mode (from game|global)` or `disabled` — and the network state —
-`isolated (pasta)` or explicitly `disabled`. Missing required tools fail before launch.
+state — `level/mode (from game|global)` or `disabled` — the network state —
+`isolated (pasta)` or explicitly `disabled` — and the granted permissions.
+Missing required tools fail before launch.
+
+## Sandbox permissions
+
+Three resources are denied by default and granted per game, like site
+permissions in a browser. Each has a global default in **Settings →
+Compatibility** (off) and a per-game tri-state in the game options (default,
+allow, block); the per-game value wins in both directions
+(`src/main/services/sandbox-permissions.ts`).
+
+- **Local network** (`allowLocalNetwork`). Denied: the egress policy rejects
+  the local networks. Allowed: they are reachable (LAN multiplayer, local
+  servers). The addresses of the host stay rejected in both states. It has no
+  effect while network isolation is off for the game.
+- **Microphone** (`allowMicrophone`). Denied: the game gets one audio socket,
+  served by a second `pipewire-pulse` instance that the launcher starts
+  (`src/main/services/sandbox-audio.ts`). It is a plain client of the session
+  PipeWire with `pulse.allow-module-loading = false` and the
+  `block-record-stream` quirk on every client, so it plays but cannot record
+  the microphone or a sink monitor, load modules or change device volumes. The
+  session `pipewire-0` socket is not bound. The endpoint is still a full
+  PulseAudio view of the session: the game lists the other audio clients (their
+  properties include the real machine id) and can switch the default device,
+  mute a sink, change a card profile or stop another program's stream.
+  Restricting that needs a PipeWire access policy in WirePlumber, outside the
+  launcher. Allowed: the game gets the session PulseAudio socket, unfiltered
+  (record, load modules, control the session). The session `pipewire-0` socket
+  also carries the webcams that WirePlumber exports and the streams of a
+  running screen share, so it is bound only when the camera permission is
+  granted too. If the filtered instance cannot start, the launch is refused;
+  `pipewire-pulse` is required unless the permission is granted. A native game
+  that speaks only ALSA or only native PipeWire has audio only with both the
+  microphone and the camera permission; Wine/Proton and SDL use PulseAudio.
+- **Camera** (`allowCamera`). Denied: no video device. Allowed: the V4L2
+  capture nodes (`/dev/video*` with udev `ID_V4L_CAPABILITIES` containing
+  `capture`) are bound. With the microphone permission as well, the game
+  also gets the session PipeWire socket.
+
+The filtered instance lives in `<userData>/sandbox-audio`, dies with the
+launcher (`setpriv --pdeathsig`) and is stopped on quit.
 
 ## Gamescope integration
 

@@ -76,11 +76,32 @@ All of this is on `main` and shipped; docs/FORK.md has the operational detail.
 - **seccomp filter** (pure-Node cBPF assembler, `sandbox-seccomp.ts`):
   cumulative levels low/medium(default)/high, per-rule errno, multi-arch
   (x86_64 + i386), per-game override + audit mode (blocks → kernel log,
-  decode via `journalctl -k --grep=SECCOMP`).
+  decode via `journalctl -k --grep=SECCOMP`). Medium filters the socket
+  families (unix, inet, inet6, netlink route/uevent); i386 `socketcall` stays
+  open below high, because 32-bit glibc needs it.
 - **Network isolation** via pasta, podman-style single-userns (pasta runs
   *inside* bwrap as outermost command) so nested user namespaces
   (Proton pressure-vessel, gamescope) keep working. Host loopback unreachable,
-  DNS forwarded. Default ON when pasta present; per-game/global opt-out.
+  DNS forwarded. Default ON when pasta present; per-game/global opt-out. An
+  egress policy inside the game's namespace (`sandbox-egress.ts`: nft, with an
+  `ip rule` fallback) always rejects the host's own addresses.
+- **Sandbox permissions** (`sandbox-permissions.ts`), denied by default, global
+  default plus per-game tri-state: local network (the egress policy rejects
+  private ranges and attached subnets), microphone (denied = a filtered,
+  playback-only `pipewire-pulse` socket from `sandbox-audio.ts`; allowed = the
+  session PulseAudio socket), camera (V4L2 capture nodes; with the microphone
+  as well, the session PipeWire socket).
+- **Extraction hardening**: 7-Zip runs in bwrap with only the destination
+  writable and no network (`extraction-sandbox.ts`), and symlinks that leave
+  the destination are removed before and after every extraction step,
+  hatchzip included (`extraction-symlinks.ts`). Without bwrap, extraction
+  fails.
+- **Launcher trust rules**: windows that carry the preload bridge cannot
+  navigate away from the app page, and `registerEvent` serves only the top
+  frame of an app page (`navigation-guard.ts`). The process watcher never
+  learns an executable or a Wine prefix from a process inside a sandbox.
+  Writable binds under a hidden home directory are refused, except the known
+  game locations (`sandbox-paths.ts`). docs/FORK.md has the exact rules.
 - **gamescope integration**: per-game tri-state (default ON when binary
   detected), native resolution + refresh detection (xrandr fallback on
   Wayland), X11 socket hiding, auto-disabled inside a gamescope session
@@ -171,6 +192,20 @@ Procedure per upstream release tag:
      through `portFs` (`recompilation-port-fs.ts`), or run inside
      `withSanitizedPort` while no process of the port runs; new path
      templates in `recompilation-meta.json` become read-write binds;
+   - archive extraction (`7zip.ts`, `archive-extraction.ts`,
+     `archive-entry.ts`, `game-files-manager.ts`, any new extractor): every
+     7-Zip spawn, listing included, runs in the extraction sandbox
+     (`createSevenZipSandbox` / `buildExtractionSandboxArgs`), and every
+     extractor output goes through `removeEscapingSymlinks`;
+   - code that reads other processes (`process-watcher.ts`,
+     `native-addon.ts`): a value from a process inside a sandbox (path, cwd,
+     environment) must never reach a game record;
+   - new IPC handlers and windows: handlers go through `registerEvent` (it
+     checks the sender frame), and a window with the preload must load only
+     the app page;
+   - new host sockets or devices bound into the sandbox
+     (`sandbox-command-builder.ts`): each one needs a permission or a reason,
+     and a probe check in `sandbox:selftest`;
    - anything under our fork files (`sandbox-*.ts`, `cloud-sync`/backup,
      `resolve-*-wrapper.ts`) — usually untouched by upstream but verify;
    - preload/IPC surface used by Big Picture parity.

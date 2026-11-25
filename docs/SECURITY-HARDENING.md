@@ -116,17 +116,35 @@ Deck before releasing.
 
 ## Remaining limits
 
-The initial audit's platform exposure discussion is not a claim that all of
-these services are now isolated. PulseAudio/PipeWire protocol access remains
-shared and does not enforce playback-only permissions. X11 remains shared when
-private gamescope wrapping is unavailable or the session already is gamescope
-(Deck gaming mode). GPU ioctls and the kernel are shared. Full desktop/audio
-brokering would require a separate design and compatibility testing; hiding a
-Unix socket behind a read-only bind does not enforce protocol permissions.
+The kernel, the GPU driver and the compositor stay in the trusted computing
+base. Games keep unprivileged user namespaces, because Proton's pressure-vessel
+and gamescope need them, so the kernel interfaces behind them stay reachable.
+The seccomp filter is a blocklist. Its socket family filter does not cover
+i386 `socketcall` below the `high` level (see "Seccomp syscall filter" in
+[FORK.md](FORK.md)): it stops generic exploits, not code written for this
+sandbox.
 
-Pasta still permits Internet and LAN traffic; no anonymity or outbound firewall
-policy was added. Host-readable `/etc` and `/sys` metadata remain visible.
-Resource namespaces are not memory/process/disk quotas. Explicitly choosing a
-shared game directory or prefix still shares its data. The new restore writer
-constrains restoration; this change is not an audit or complete isolation of
-Ludusavi's host-side backup scanning or other trusted launcher services.
+X11 remains shared when private gamescope wrapping is unavailable or the
+session already is gamescope (Deck gaming mode); there a game is an ordinary
+client of the shared X server. The Wayland socket is always shared: a game can
+read the clipboard while it has focus and can draw a fake window.
+
+Audio capture, the local network and the camera are per-game permissions
+("Sandbox permissions" in [FORK.md](FORK.md)). A game with the microphone
+permission holds the session PulseAudio server; with the camera permission as
+well it holds the session PipeWire, webcams and screen-share streams included. A game without it still sees the other audio clients and
+can change the session's audio state through the filtered endpoint; it cannot
+record. A game without the local-network
+permission still reaches the Internet, so it can send out what it can read, and
+LAN devices with a routable IPv6 address outside the prefixes the host routes.
+The egress policy is a snapshot taken at launch. The
+`ip rule` egress engine, used when `nft` is missing, does not stop multicast
+discovery.
+
+Host-readable `/etc` and `/sys` metadata remain visible: host name, hardware
+model and interface MAC addresses identify the machine although
+`/etc/machine-id` is spoofed. Resource namespaces are not memory, process or
+disk quotas. Explicitly choosing a shared game directory or prefix still shares
+its data. Ludusavi scans the save folders on the host and follows links; the
+launcher refuses a backup whose source resolves outside the save root, after
+the copy to the scratch directory.
