@@ -34,6 +34,8 @@ export const WRAPPER_SHELL_PATH = "/usr/bin/bash";
  * is bounded and namespace identity is verified before pasta or the game starts.
  */
 export const NETWORK_ISOLATION_WRAPPER = `set -u
+# No pathname expansion: the egress rule lines are split into words below.
+set -f
 _pasta="\${HYDRA_PASTA_BIN:-/usr/bin/pasta}"
 _ph=""
 _pasta_pid=""
@@ -96,7 +98,30 @@ done
 [ "$_ready" = 1 ] || _fail_closed "pasta failed to configure the isolated network"
 kill -0 "$_pasta_pid" 2>/dev/null || _fail_closed "pasta exited during setup"
 
-# 3) Enter the netns (CAP_SYS_ADMIN), then drop ALL capabilities before the
+# 3) Egress policy, applied inside the game's netns while this wrapper still
+# holds CAP_NET_ADMIN. The game cannot change it: it has no capability over this
+# namespace. nft loads the whole ruleset or nothing, so a failed load leaves the
+# namespace clean for the ip-rule rendering of the same policy.
+_apply_egress() {
+  if [ -n "\${HYDRA_EGRESS_NFT_BIN:-}" ] && [ -n "\${HYDRA_EGRESS_NFT_RULES:-}" ]; then
+    printf '%s' "$HYDRA_EGRESS_NFT_RULES" \\
+      | /usr/bin/nsenter --net="$_netns" -- "$HYDRA_EGRESS_NFT_BIN" -f - 2>/dev/null \\
+      && return 0
+  fi
+  [ -n "\${HYDRA_EGRESS_IP_BIN:-}" ] && [ -n "\${HYDRA_EGRESS_IP_RULES:-}" ] || return 1
+  while IFS= read -r _rule; do
+    [ -n "$_rule" ] || continue
+    /usr/bin/nsenter --net="$_netns" -- "$HYDRA_EGRESS_IP_BIN" $_rule || return 1
+  done <<< "$HYDRA_EGRESS_IP_RULES"
+}
+if [ "\${HYDRA_EGRESS:-}" = 1 ]; then
+  _apply_egress || _fail_closed "cannot apply the egress policy"
+fi
+# The game does not need the setup variables; they list the host addresses.
+unset HYDRA_PASTA_BIN HYDRA_PASTA_DNS_FORWARD HYDRA_PASTA_DNS_HOST HYDRA_EGRESS \\
+  HYDRA_EGRESS_NFT_BIN HYDRA_EGRESS_NFT_RULES HYDRA_EGRESS_IP_BIN HYDRA_EGRESS_IP_RULES
+
+# 4) Enter the netns (CAP_SYS_ADMIN), then drop ALL capabilities before the
 # game: clearing the ambient+inheritable sets leaves CapEff=CapPrm=0, which the
 # game's own nested bwrap (gamescope/pressure-vessel) requires.
 /usr/bin/nsenter --net="$_netns" -- \\
@@ -231,6 +256,18 @@ export interface SandboxWrapOptions {
    * unavailable pasta when isolation is requested.
    */
   networkIsolation?: SandboxNetworkIsolationOptions;
+  /**
+   * Audio sockets given to the game. Absent = none.
+   * `hostSockets`: session sockets, 1:1. `"pulse"` is the PulseAudio socket:
+   * record, load modules, control the audio session. `"all"` adds the PipeWire
+   * socket, which also carries the webcams and screen-share streams of the
+   * session.
+   * `pulseSocket`: a launcher-owned PulseAudio socket, bound at the standard
+   * `$XDG_RUNTIME_DIR/pulse/native` path (see sandbox-audio.ts).
+   */
+  audio?: { hostSockets: "pulse" | "all" } | { pulseSocket: string };
+  /** V4L2 capture nodes given to the game. Absent = no camera. */
+  cameraDevices?: string[];
 }
 
 const isExistingPath = (
@@ -246,6 +283,7 @@ const listNvidiaDevices = (): string[] => {
   }
 };
 
+/** Display sockets only. Audio is a separate, permission-driven bind. */
 const listRuntimeSockets = (
   runtimeDir: string,
   env: SandboxWrapOptions["env"]
@@ -255,15 +293,8 @@ const listRuntimeSockets = (
     const activeWayland =
       env.WAYLAND_DISPLAY || entries.find((name) => /^wayland-\d+$/.test(name));
     const activeGamescope = env.GAMESCOPE_WAYLAND_DISPLAY || "gamescope-0";
-    return [
-      activeWayland,
-      activeGamescope,
-      "pipewire-0",
-      "pulse/native",
-    ].filter(
-      (name): name is string =>
-        Boolean(name) &&
-        (name === "pulse/native" || /^[a-zA-Z0-9_-]+$/.test(name!))
+    return [activeWayland, activeGamescope].filter(
+      (name): name is string => Boolean(name) && /^[a-zA-Z0-9_-]+$/.test(name!)
     );
   } catch {
     return [];
@@ -319,6 +350,8 @@ export const buildSandboxArgs = (
     machineIdFile,
     seccompFd,
     networkIsolation,
+    audio,
+    cameraDevices = [],
   } = options;
 
   const home = env.HOME || "";
@@ -381,6 +414,30 @@ export const buildSandboxArgs = (
         "HYDRA_PASTA_DNS_HOST",
         networkIsolation.hostResolver
       );
+    }
+    const egress = networkIsolation.egress;
+    if (egress) {
+      bwrapArgs.push("--setenv", "HYDRA_EGRESS", "1");
+      if (egress.nftPath) {
+        bwrapArgs.push(
+          "--setenv",
+          "HYDRA_EGRESS_NFT_BIN",
+          egress.nftPath,
+          "--setenv",
+          "HYDRA_EGRESS_NFT_RULES",
+          egress.nftRuleset
+        );
+      }
+      if (egress.ipPath) {
+        bwrapArgs.push(
+          "--setenv",
+          "HYDRA_EGRESS_IP_BIN",
+          egress.ipPath,
+          "--setenv",
+          "HYDRA_EGRESS_IP_RULES",
+          egress.ipCommands.map((command) => command.join(" ")).join("\n")
+        );
+      }
     }
   }
 
@@ -445,6 +502,10 @@ export const buildSandboxArgs = (
 
   // Expose only udev-classified controllers. Keyboard/mouse nodes stay hidden.
   for (const devicePath of listSandboxInputDevices()) {
+    bwrapArgs.push("--dev-bind", devicePath, devicePath);
+  }
+
+  for (const devicePath of cameraDevices) {
     bwrapArgs.push("--dev-bind", devicePath, devicePath);
   }
 
@@ -534,6 +595,8 @@ export const buildSandboxArgs = (
     protonDir,
     ...extraRoBinds,
     networkIsolation?.pastaPath,
+    networkIsolation?.egress?.nftPath,
+    networkIsolation?.egress?.ipPath,
     ...(hideX11
       ? []
       : [
@@ -548,12 +611,26 @@ export const buildSandboxArgs = (
     for (const socketName of listRuntimeSockets(runtimeDir, env)) {
       readOnlyBinds.push(path.join(runtimeDir, socketName));
     }
+    if (audio && "hostSockets" in audio) {
+      readOnlyBinds.push(path.join(runtimeDir, "pulse", "native"));
+      if (audio.hostSockets === "all") {
+        readOnlyBinds.push(path.join(runtimeDir, "pipewire-0"));
+      }
+    }
   }
 
   for (const target of readOnlyBinds) {
     if (isExistingPath(target)) {
       bwrapArgs.push("--ro-bind", target, target);
     }
+  }
+
+  if (runtimeDir && audio && "pulseSocket" in audio) {
+    bwrapArgs.push(
+      "--ro-bind",
+      audio.pulseSocket,
+      path.join(runtimeDir, "pulse", "native")
+    );
   }
 
   // When isolating, the bwrap payload is the network-isolation wrapper (it sets

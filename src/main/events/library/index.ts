@@ -72,6 +72,7 @@ import "./toggle-game-sandbox-ipc";
 import "./toggle-game-network-isolation";
 import "./update-game-seccomp-level";
 import "./toggle-game-seccomp-audit";
+import "./update-game-sandbox-permission";
 import "./update-game-backups-to-keep";
 import "./update-game-sandbox-paths";
 import "./toggle-game-pin";

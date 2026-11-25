@@ -137,6 +137,15 @@ export interface Game extends LibraryCatalogueMetadata {
    * Enforcement is suspended for the game while this is on.
    */
   seccompAudit?: boolean;
+  /**
+   * Per-game sandbox permissions (tri-state): `null`/`undefined` follows the
+   * global preference of the same name; an explicit `true`/`false` wins. Each
+   * one grants a resource the sandbox denies by default. See
+   * `resolveSandboxPermissions`.
+   */
+  allowLocalNetwork?: boolean | null;
+  allowMicrophone?: boolean | null;
+  allowCamera?: boolean | null;
   favorite?: boolean;
   isHiddenFromOthers?: boolean;
   isConcealed?: boolean;
@@ -359,6 +368,20 @@ export interface UserPreferences {
    * own pasta-provided one. A per-game `networkIsolationDisabled` override wins.
    */
   disableNetworkIsolation?: boolean;
+  /**
+   * Global defaults of the sandbox permissions. Absent = denied. A per-game
+   * value of the same name wins.
+   * - `allowLocalNetwork`: the game reaches private and link-local addresses
+   *   (LAN multiplayer, local servers). The addresses of this host stay
+   *   blocked. Applies only while network isolation is on.
+   * - `allowMicrophone`: the game gets the host audio sockets (PipeWire and
+   *   PulseAudio) and can record. Denied = playback only through a filtered
+   *   PulseAudio socket.
+   * - `allowCamera`: the V4L2 capture devices are visible to the game.
+   */
+  allowLocalNetwork?: boolean;
+  allowMicrophone?: boolean;
+  allowCamera?: boolean;
   hideClassicsBookmark?: boolean;
   classicsUseHeroLayout?: boolean;
   hideLibraryGameBadges?: boolean;

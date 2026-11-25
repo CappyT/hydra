@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import type { Game, UserPreferences } from "@types";
@@ -21,10 +22,23 @@ import {
   resolveHostResolver,
   resolvePastaPath,
   resolveSandboxResolvConfDest,
+  type SandboxEgressOptions,
   type SandboxNetworkIsolationOptions,
 } from "@main/services/sandbox-network";
+import {
+  buildEgressPolicy,
+  parseHostAddresses,
+  parseRouteSubnets,
+} from "@main/services/sandbox-egress";
+import { ensureFilteredPulseSocket } from "@main/services/sandbox-audio";
+import { listSandboxCameraDevices } from "@main/services/sandbox-input";
+import {
+  resolveSandboxPermissions,
+  type SandboxPermissions,
+} from "@main/services/sandbox-permissions";
 import { logger } from "@main/services/logger";
 import {
+  sandboxAudioPath,
   sandboxHomesPath,
   sandboxMachineIdsPath,
   sandboxResolvConfPath,
@@ -61,6 +75,9 @@ type SandboxGame = Pick<
   | "networkIsolationDisabled"
   | "seccompLevel"
   | "seccompAudit"
+  | "allowLocalNetwork"
+  | "allowMicrophone"
+  | "allowCamera"
 >;
 
 export interface SandboxLaunchContext {
@@ -236,10 +253,91 @@ const ensureSandboxResolvConf = (): string | undefined => {
   }
 };
 
+/**
+ * Builds the egress policy of the isolated namespace: the host's own addresses
+ * are always rejected, the local networks unless the game holds the permission.
+ * `ip` lists the host addresses (node omits interfaces that are down, and their
+ * addresses still reach the host) and is the fallback engine; nft is preferred.
+ */
+const resolveEgress = (
+  allowLocalNetwork: boolean,
+  dnsForwardAddress: string | undefined
+): SandboxEgressOptions => {
+  const ipPath = resolveSystemBinary(["ip"]);
+  const ip = (args: string[]): string | null => {
+    if (!ipPath) return null;
+    const result = spawnSync(ipPath, ["-j", ...args], {
+      encoding: "utf8",
+      timeout: 3000,
+      env: { PATH: "/usr/bin:/bin" },
+    });
+    return result.status === 0 ? result.stdout : null;
+  };
+  const read = <T>(output: string | null, parse: (json: string) => T | null) =>
+    output === null ? null : parse(output);
+
+  const hostAddresses = read(ip(["addr", "show"]), parseHostAddresses);
+  const routes4 = read(ip(["-4", "route", "show"]), parseRouteSubnets);
+  const routes6 = read(ip(["-6", "route", "show"]), parseRouteSubnets);
+  if (!ipPath || !hostAddresses || !routes4 || !routes6) {
+    throw new SandboxUnavailableError(
+      "Network isolation needs the ip tool (iproute2) to read the host addresses and routes. Install iproute2 or explicitly disable network isolation for this game."
+    );
+  }
+
+  const policy = buildEgressPolicy({
+    hostAddresses,
+    routedSubnets: [...routes4, ...routes6],
+    allowLocalNetwork,
+    dnsForwardAddress,
+  });
+  const nftPath = resolveSystemBinary(["nft"]) ?? undefined;
+
+  return { ...policy, nftPath, ipPath };
+};
+
+/**
+ * Audio sockets of the launch. Without the microphone permission the game gets
+ * the filtered, playback-only endpoint; a filtered endpoint that cannot start
+ * refuses the launch. The permission gives the session PulseAudio socket. The
+ * session PipeWire socket also carries webcams and screen-share streams, so it
+ * needs the camera permission as well.
+ */
+const resolveAudio = (
+  permissions: SandboxPermissions
+): { hostSockets: "pulse" | "all" } | { pulseSocket: string } => {
+  if (permissions.allowMicrophone) {
+    return { hostSockets: permissions.allowCamera ? "all" : "pulse" };
+  }
+
+  const pipewirePulsePath = resolveSystemBinary(["pipewire-pulse"]);
+  const runtimeDir = process.env.XDG_RUNTIME_DIR;
+  try {
+    if (!pipewirePulsePath || !runtimeDir) {
+      throw new Error("pipewire-pulse or XDG_RUNTIME_DIR is missing");
+    }
+    return {
+      pulseSocket: ensureFilteredPulseSocket({
+        directory: sandboxAudioPath,
+        runtimeDir,
+        pipewirePulsePath,
+        setprivPath: resolveSystemBinary(["setpriv"]),
+        home: process.env.HOME,
+      }),
+    };
+  } catch (error) {
+    logger.error("Failed to start the filtered audio endpoint", error);
+    throw new SandboxUnavailableError(
+      "Could not start the filtered audio endpoint. It needs pipewire-pulse and a running PipeWire session: install pipewire-pulse. The microphone permission of the game bypasses the filter."
+    );
+  }
+};
+
 /** Only an explicit opt-out may select the host network. Missing tools fail closed. */
 const resolveNetworkIsolation = (
   userPreferences: UserPreferences | null | undefined,
-  game: SandboxGame | null | undefined
+  game: SandboxGame | null | undefined,
+  permissions: SandboxPermissions
 ): SandboxNetworkIsolationOptions | undefined => {
   if (!isNetworkIsolationEnabled(userPreferences, game)) return undefined;
 
@@ -255,6 +353,7 @@ const resolveNetworkIsolation = (
   // pasta's default DNS handling with no override.
   const hostResolver = resolveHostResolver();
   const resolvConfSource = hostResolver ? ensureSandboxResolvConf() : undefined;
+  const forwardsDns = Boolean(hostResolver && resolvConfSource);
 
   return {
     pastaPath,
@@ -266,6 +365,10 @@ const resolveNetworkIsolation = (
           resolvConfDest: resolveSandboxResolvConfDest(),
         }
       : {}),
+    egress: resolveEgress(
+      permissions.allowLocalNetwork,
+      forwardsDns ? DNS_FORWARD_ADDRESS : undefined
+    ),
   };
 };
 
@@ -280,7 +383,8 @@ const logSandboxHardeningState = (
   seccomp: SeccompResolution,
   userPreferences: UserPreferences | null | undefined,
   game: SandboxGame | null | undefined,
-  networkIsolation: SandboxNetworkIsolationOptions | undefined
+  networkIsolation: SandboxNetworkIsolationOptions | undefined,
+  permissions: SandboxPermissions
 ): void => {
   logger.info(
     seccomp.enabled
@@ -294,6 +398,12 @@ const logSandboxHardeningState = (
       ? "disabled (pasta unavailable)"
       : "disabled";
   logger.info(`Sandbox network isolation: ${networkState}`);
+  const granted = Object.entries(permissions)
+    .filter(([, allowed]) => allowed)
+    .map(([name]) => name);
+  logger.info(
+    `Sandbox permissions: ${granted.length > 0 ? granted.join(", ") : "none"}`
+  );
 };
 
 /**
@@ -407,9 +517,21 @@ export const wrapWithSandbox = (
     ? ensureSeccompFilterFile(seccomp.level, seccomp.mode)
     : undefined;
 
-  const networkIsolation = resolveNetworkIsolation(userPreferences, game);
+  const permissions = resolveSandboxPermissions(userPreferences, game);
+  const networkIsolation = resolveNetworkIsolation(
+    userPreferences,
+    game,
+    permissions
+  );
+  const audio = resolveAudio(permissions);
 
-  logSandboxHardeningState(seccomp, userPreferences, game, networkIsolation);
+  logSandboxHardeningState(
+    seccomp,
+    userPreferences,
+    game,
+    networkIsolation,
+    permissions
+  );
 
   // A gamescope from ~/.local/bin (SteamOS) is hidden by the /home tmpfs, so
   // expose the exact trusted binary the launch runs, as for pasta.
@@ -443,6 +565,8 @@ export const wrapWithSandbox = (
     machineIdFile,
     seccompFd: seccompFilterPath ? SANDBOX_SECCOMP_FD : undefined,
     networkIsolation,
+    audio,
+    cameraDevices: permissions.allowCamera ? listSandboxCameraDevices() : [],
   });
 
   return {

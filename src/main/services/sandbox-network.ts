@@ -59,6 +59,19 @@ export interface SandboxNetworkIsolationOptions {
   hostResolver?: string;
   resolvConfSource?: string;
   resolvConfDest?: string;
+  /**
+   * Egress policy the wrapper applies inside the game's namespace before the
+   * game starts (see sandbox-egress.ts). At least one of the two tools is set.
+   * nft is tried first; `ip rule` is the rendering for hosts without nft.
+   */
+  egress?: SandboxEgressOptions;
+}
+
+export interface SandboxEgressOptions {
+  nftPath?: string;
+  nftRuleset: string;
+  ipPath?: string;
+  ipCommands: string[][];
 }
 
 /** Re-evaluate trusted locations so installing passt takes effect without restarting. */

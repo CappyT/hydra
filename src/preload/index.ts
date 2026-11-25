@@ -1158,6 +1158,19 @@ contextBridge.exposeInMainWorld("electron", {
     seccompAudit: boolean
   ) =>
     ipcRenderer.invoke("toggleGameSeccompAudit", shop, objectId, seccompAudit),
+  updateGameSandboxPermission: (
+    shop: GameShop,
+    objectId: string,
+    permission: "allowLocalNetwork" | "allowMicrophone" | "allowCamera",
+    value: boolean | null
+  ) =>
+    ipcRenderer.invoke(
+      "updateGameSandboxPermission",
+      shop,
+      objectId,
+      permission,
+      value
+    ),
   updateGameSandboxPaths: (
     shop: GameShop,
     objectId: string,

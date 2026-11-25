@@ -108,6 +108,13 @@ export const sandboxResolvConfPath = path.join(
   "sandbox-resolv.conf"
 );
 
+// Config, socket and pid file of the filtered pipewire-pulse instance that
+// serves sandboxed games without the microphone permission (sandbox-audio.ts).
+export const sandboxAudioPath = path.join(
+  SystemPath.getPath("userData"),
+  "sandbox-audio"
+);
+
 export const appVersion = app.getVersion() + (isStaging ? "-staging" : "");
 
 export const ASSETS_PATH = path.join(SystemPath.getPath("userData"), "Assets");

@@ -13,19 +13,32 @@ export const isControllerProperties = (properties: string): boolean => {
   );
 };
 
-const isControllerNode = (file: string): boolean => {
+/** udev's v4l_id marks capture-capable video nodes; metadata nodes lack it. */
+export const isCameraProperties = (properties: string): boolean =>
+  properties
+    .split("\n")
+    .map((line) => line.replace(/^E:/, "").trim())
+    .some(
+      (flag) =>
+        flag.startsWith("ID_V4L_CAPABILITIES=") && flag.includes(":capture:")
+    );
+
+const readUdevProperties = (file: string): string | null => {
   try {
     const stat = fs.statSync(file, { bigint: true });
-    if (!stat.isCharacterDevice()) return false;
+    if (!stat.isCharacterDevice()) return null;
     const dev = stat.rdev;
     const major = ((dev >> 8n) & 0xfffn) | ((dev >> 32n) & 0xfffff000n);
     const minor = (dev & 0xffn) | ((dev >> 12n) & 0xffffff00n);
-    return isControllerProperties(
-      fs.readFileSync(`/run/udev/data/c${major}:${minor}`, "utf8")
-    );
+    return fs.readFileSync(`/run/udev/data/c${major}:${minor}`, "utf8");
   } catch {
-    return false;
+    return null;
   }
+};
+
+const isControllerNode = (file: string): boolean => {
+  const properties = readUdevProperties(file);
+  return properties !== null && isControllerProperties(properties);
 };
 
 /** Bind individual verified controller nodes, never the host input directory. */
@@ -45,4 +58,20 @@ export const listSandboxInputDevices = (): string[] => {
     }
   }
   return devices;
+};
+
+/** V4L2 capture nodes, for games that hold the camera permission. */
+export const listSandboxCameraDevices = (): string[] => {
+  try {
+    return fs
+      .readdirSync("/dev")
+      .filter((name) => /^video\d+$/.test(name))
+      .map((name) => path.join("/dev", name))
+      .filter((file) => {
+        const properties = readUdevProperties(file);
+        return properties !== null && isCameraProperties(properties);
+      });
+  } catch {
+    return [];
+  }
 };
